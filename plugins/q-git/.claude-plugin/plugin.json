@@ -1,0 +1,7 @@
+{
+  "name": "q-git",
+  "version": "0.1.0",
+  "author": { "name": "phuquocchamp" },
+  "description": "Shows the repository status (branch, ahead/behind, changes) above the prompt and keeps a timeline of the session's commits, pushes and PRs.",
+  "types": "./types/index.d.ts"
+}

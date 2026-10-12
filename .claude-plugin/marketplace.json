@@ -8,7 +8,12 @@
     {
       "name": "q-bash",
       "source": "./plugins/q-bash",
-      "description": "Draws each Bash call as a bordered panel with truncated output; click the header to expand the full command and output."
+      "description": "Draws each Bash call as a bordered panel with git badges, timing, test summaries and diffs; guards destructive commands and keeps a command history."
+    },
+    {
+      "name": "q-git",
+      "source": "./plugins/q-git",
+      "description": "Shows the repository status (branch, ahead/behind, changes) above the prompt and keeps a timeline of the session's commits, pushes and PRs."
     }
   ]
 }

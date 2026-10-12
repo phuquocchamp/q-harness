@@ -8,7 +8,8 @@ This repository is a plugin **marketplace** named `q-harness`. Each plugin lives
 
 | Plugin | Version | Components | Description |
 |--------|---------|------------|-------------|
-| [`q-bash`](plugins/q-bash/README.md) | 0.1.0 | mod | Draws each Bash call as a bordered panel with a short output preview; click to expand the full command and output. |
+| [`q-bash`](plugins/q-bash/README.md) | 0.2.0 | mod | Draws each Bash call as a bordered panel with git badges, timing, test summaries and diffs; guards destructive commands and keeps a command history. |
+| [`q-git`](plugins/q-git/README.md) | 0.1.0 | mod | Shows the repository status above the prompt and keeps a timeline of the session's commits, pushes and PRs. |
 
 ## Use case 1: Install from GitHub (users)
 
@@ -129,10 +130,12 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 │   └── marketplace.json          # The marketplace: lists every plugin and its folder
 ├── .claude/                      # Claude Code settings and rules for working on this repo
 ├── plugins/                      # One folder per plugin; only these folders are shipped
+│   ├── q-git/                    # Plugin with a mod (same layout as q-bash)
 │   └── q-bash/                   # Plugin with a mod
 │       ├── .claude-plugin/plugin.json
 │       ├── hooks/hooks.json      # { "modules": ["./register.tsx"] } makes it a mod
-│       ├── hooks/register.tsx
+│       ├── hooks/register.tsx    # every hook lives here
+│       ├── hooks/lib.ts          # pure helpers (no $), imported by register.tsx
 │       ├── types/index.d.ts
 │       ├── tests/*.test.ts
 │       ├── tsconfig.json

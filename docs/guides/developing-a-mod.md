@@ -127,6 +127,29 @@ test('draws on every surface', async $ => {
 
 See `plugins/q-bash/tests/bash-panel.test.ts` for a full example.
 
+Nothing beneath the plugins answers `$.store`, `$.clock`, `$.process` or `$.ui.open` in a test. A hook that calls them is skipped with `no implementation for store.set` (or similar). Answer them in the test with `on(...)`, returning `{ value }`:
+
+```ts
+const store = new Map<string, unknown>()
+on('store.get', (_$, e) => ({ value: store.get(e.key) }))
+on('store.set', (_$, e) => (store.set(e.key, e.value), { value: undefined }))
+on('clock.now', () => ({ value: 1_000 }))
+on('process.run', () => ({ value: { exitCode: 0, stdout: '…', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+```
+
+The test `$` has no `$.state`. Check state through what the mod draws, or through what it wrote to the fake store. `plugins/q-bash/tests/guard-recorder.test.ts` and `plugins/q-git/tests/q-git.test.ts` show both.
+
+## Splitting a mod across files
+
+`hooks.json` names one module, and that module may import sibling files. The validator traces `$` and `on` statically, so:
+
+- Every `on(...)` call stays in `register.tsx`. Passing `on` to an imported `registerX(on)` is refused.
+- `$` may only be passed to functions declared in `register.tsx`. A helper in another file that takes `$` is refused (`$ is followed only into a function declared in this same file, never across an import`).
+- `atom(...)` references must be created in `register.tsx` too, so the validator can read their `plugin` and `key`.
+- Pure helpers (parsing, formatting, constants) can live in `hooks/lib.ts` and be unit-tested directly from `tests/`.
+
+In `types/index.d.ts`, don't name a type the same as one in the `claude-code` module. Inside `declare module 'claude-code'` the module's own type wins, silently. For example, a contract field typed `Settings` resolves to Claude Code's `Readonly<Record<string, unknown>>`. q-bash uses `BashSettings` for this reason.
+
 ## 6. Debug
 
 - While a session hot-reloads the mod, a failed hook or module shows as one dim line in the transcript, naming the mod, the event and the reason.
