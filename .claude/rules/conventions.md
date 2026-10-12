@@ -1,0 +1,1 @@
+Use English for code and comments, write comment when necessary
