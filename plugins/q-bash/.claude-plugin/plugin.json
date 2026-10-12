@@ -1,5 +1,5 @@
 {
-  "name": "q-mods",
+  "name": "q-bash",
   "version": "0.1.0",
   "description": "Draws each Bash call as a bordered panel with truncated output; click the header to expand the full command and output.",
   "types": "./types/index.d.ts"

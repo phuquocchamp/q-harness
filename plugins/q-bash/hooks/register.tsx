@@ -1,8 +1,8 @@
 import { atom, memberOf, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-const expanded = atom({ plugin: 'q-mods', key: 'expanded' } as const, false)
-const expandAll = atom({ plugin: 'q-mods', key: 'expandAll' } as const, false)
+const expanded = atom({ plugin: 'q-bash', key: 'expanded' } as const, false)
+const expandAll = atom({ plugin: 'q-bash', key: 'expandAll' } as const, false)
 
 const PREVIEW_LINES = 4
 const MAX_EXPANDED_LINES = 400

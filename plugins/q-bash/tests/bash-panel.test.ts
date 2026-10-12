@@ -4,7 +4,7 @@ const OUTPUT = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n')
 
 const ROW = (id: string) =>
   ({
-    plugin: 'q-mods',
+    plugin: 'q-bash',
     component: 'ToolUse',
     requestId: id,
     props: {
@@ -42,7 +42,7 @@ test('a Bash row is a bordered panel that previews the tail and expands on press
 test('rows of other tools are left to the engine', async ($, on) => {
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine row'] }))
   const ui = await $.ui.mount({
-    plugin: 'q-mods',
+    plugin: 'q-bash',
     surface: 'terminal',
     component: 'ToolUse',
     props: { tool_use_id: 'x', tool: 'Read', input: { file_path: '/a' }, isRunning: false, isErrored: false, isInterrupted: false },
@@ -53,7 +53,7 @@ test('rows of other tools are left to the engine', async ($, on) => {
 
 test('a failed Bash row draws red with the error text', async $ => {
   const ui = await $.ui.mount({
-    plugin: 'q-mods',
+    plugin: 'q-bash',
     surface: 'terminal',
     component: 'ToolUse',
     props: {
@@ -75,7 +75,7 @@ test('a failed Bash row draws red with the error text', async $ => {
 test('the engine result block under a Bash row is blanked; other tools keep theirs', async ($, on) => {
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine result'] }))
   const bash = await $.ui.mount({
-    plugin: 'q-mods',
+    plugin: 'q-bash',
     surface: 'terminal',
     component: 'ToolResult',
     props: { tool_use_id: 'r1', tool: 'Bash', output: { stdout: 'hi', stderr: '' }, isErrored: false },
@@ -84,7 +84,7 @@ test('the engine result block under a Bash row is blanked; other tools keep thei
   await bash.unmount()
 
   const read = await $.ui.mount({
-    plugin: 'q-mods',
+    plugin: 'q-bash',
     surface: 'terminal',
     component: 'ToolResult',
     props: { tool_use_id: 'r2', tool: 'Read', output: {}, isErrored: false },
@@ -100,7 +100,7 @@ test('a tool group holding a Bash call is unfolded', async ($, on) => {
     return { type: 'Text', props: {}, children: ['group'] }
   })
   const ui = await $.ui.mount({
-    plugin: 'q-mods',
+    plugin: 'q-bash',
     surface: 'terminal',
     component: 'ToolGroup',
     props: {

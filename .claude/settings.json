@@ -1,0 +1,5 @@
+{
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/qtphoang/Dev/Labs/personal/projects/q-mods/plugins/q-bash"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "q-harness",
+  "owner": {
+    "name": "phuquocchamp"
+  },
+  "description": "A collection of Claude Code Harness by phuquocchamp",
+  "plugins": [
+    {
+      "name": "q-bash",
+      "source": "./plugins/q-bash",
+      "description": "Draws each Bash call as a bordered panel with truncated output; click the header to expand the full command and output."
+    }
+  ]
+}

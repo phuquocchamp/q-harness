@@ -1,0 +1,1 @@
+When i update code let consider to update the markdown files for me too (@README.md, @docs/)
