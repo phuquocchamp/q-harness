@@ -6,7 +6,7 @@ This repository is a marketplace (`q-harness`). It holds any number of plugins, 
 
 | Layer | Defined by | In this repo | Users |
 |-------|-----------|--------------|-------|
-| Marketplace | `.claude-plugin/marketplace.json` | The repository root | Add it once: `claude plugin marketplace add <owner>/q-harness` |
+| Marketplace | `.claude-plugin/marketplace.json` | The repository root | Add it once: `claude plugin marketplace add phuquocchamp/q-harness` |
 | Plugin | `.claude-plugin/plugin.json` | `plugins/<name>/` | Install, enable, disable and update each one on its own |
 | Component | A file or folder inside the plugin | `hooks/`, `skills/`, `agents/`, … | Receive them with the plugin |
 

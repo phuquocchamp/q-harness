@@ -45,7 +45,7 @@ Guides with more context:
 | Command | What it does |
 |---------|--------------|
 | `claude plugin marketplace add ./` | Adds this repository as a marketplace named `q-harness` (from `.claude-plugin/marketplace.json`). |
-| `claude plugin marketplace add <owner>/q-harness` | Adds the marketplace from GitHub. |
+| `claude plugin marketplace add phuquocchamp/q-harness` | Adds the marketplace from GitHub. |
 | `claude plugin marketplace list` | Lists configured marketplaces. |
 | `claude plugin marketplace update q-harness` | Re-reads the marketplace from its source. |
 | `claude plugin marketplace remove q-harness` | Removes the marketplace. |
@@ -54,7 +54,7 @@ Guides with more context:
 
 | Command | What it does |
 |---------|--------------|
-| `/plugin install q-bash --marketplace <owner>/q-harness` *(in a session)* | One-step install for users: adds the marketplace, then installs. |
+| `/plugin install q-bash --marketplace phuquocchamp/q-harness` *(in a session)* | One-step install for users: adds the marketplace, then installs. |
 | `claude plugin install q-bash@q-harness` | Installs from a marketplace that is already added. `-s user\|project\|local` sets the scope. |
 | `claude plugin install q-bash --marketplace ./` | Adds the local marketplace and installs in one step. |
 | `claude plugin list` | Lists installed plugins and where each is read from. |

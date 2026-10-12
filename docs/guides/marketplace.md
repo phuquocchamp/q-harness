@@ -25,10 +25,10 @@ claude plugin marketplace remove q-harness
 
 1. Push the repository to GitHub.
 2. Run `claude plugin validate .` and fix any errors.
-3. Put this install line in the README, with the real owner:
+3. Keep this install line in the README:
 
 ```text
-/plugin install q-bash --marketplace <owner>/q-harness
+/plugin install q-bash --marketplace phuquocchamp/q-harness
 ```
 
 Users type it at the prompt of a Claude Code terminal session, answer `y` to add the marketplace, and pick a scope. Other sources work too: a git URL or a local path.
