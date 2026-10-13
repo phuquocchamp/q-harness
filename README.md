@@ -167,3 +167,4 @@ Files at the repository root (`README.md`, `docs/`, `TODOS.md`, `.claude/`) are 
 | [Developing a mod](docs/guides/developing-a-mod.md) | The files a mod needs, loading, type-checking, testing, debugging |
 | [Marketplace and release](docs/guides/marketplace.md) | Installing from the local folder or GitHub, publishing, versioning and tagging |
 | [Command cheat sheet](docs/guides/commands.md) | Every command, grouped: create, run, check, test, marketplace, install, release |
+| [Claude Code tools](docs/guides/claude-code-tools.md) | Built-in and MCP tools, skills, when to use each, rules of tool use, permissions |
