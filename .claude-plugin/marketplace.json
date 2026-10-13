@@ -6,19 +6,9 @@
   "description": "A collection of Claude Code Harness by phuquocchamp",
   "plugins": [
     {
-      "name": "q-bash",
-      "source": "./plugins/q-bash",
-      "description": "Draws each Bash call as a clear bordered panel (status, time, error tail, test and git badges) and asks before destructive commands."
-    },
-    {
-      "name": "q-git",
-      "source": "./plugins/q-git",
-      "description": "Shows the repository status (branch, ahead/behind, changes) above the prompt and keeps a timeline of the session's commits, pushes and PRs."
-    },
-    {
-      "name": "q-files",
-      "source": "./plugins/q-files",
-      "description": "Shows what each turn read and changed in one line above the prompt, and lists the session's files with +/- lines and how much of each was read."
+      "name": "q-panel",
+      "source": "./plugins/q-panel",
+      "description": "Draws each Bash call as a clear bordered panel and asks before destructive commands, shows the repository status and what each turn read and changed in one row above the prompt, and opens panes of the session's files and git timeline."
     }
   ]
 }

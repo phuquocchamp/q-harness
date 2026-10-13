@@ -1,7 +1,7 @@
 // Pure helpers for the files ledger and the turn summary.
 // No `$` access here, so everything is easy to test.
 
-import type { FileEntry, TurnStats } from '../types'
+import type { FileEntry, TurnStats } from '../../types'
 
 // ---- paths ----------------------------------------------------------------------------
 
@@ -192,6 +192,16 @@ export const recordCall = (ledger: FileEntry[], root: string, c: CallRecord): { 
   }
 
   return { ledger, delta: {} }
+}
+
+/** Most files the ledger keeps; past it the oldest read-only files go first, so a changed file is the last to leave. */
+export const LEDGER_LIMIT = 500
+
+export const capLedger = (list: FileEntry[], max = LEDGER_LIMIT): FileEntry[] => {
+  if (list.length <= max) return list
+  const byAge = [...list].sort((a, b) => a.last - b.last)
+  const drop = new Set([...byAge.filter(f => f.edits + f.writes === 0), ...byAge.filter(f => f.edits + f.writes > 0)].slice(0, list.length - max))
+  return list.filter(f => !drop.has(f))
 }
 
 // ---- turn summary ---------------------------------------------------------------------------

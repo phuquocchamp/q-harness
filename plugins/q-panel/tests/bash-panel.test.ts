@@ -1,8 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
+import { run } from './host'
 
-const run = ($: Engine, args: string) =>
-  $.command.run({ command: 'q-bash', args } as Parameters<Engine['command']['run']>[0]) as Promise<{ text: string; exitCode?: number }>
 
 const OUTPUT = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n')
 
@@ -16,7 +14,7 @@ type Props = {
 
 const ROW = (id: string, props: Props = {}) =>
   ({
-    plugin: 'q-bash',
+    plugin: 'q-panel',
     component: 'ToolUse',
     requestId: id,
     props: {
@@ -41,14 +39,14 @@ test('a Bash row is a bordered panel that previews the tail and expands on press
     expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /6 earlier lines/ })).toBeDefined()
 
-    await ui.press({ key: `q-bash-${id}` })
+    await ui.press({ key: `q-panel-${id}` })
     expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeDefined()
 
-    await ui.press({ key: `q-bash-${id}` })
+    await ui.press({ key: `q-panel-${id}` })
     expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeUndefined()
 
     // One button only: copy command.
-    expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))).toEqual([`q-bash-${id}`, `q-bash-copy-${id}`])
+    expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))).toEqual([`q-panel-${id}`, `q-panel-copy-${id}`])
 
     await ui.unmount()
   }
@@ -57,7 +55,7 @@ test('a Bash row is a bordered panel that previews the tail and expands on press
 test('rows of other tools are left to the engine', async ($, on) => {
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine row'] }))
   const ui = await $.ui.mount({
-    plugin: 'q-bash',
+    plugin: 'q-panel',
     surface: 'terminal',
     component: 'ToolUse',
     props: { tool_use_id: 'x', tool: 'Read', input: { file_path: '/a' }, isRunning: false, isErrored: false, isInterrupted: false },
@@ -111,11 +109,11 @@ test('background and timed-out commands are not shown as done', async $ => {
   await slow.unmount()
 })
 
-test('/q-bash with an unknown argument answers with usage instead of collapsing', async $ => {
+test('/q-panel with an unknown argument answers with usage instead of collapsing', async $ => {
   const r = await run($, 'expnad-all')
   expect(r).toMatchObject({ exitCode: 2 })
   expect(r.text).toMatch(/Unknown subcommand "expnad-all"/)
-  expect(r.text).toMatch(/Usage: \/q-bash/)
+  expect(r.text).toMatch(/Usage: \/q-panel/)
 })
 
 test('git activity, changed files and a sandbox override draw as badges', async $ => {
@@ -140,7 +138,7 @@ test('git activity, changed files and a sandbox override draw as badges', async 
   expect(await ui.find({ type: 'Text', text: '[+2 −1]' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /unsandboxed/ })).toBeDefined()
   // Text badges only: no PR-link button and no diff view.
-  expect(await ui.find({ key: 'q-bash-pr-g1' })).toBeUndefined()
+  expect(await ui.find({ key: 'q-panel-pr-g1' })).toBeUndefined()
   expect(await ui.find({ type: 'Code' })).toBeUndefined()
   await ui.unmount()
 })
@@ -162,7 +160,7 @@ test('test-runner output gets a summary chip and exit-code notes are shown', asy
 test('long output, expanded, keeps the head and the tail', async $ => {
   const long = Array.from({ length: 1000 }, (_, i) => `row ${i + 1}`).join('\n')
   const ui = await $.ui.mount({ ...ROW('l1', { output: { stdout: long, stderr: '', interrupted: false } }), surface: 'terminal' })
-  await ui.press({ key: 'q-bash-l1' })
+  await ui.press({ key: 'q-panel-l1' })
   expect(await ui.find({ type: 'Text', text: /^row 1$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^row 1000$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /600 lines hidden/ })).toBeDefined()
@@ -172,7 +170,7 @@ test('long output, expanded, keeps the head and the tail', async $ => {
 test('the engine result block under a Bash row is blanked; images and other tools keep theirs', async ($, on) => {
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine result'] }))
   const mount = (id: string, tool: string, output: unknown) =>
-    $.ui.mount({ plugin: 'q-bash', surface: 'terminal', component: 'ToolResult', props: { tool_use_id: id, tool, output, isErrored: false } })
+    $.ui.mount({ plugin: 'q-panel', surface: 'terminal', component: 'ToolResult', props: { tool_use_id: id, tool, output, isErrored: false } })
 
   const bash = await mount('r1', 'Bash', { stdout: 'hi', stderr: '', interrupted: false })
   expect(await bash.find({ type: 'Text', text: 'engine result' })).toBeUndefined()
@@ -195,7 +193,7 @@ test('only a group made entirely of Bash calls is unfolded', async ($, on) => {
   })
   const call = (id: string, tool: string) => ({ tool_use_id: id, tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false })
   const mount = (calls: ReturnType<typeof call>[]) =>
-    $.ui.mount({ plugin: 'q-bash', surface: 'terminal', component: 'ToolGroup', props: { isActive: false, isExpanded: false, calls } })
+    $.ui.mount({ plugin: 'q-panel', surface: 'terminal', component: 'ToolGroup', props: { isActive: false, isExpanded: false, calls } })
 
   const bashOnly = await mount([call('g1', 'Bash'), call('g2', 'Bash')])
   await bashOnly.unmount()

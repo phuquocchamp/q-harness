@@ -1,6 +1,6 @@
-// Pure helpers for q-git: parsing `git status` and turning git operations into timeline events.
+// Pure helpers for the git segment: parsing `git status` and turning git operations into timeline events.
 
-import type { GitEvent, GitStatus } from '../types'
+import type { GitEvent, GitStatus } from '../../types'
 
 export const STATUS_ARGV = ['git', 'status', '--porcelain=v2', '--branch', '--show-stash'] as const
 /** `--show-stash` needs git 2.35; older versions reject it, so retry without. */

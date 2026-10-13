@@ -1,26 +1,8 @@
-// Pure helpers shared by the q-bash hooks. No `$` access here, so everything is easy to test.
-
-import type { BashSettings } from '../types'
-
-export const DEFAULT_SETTINGS: BashSettings = {
-  previewLines: 4,
-  guard: true,
-  unfoldGroups: true,
-}
+// Pure helpers for the Bash panel and the guard. No `$` access here, so everything is easy to test.
 
 /** Fixed limits; not settings, to keep the surface small. */
 export const MAX_EXPANDED_LINES = 400
 export const SLOW_MS = 10_000
-
-/** Takes only the current settings from a stored value, so keys left by older versions are ignored. */
-export const pickSettings = (saved: unknown): BashSettings => {
-  const s = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>
-  return {
-    previewLines: Number.isInteger(s.previewLines) && (s.previewLines as number) > 0 ? (s.previewLines as number) : DEFAULT_SETTINGS.previewLines,
-    guard: typeof s.guard === 'boolean' ? s.guard : DEFAULT_SETTINGS.guard,
-    unfoldGroups: typeof s.unfoldGroups === 'boolean' ? s.unfoldGroups : DEFAULT_SETTINGS.unfoldGroups,
-  }
-}
 
 export type GuardRule = { pattern: string; why: string }
 
@@ -228,33 +210,3 @@ export const gitBadges = (out: BashOutput) => {
     g.pr && `PR #${g.pr.number} ${g.pr.action}`,
   ].filter((b): b is string => typeof b === 'string')
 }
-
-// ---- /q-bash command parsing --------------------------------------------------------
-
-export const USAGE = [
-  'Usage: /q-bash <subcommand>',
-  '  config                     show the settings',
-  '  config <key> <value>       change a setting (previewLines, guard, unfoldGroups)',
-  '  config reset               restore the defaults',
-  '  help                       this text',
-].join('\n')
-
-const NUMERIC = ['previewLines'] as const
-const BOOLEAN = ['guard', 'unfoldGroups'] as const
-
-/** Parses `/q-bash config <key> <value>` into a settings patch, or an error message. */
-export const parseConfig = (key: string, value: string): Partial<BashSettings> | string => {
-  if ((NUMERIC as readonly string[]).includes(key)) {
-    const n = Number(value)
-    if (!Number.isInteger(n) || n < 1) return `${key} needs a whole number of 1 or more.`
-    return { [key]: n }
-  }
-  if ((BOOLEAN as readonly string[]).includes(key)) {
-    if (!['on', 'off', 'true', 'false'].includes(value)) return `${key} needs on or off.`
-    return { [key]: value === 'on' || value === 'true' }
-  }
-  return `Unknown setting "${key}". Settings: ${[...NUMERIC, ...BOOLEAN].join(', ')}.`
-}
-
-export const showSettings = (cfg: BashSettings) =>
-  [...NUMERIC, ...BOOLEAN].map(k => `  ${k.padEnd(14)} ${typeof cfg[k] === 'boolean' ? (cfg[k] ? 'on' : 'off') : String(cfg[k])}`).join('\n')

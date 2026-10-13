@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { addToTurn, changeLabel, coverage, groupFiles, mergeRanges, newTurn, readNote, recordCall, turnParts } from '../hooks/ledger'
+import { addToTurn, capLedger, changeLabel, coverage, groupFiles, mergeRanges, newTurn, readNote, recordCall, turnParts } from '../hooks/lib/ledger'
 
 const ROOT = '/repo'
 const read = (path: string, startLine: number, numLines: number, totalLines: number) => ({
@@ -69,4 +69,13 @@ test('files group into changed and read only, newest first, with a note for part
   expect(g.readOnly.map(f => f.path)).toEqual(['new.md', 'old.md'])
   expect(readNote(g.readOnly[1]!)).toBe('25% read')
   expect(readNote(g.readOnly[0]!)).toBeUndefined()
+})
+
+test('the ledger cap drops the oldest read-only files before any changed file', () => {
+  const entry = (path: string, last: number, edits: number) =>
+    ({ path, reads: 1, rereads: 0, edits, writes: 0, added: 0, removed: 0, ranges: [], agents: [], last, lastAction: 'read' }) as const
+  const list = [entry('old-edit', 1, 1), entry('old-read', 2, 0), entry('mid-read', 3, 0), entry('new-read', 4, 0)].map(f => ({ ...f, ranges: [], agents: [] }))
+  expect(capLedger(list, 4)).toBe(list)
+  expect(capLedger(list, 2).map(f => f.path)).toEqual(['old-edit', 'new-read'])
+  expect(capLedger(list, 1).map(f => f.path)).toEqual(['old-edit'])
 })

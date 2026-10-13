@@ -30,9 +30,7 @@ These folder names are discovered automatically. To use other locations, declare
 q-harness/
 ├── .claude-plugin/marketplace.json
 └── plugins/
-    ├── q-git/                        # mod
-    ├── q-files/                      # mod
-    ├── q-bash/                       # mod (+ optional skills/agents)
+    ├── q-panel/                      # mod (+ optional skills/agents)
     │   ├── .claude-plugin/plugin.json
     │   ├── hooks/hooks.json · hooks/register.tsx
     │   ├── types/ · tests/ · tsconfig.json

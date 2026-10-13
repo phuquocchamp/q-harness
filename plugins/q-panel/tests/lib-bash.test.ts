@@ -7,12 +7,10 @@ import {
   displayWidth,
   headTail,
   matchRule,
-  parseConfig,
   parseTestSummary,
-  pickSettings,
   previewTail,
   stripAnsi,
-} from '../hooks/lib'
+} from '../hooks/lib/bash'
 
 test('clip counts terminal cells, not UTF-16 units', () => {
   expect(displayWidth('日本語')).toBe(6)
@@ -48,20 +46,4 @@ test('guard rules compile and skip invalid patterns', () => {
   const rules = compileRules([...BUILTIN_RULES, { pattern: '(', why: 'broken' }, { pattern: 'kubectl\\s+delete', why: 'k8s' }])
   expect(rules.length).toBe(BUILTIN_RULES.length + 1)
   expect(matchRule('kubectl delete pod x', rules)?.why).toBe('k8s')
-})
-
-test('config values are validated', () => {
-  expect(parseConfig('previewLines', '8')).toEqual({ previewLines: 8 })
-  expect(parseConfig('guard', 'off')).toEqual({ guard: false })
-  expect(parseConfig('unfoldGroups', 'on')).toEqual({ unfoldGroups: true })
-  expect(typeof parseConfig('previewLines', '-1')).toBe('string')
-  // Settings removed in 0.4 are unknown now.
-  expect(typeof parseConfig('commandBg', '#112233')).toBe('string')
-  expect(typeof parseConfig('maskSecrets', 'on')).toBe('string')
-})
-
-test('stored settings are read back with stale keys dropped and bad values defaulted', () => {
-  expect(pickSettings({ previewLines: 8, guard: false, band: true, guardRules: [] })).toEqual({ previewLines: 8, guard: false, unfoldGroups: true })
-  expect(pickSettings({ previewLines: -3, guard: 'yes' })).toEqual({ previewLines: 4, guard: true, unfoldGroups: true })
-  expect(pickSettings(undefined)).toEqual({ previewLines: 4, guard: true, unfoldGroups: true })
 })

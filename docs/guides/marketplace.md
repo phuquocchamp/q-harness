@@ -8,16 +8,16 @@ Install from your working copy, the way a user would install from GitHub:
 
 ```bash
 claude plugin marketplace add ./           # adds "q-harness" from this folder
-claude plugin install q-bash@q-harness        # -s user|project|local, default user
+claude plugin install q-panel@q-harness        # -s user|project|local, default user
 claude plugin list                         # shows "Read from:" the folder
 ```
 
-Because the marketplace is a folder and each entry's `source` is a relative path (`./plugins/q-bash`), Claude Code reads the plugin straight from your working copy, not from a copy. After editing, run `/reload-plugins` in the session. No reinstall or version bump is needed.
+Because the marketplace is a folder and each entry's `source` is a relative path (`./plugins/q-panel`), Claude Code reads the plugin straight from your working copy, not from a copy. After editing, run `/reload-plugins` in the session. No reinstall or version bump is needed.
 
 When you are done:
 
 ```bash
-claude plugin uninstall q-bash
+claude plugin uninstall q-panel
 claude plugin marketplace remove q-harness
 ```
 
@@ -28,7 +28,7 @@ claude plugin marketplace remove q-harness
 3. Keep this install line in the README:
 
 ```text
-/plugin install q-bash --marketplace phuquocchamp/q-harness
+/plugin install q-panel --marketplace phuquocchamp/q-harness
 ```
 
 Users type it at the prompt of a Claude Code terminal session, answer `y` to add the marketplace, and pick a scope. Other sources work too: a git URL or a local path.
