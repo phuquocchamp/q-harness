@@ -3,23 +3,22 @@
 import type { PanelSettings } from '../../types'
 
 export const DEFAULT_SETTINGS: PanelSettings = {
-  band: true,
-  git: true,
-  files: true,
-  guard: true,
+  filePanels: true,
   unfoldGroups: true,
   previewLines: 4,
+  codeBlocks: true,
+  codeFoldLines: 40,
 }
 
-const BOOLEAN = ['band', 'git', 'files', 'guard', 'unfoldGroups'] as const
-const NUMERIC = ['previewLines'] as const
+const BOOLEAN = ['filePanels', 'unfoldGroups', 'codeBlocks'] as const
+const NUMERIC = ['previewLines', 'codeFoldLines'] as const
 
 /** Takes only the current settings from a stored value, so unknown keys are ignored and bad values defaulted. */
 export const pickSettings = (saved: unknown): PanelSettings => {
   const s = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>
   const next = { ...DEFAULT_SETTINGS }
   for (const k of BOOLEAN) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean
-  if (Number.isInteger(s.previewLines) && (s.previewLines as number) > 0) next.previewLines = s.previewLines as number
+  for (const k of NUMERIC) if (Number.isInteger(s[k]) && (s[k] as number) > 0) next[k] = s[k] as number
   return next
 }
 
@@ -42,14 +41,9 @@ export const showSettings = (cfg: PanelSettings) =>
 
 export const USAGE = [
   'Usage: /q-panel <subcommand>',
-  '  files                      open the files this session read and changed',
-  '  timeline                   open this session’s commits, pushes and PRs',
-  '  status                     print the repository status',
-  '  clear                      forget the files and turn counts recorded so far',
-  '  band on|off                show or hide the row above the prompt',
-  '  guard on|off               ask before destructive commands',
   '  config                     show the settings',
-  '  config <key> <value>       change a setting (band, git, files, guard, unfoldGroups, previewLines)',
+  '  config <key> <value>       change a setting: filePanels, unfoldGroups, codeBlocks (on|off),',
+  '                             previewLines, codeFoldLines (a number)',
   '  config reset               restore the defaults',
   '  help                       this text',
 ].join('\n')

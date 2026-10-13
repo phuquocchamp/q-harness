@@ -8,7 +8,7 @@
     {
       "name": "q-panel",
       "source": "./plugins/q-panel",
-      "description": "Draws each Bash call as a clear bordered panel and asks before destructive commands, shows the repository status and what each turn read and changed in one row above the prompt, and opens panes of the session's files and git timeline."
+      "description": "Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with a collapse toggle."
     }
   ]
 }

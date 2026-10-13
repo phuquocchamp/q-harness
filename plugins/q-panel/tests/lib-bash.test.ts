@@ -1,12 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  BUILTIN_RULES,
   clip,
-  compileRules,
   displayWidth,
   headTail,
-  matchRule,
   parseTestSummary,
   previewTail,
   stripAnsi,
@@ -40,10 +37,4 @@ test('test summaries of common runners', () => {
   expect(parseTestSummary('test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured')).toEqual({ passed: 12, failed: 0, skipped: 1 })
   expect(parseTestSummary('--- PASS: TestA (0.00s)\n--- FAIL: TestB (0.01s)')).toEqual({ passed: 1, failed: 1, skipped: 0 })
   expect(parseTestSummary('hello world')).toBeUndefined()
-})
-
-test('guard rules compile and skip invalid patterns', () => {
-  const rules = compileRules([...BUILTIN_RULES, { pattern: '(', why: 'broken' }, { pattern: 'kubectl\\s+delete', why: 'k8s' }])
-  expect(rules.length).toBe(BUILTIN_RULES.length + 1)
-  expect(matchRule('kubectl delete pod x', rules)?.why).toBe('k8s')
 })

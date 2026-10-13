@@ -67,7 +67,7 @@ Guides with more context:
 
 | Command | What it does |
 |---------|--------------|
-| `claude plugin tag plugins/q-panel --dry-run` | Shows the tag it would create (`q-panel--v0.1.0`) after checking `plugin.json` and the marketplace entry agree. |
+| `claude plugin tag plugins/q-panel --dry-run` | Shows the tag it would create (`q-panel--v0.2.0`) after checking `plugin.json` and the marketplace entry agree. |
 | `claude plugin tag plugins/q-panel --push` | Creates the tag and pushes it to `origin`. |
 
 ## Turn mods off

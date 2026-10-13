@@ -4,7 +4,7 @@
 
 ## Features Suggestion
 
-1. Bash command hightlight panel
+1. ~~Bash command highlight panel~~: done in q-panel (Bash and file panels, collapsible code blocks in replies)
 2. Jev Suggestion Decision
 - Suggest when to change model for tasks
 - Suggest for context management:

@@ -2,9 +2,9 @@
 
 > Part of [q-harness](../../README.md), a collection of Claude Code plugins by [**phuquocchamp**](https://github.com/phuquocchamp)
 
-**Did that command work, where is the repo, and what did the turn just touch?** q-panel draws each Bash call as a clear panel, asks before destructive commands, and keeps one row above the prompt with the repository status and what the last turn read, changed and ran.
+**Did that command work, and what did Claude just change?** q-panel draws each Bash call and each file change (Write, Edit, NotebookEdit) as a clear bordered panel, and frames the code blocks in Claude's replies so you can collapse them.
 
-**Version** 0.1.0 · **Author** phuquocchamp · Replaces `q-bash` 0.4.0, `q-git` 0.1.1 and `q-files` 0.1.0
+**Version** 0.2.0 · **Author** phuquocchamp · Replaces `q-bash` 0.4.0, `q-git` 0.1.1 and `q-files` 0.1.0
 
 ## What it ships
 
@@ -12,34 +12,35 @@
 |---------|--------------|-------------|
 | **Bash panel** | A bordered panel per command: `$ npm test`, status and time (`failed · 8.4s`), the call's description, and the last 4 lines of output with stderr in red. The border is green (done), red (failed), yellow (running, interrupted) or blue (background, timed out). Click the header for the full command and up to 400 lines (head and tail). | You want to know at a glance whether a command passed and why it failed. |
 | **Badges** | Only when there is something to say: tests `[✓ 128  ✗ 2]` (vitest, jest, pytest, go test, cargo test), changed lines `[+42 −7]`, git `[⎇ committed 9f3e21a on main]` `[PR #42 created]`, `[⚠ unsandboxed]`. | Claude ran tests, changed files from the shell, or committed and pushed. |
-| **Guard** | Before `git push --force`, `git reset --hard`, `git clean -f`, `git checkout .`, `git branch -D`, `rm -rf /`, `~`, `$HOME` or `*`, `DROP TABLE` / `TRUNCATE TABLE`, the command needs your OK, with the reason shown. This holds even when an allow rule matched. It never loosens a deny, and asks if the guard itself fails. | Claude works in `acceptEdits` or `auto` mode and you want a last check on commands you can't undo. |
-| **The row above the prompt** | `⎇ feat/x → origin/feat/x  ↑2  ●3 staged  ✚1 modified │ read 2 (1 partial) · changed 2 +18 −3 · bash 3 (1 failed)  [ files ] [ timeline 4 ] [ hide ]`. Stacks under other plugins' rows. A follow-up turn that ran no tools keeps the last busy turn on show. | You come back after a turn: which branch, what's uncommitted, what did Claude read and change, did anything fail? |
-| **Files pane** | `/q-panel files` or `[ files ]` (hotkey `f`): **changed** files with `+12 −3` or `new`, then **read only** files. `40% read` marks a file Claude read only part of, `re-read 2×` repeated reads. Press a row to copy its path. | Before you review or commit: what did this session change, and did Claude read the whole file before editing it? |
-| **Git timeline pane** | `/q-panel timeline` or `[ timeline N ]`: this session's commits, pushes, merges, rebases and PRs, newest first. Press a commit to copy its SHA, a PR to copy its link. | What did Claude commit and push this session? |
-| **Tidy transcript** | Claude Code's own result block under a Bash row is hidden (images excepted). Groups made only of Bash calls are unfolded so each command gets its panel. | Always on (`unfoldGroups` turns the unfolding off). |
-
-What counts in the files list: Read, Write, Edit and NotebookEdit calls, plus Bash commands that changed files (`sed -i`, formatters, from the engine's own diff), inside subagents too. The list keeps the 500 most recent files; read-only files leave before changed ones.
+| **File panel** | A bordered panel per Write, Edit and NotebookEdit call: `▸ Edit src/app.ts   done · +5 −1`, then the first 4 changed lines (green `+`, red `−`). Click the header for the whole diff with its hunk headers and context lines (up to 400 rows). New files say `Create … created`; a failed edit draws red with the error; a running one is yellow `writing…`. | You want to see what Claude changed in a file without opening it. |
+| **Code blocks in replies** | Each fenced block in Claude's reply is drawn in a rounded frame with the language and line count on top, coloured by Claude Code's own highlighter. Click the header (`▾ ts`) to collapse or expand the block. Blocks longer than 40 lines start collapsed. Prose around the blocks stays Claude Code's normal markdown, and replies without a code block are not touched. | Claude answers with long code and you want to fold it away. |
+| **Tidy transcript** | Claude Code's own result block under a Bash or file row is hidden (Bash images excepted). Groups made only of Bash, Write, Edit and NotebookEdit calls are unfolded so each call gets its panel. | Always on (`unfoldGroups` turns the unfolding off). |
 
 ## Commands
 
 | Command | What it does |
 |---------|--------------|
-| `/q-panel files` | Open the files pane |
-| `/q-panel timeline` | Open the git timeline pane |
-| `/q-panel status` | Print the repository status |
-| `/q-panel clear` | Forget the files and the turn counts recorded so far |
-| `/q-panel band on\|off` | Show or hide the row above the prompt (saved). `[ hide ]` on the row hides it for this session only. |
-| `/q-panel guard on\|off` | Turn the guard on or off (saved) |
 | `/q-panel config` | Show the settings |
-| `/q-panel config <key> <value>` | `band`, `git`, `files`, `guard`, `unfoldGroups` (on/off), `previewLines` (a number, default `4`) |
+| `/q-panel config <key> <value>` | `filePanels`, `unfoldGroups`, `codeBlocks` (on/off), `previewLines` (a number, default `4`), `codeFoldLines` (a number, default `40`) |
 | `/q-panel config reset` | Restore the defaults |
 | `/q-panel help` | Usage |
 
-`git off` drops the git segment from the row and stops reading `git status` on its own; `files off` drops the turn segment. Only the settings are saved across sessions. The files list, turn counts and git timeline live in session state only.
+`filePanels off` leaves Write, Edit and NotebookEdit rows to Claude Code; `codeBlocks off` leaves replies to Claude Code. `previewLines` is shared by the Bash and file panels. `codeFoldLines` sets how long a block can be before it starts collapsed. Settings are saved across sessions; which panels and blocks you opened is kept for the session only.
+
+## Limits
+
+- Commands you run yourself with `! <command>` keep Claude Code's own plain row. Claude Code draws that row itself and gives plugins no hook on it, so no plugin can frame it. Ask Claude to run the command if you want the panel.
+- Code blocks are coloured by Claude Code's highlighter; a language it doesn't know (bash, for one) is drawn plain inside the frame.
+- A reply with a code block is drawn by q-panel. If you also install another mod that redraws replies (markdown or table renderers), only one of the two shows. Turn one off, for example with `/q-panel config codeBlocks off`.
+- A NotebookEdit diff compares the cell's old and new source as whole blocks, not line by line.
+
+## Removed in 0.2.0
+
+The guard on destructive commands, the row above the prompt (git status and turn summary), the files and git timeline panes, and `/q-panel files`, `timeline`, `status`, `clear`, `band` and `guard` are gone. For a check on destructive commands, add them to `permissions.ask` in Claude Code's settings. Settings saved by 0.1.0 (`band`, `git`, `files`, `guard`) are ignored.
 
 ## Moving from q-bash, q-git and q-files
 
-The three plugins are merged into this one and removed from the marketplace. Uninstall them first, or you get two panels, two guards and two rows:
+The three plugins are merged into this one and removed from the marketplace. Uninstall them first, or you get two panels:
 
 ```bash
 claude plugin uninstall q-bash && claude plugin uninstall q-git && claude plugin uninstall q-files
@@ -47,7 +48,7 @@ claude plugin marketplace update q-harness
 claude plugin install q-panel@q-harness
 ```
 
-Saved settings don't carry over (each plugin has its own store), so set `previewLines`, `guard` and the row again if you changed them. Command names changed: `/q-bash config …`, `/q-git …` and `/q-files …` are now `/q-panel …`.
+Saved settings don't carry over (each plugin has its own store), so set `previewLines` again if you changed it. Command names changed: `/q-bash config …` is now `/q-panel config …`.
 
 ## Install
 
@@ -63,4 +64,15 @@ claude plugin validate ./plugins/q-panel
 claude plugin test ./plugins/q-panel
 ```
 
-`hooks/register.tsx` holds every hook, the state atoms and every helper that takes `$` (the validator follows `$` and `on` only within one module). `hooks/lib/` holds pure helpers: `bash.ts` (clipping, previews, test parsing, guard rules), `git.ts` (porcelain v2 parser, timeline events), `ledger.ts` (files ledger, read coverage, turn counts) and `settings.ts` (defaults, `/q-panel config` parsing, usage). State: `settings`, `hidden`, `open` and `duration` per Bash call, `status`, `timeline` (last 200), `ledger`, `turn`, `lastTurn`.
+`hooks/register.tsx` holds every hook, the state atoms and every helper that takes `$` (the validator follows `$` and `on` only within one module). `hooks/lib/` holds pure helpers:
+
+| File | Holds |
+|------|-------|
+| `bash.ts` | Clipping, previews, test-output parsing, the Bash result record |
+| `files.ts` | The diff of a Write, Edit or NotebookEdit call, previews, relative paths |
+| `markdown.ts` | Splitting a reply at its code fences |
+| `settings.ts` | Defaults, `/q-panel config` parsing, usage text |
+
+Session state (`types/index.d.ts`): `settings`, `open` per Bash or file call, `duration` per Bash call, `codeOpen` per code block. Only `settings` is saved across sessions.
+
+Tests live in `tests/`: one file per helper (`lib-*.test.ts`) and one per drawn surface (`bash-panel`, `file-panel`, `code-blocks`, `settings`); `host.ts` is the shared fake host.

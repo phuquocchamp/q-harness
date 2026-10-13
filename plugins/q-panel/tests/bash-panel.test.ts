@@ -167,7 +167,7 @@ test('long output, expanded, keeps the head and the tail', async $ => {
   await ui.unmount()
 })
 
-test('the engine result block under a Bash row is blanked; images and other tools keep theirs', async ($, on) => {
+test('the engine result block under a Bash or file row is blanked; images and other tools keep theirs', async ($, on) => {
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine result'] }))
   const mount = (id: string, tool: string, output: unknown) =>
     $.ui.mount({ plugin: 'q-panel', surface: 'terminal', component: 'ToolResult', props: { tool_use_id: id, tool, output, isErrored: false } })
@@ -183,9 +183,13 @@ test('the engine result block under a Bash row is blanked; images and other tool
   const read = await mount('r3', 'Read', {})
   expect(await read.find({ type: 'Text', text: 'engine result' })).toBeDefined()
   await read.unmount()
+
+  const edit = await mount('r4', 'Edit', { filePath: '/a', structuredPatch: [] })
+  expect(await edit.find({ type: 'Text', text: 'engine result' })).toBeUndefined()
+  await edit.unmount()
 })
 
-test('only a group made entirely of Bash calls is unfolded', async ($, on) => {
+test('only a group made entirely of panel tools is unfolded', async ($, on) => {
   const seen: (boolean | undefined)[] = []
   on('ui.render', { component: 'ToolGroup' }, (_$, e) => {
     seen.push(e.props.isExpanded)
@@ -199,5 +203,7 @@ test('only a group made entirely of Bash calls is unfolded', async ($, on) => {
   await bashOnly.unmount()
   const mixed = await mount([call('g3', 'Bash'), call('g4', 'Read')])
   await mixed.unmount()
-  expect(seen).toEqual([true, false])
+  const edits = await mount([call('g5', 'Bash'), call('g6', 'Edit'), call('g7', 'Write')])
+  await edits.unmount()
+  expect(seen).toEqual([true, false, true])
 })

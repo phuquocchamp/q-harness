@@ -1,35 +1,8 @@
-// Pure helpers for the Bash panel and the guard. No `$` access here, so everything is easy to test.
+// Pure helpers for the Bash panel. No `$` access here, so everything is easy to test.
 
 /** Fixed limits; not settings, to keep the surface small. */
 export const MAX_EXPANDED_LINES = 400
 export const SLOW_MS = 10_000
-
-export type GuardRule = { pattern: string; why: string }
-
-/** Destructive patterns the guard asks about. Extra patterns belong in Claude Code's `permissions.ask` rules. */
-export const BUILTIN_RULES: GuardRule[] = [
-  { pattern: String.raw`\bgit\s+push\b[^|;&]*\s(--force(?![-\w])|-f\b)`, why: 'force-push rewrites remote history' },
-  { pattern: String.raw`\bgit\s+reset\s+[^|;&]*--hard\b`, why: 'git reset --hard discards local changes' },
-  { pattern: String.raw`\bgit\s+clean\s+-[a-zA-Z]*f`, why: 'git clean -f deletes untracked files' },
-  { pattern: String.raw`\bgit\s+checkout\s+(--\s+)?\.(\s|$)`, why: 'git checkout . discards local changes' },
-  { pattern: String.raw`\bgit\s+branch\s+-D\b`, why: 'git branch -D force-deletes a branch' },
-  { pattern: String.raw`\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-[a-zA-Z]+\s+)*(\/|~|\$HOME|\*)(\s|$|\/)`, why: 'recursive delete of /, ~ or *' },
-  { pattern: String.raw`\b(drop\s+(table|database|schema)|truncate\s+table)\b`, why: 'drops or truncates data' },
-]
-
-export type Rule = GuardRule & { re: RegExp }
-
-/** Compiles rules, skipping any pattern that is not a valid regex. */
-export const compileRules = (rules: GuardRule[]): Rule[] =>
-  rules.flatMap(r => {
-    try {
-      return [{ ...r, re: new RegExp(r.pattern, 'i') }]
-    } catch {
-      return []
-    }
-  })
-
-export const matchRule = (command: string, rules: Rule[]) => rules.find(r => r.re.test(command))
 
 // ANSI CSI / OSC escape sequences.
 const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-Z\\-_]/g

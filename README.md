@@ -19,7 +19,7 @@ This repository is a Claude Code plugin **marketplace** named `q-harness`. Each 
 
 | Plugin | Version | Components | Description |
 |--------|---------|------------|-------------|
-| [`q-panel`](plugins/q-panel/README.md) | 0.1.0 | mod | Draws each Bash call as a clear bordered panel and asks before destructive commands, shows the repository status and what each turn read and changed in one row above the prompt, and opens panes of the session's files and git timeline. Replaces `q-bash`, `q-git` and `q-files`. |
+| [`q-panel`](plugins/q-panel/README.md) | 0.2.0 | mod | Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with a collapse toggle. Replaces `q-bash`, `q-git` and `q-files`. |
 
 ## Use case 1: Install from GitHub (users)
 

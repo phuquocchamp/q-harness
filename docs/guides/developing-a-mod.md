@@ -137,7 +137,7 @@ on('clock.now', () => ({ value: 1_000 }))
 on('process.run', () => ({ value: { exitCode: 0, stdout: '…', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
 ```
 
-The test `$` has no `$.state`. Check state through what the mod draws, or through what it wrote to the fake store. `plugins/q-panel/tests/band.test.ts` and `plugins/q-panel/tests/guard-settings.test.ts` show both.
+The test `$` has no `$.state`. Check state through what the mod draws, or through what it wrote to the fake store. `plugins/q-panel/tests/code-blocks.test.ts` and `plugins/q-panel/tests/settings.test.ts` show both.
 
 ## Splitting a mod across files
 
