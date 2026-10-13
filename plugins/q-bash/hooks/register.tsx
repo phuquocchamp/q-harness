@@ -1,7 +1,7 @@
 import { atom, memberOf, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { HistoryEntry, HistoryFilter, HistoryStatus, PanelView, BashSettings } from '../types'
+import type { BashSettings, FileEntry, FilesFilter, HistoryEntry, HistoryFilter, HistoryStatus, PanelView, TodoItem, TurnStats } from '../types'
 import {
   BUILTIN_RULES,
   DEFAULT_SETTINGS,
@@ -28,6 +28,20 @@ import {
   type BashInput,
   type Line,
 } from './lib'
+import {
+  addToTurn,
+  hasActivity,
+  fileNotes,
+  filterFiles,
+  formatTokens,
+  newTurn,
+  progressBar,
+  readSummary,
+  recordCall,
+  seenLabel,
+  todoChanges,
+  turnParts,
+} from './ledger'
 
 const panel = atom({ plugin: 'q-bash', key: 'panel' } as const, null as PanelView | null)
 const mode = atom({ plugin: 'q-bash', key: 'mode' } as const, { open: false, epoch: 0 })
@@ -38,7 +52,60 @@ const settings = atom({ plugin: 'q-bash', key: 'settings' } as const, DEFAULT_SE
 const history = atom({ plugin: 'q-bash', key: 'history' } as const, [] as HistoryEntry[])
 const historyFilter = atom({ plugin: 'q-bash', key: 'historyFilter' } as const, 'all' as HistoryFilter)
 
+const ledger = atom({ plugin: 'q-bash', key: 'ledger' } as const, [] as FileEntry[])
+const turn = atom({ plugin: 'q-bash', key: 'turn' } as const, null as TurnStats | null)
+const lastTurn = atom({ plugin: 'q-bash', key: 'lastTurn' } as const, null as TurnStats | null)
+const bandHidden = atom({ plugin: 'q-bash', key: 'bandHidden' } as const, false)
+const filesFilter = atom({ plugin: 'q-bash', key: 'filesFilter' } as const, 'all' as FilesFilter)
+const agentNames = atom({ plugin: 'q-bash', key: 'agentNames' } as const, {} as Record<string, string>)
+const reportOpen = atom({ plugin: 'q-bash', key: 'reportOpen' } as const, false)
+
 const SETTINGS_KEY = 'settings'
+
+const saveSettings = async ($: EngineInterface, patch: Partial<BashSettings>) => {
+  const next = { ...(await read($, settings)), ...patch }
+  await update($, settings, () => next)
+  await $.store.set(SETTINGS_KEY, next)
+}
+
+const FILES_PANE = 'q-bash-files'
+const FEATURES_PANE = 'q-bash-features'
+
+const TRACKED = new Set(['Read', 'Write', 'Edit', 'NotebookEdit', 'Bash', 'Agent'])
+
+type AgentDone = {
+  status: 'completed'
+  agentId: string
+  agentType?: string
+  resolvedModel?: string
+  content: { type: 'text'; text: string }[]
+  totalToolUseCount: number
+  totalDurationMs: number
+  totalTokens: number
+  toolStats?: { readCount: number; searchCount: number; bashCount: number; editFileCount: number; linesAdded: number; linesRemoved: number; otherToolCount: number }
+  prompt: string
+  worktreeBranch?: string
+}
+
+const agentDone = (output: unknown): AgentDone | undefined =>
+  output && typeof output === 'object' && (output as { status?: string }).status === 'completed' ? (output as AgentDone) : undefined
+
+const todosOf = (output: unknown): { oldTodos: TodoItem[]; newTodos: TodoItem[] } | undefined => {
+  const o = output as { oldTodos?: TodoItem[]; newTodos?: TodoItem[] } | undefined
+  return o && Array.isArray(o.newTodos) ? { oldTodos: o.oldTodos ?? [], newTodos: o.newTodos } : undefined
+}
+
+const FEATURES: { key: keyof BashSettings; hotkey: string; name: string; what: string }[] = [
+  { key: 'band', hotkey: 't', name: 'Turn band', what: 'one line above the prompt: files read and changed, bash, agents' },
+  { key: 'readSummary', hotkey: 'r', name: 'Read summary', what: 'under each Read: which lines, how much of the file' },
+  { key: 'agentPanel', hotkey: 'a', name: 'Agent card', what: 'a finished subagent as one card with its stats' },
+  { key: 'todoPanel', hotkey: 'o', name: 'Todo progress', what: 'TodoWrite as a progress bar and what changed' },
+  { key: 'unfoldGroups', hotkey: 'u', name: 'Unfold Bash groups', what: 'each Bash call in its own panel' },
+  { key: 'maskSecrets', hotkey: 's', name: 'Mask secrets', what: 'hide token-like strings in Bash output' },
+  { key: 'guard', hotkey: 'g', name: 'Guard', what: 'ask before destructive Bash commands' },
+]
+
+
 const HISTORY_KEY = 'history'
 const HISTORY_LIMIT = 200
 // $.store holds 4 MiB for all keys: keep long heredoc commands from crowding out the settings.
@@ -57,12 +124,6 @@ const loadPersisted = async ($: EngineInterface) => {
   await update($, history, () =>
     past.map(h => (h.status === 'running' ? { ...h, status: 'interrupted' as const } : h)).slice(-HISTORY_LIMIT),
   )
-}
-
-const saveSettings = async ($: EngineInterface, patch: Partial<BashSettings>) => {
-  const next = { ...(await read($, settings)), ...patch }
-  await update($, settings, () => next)
-  await $.store.set(SETTINGS_KEY, next)
 }
 
 const saveHistory = async ($: EngineInterface, fn: (list: HistoryEntry[]) => HistoryEntry[]) => {
@@ -118,8 +179,8 @@ export const register: Register = on => {
     await loadPersisted($)
     await $.command.register({
       name: 'q-bash',
-      description: 'Bash panels: expand-all, collapse-all, history, stats, config, guard',
-      argumentHint: 'expand-all | collapse-all | history | stats | config | guard | help',
+      description: 'Bash panels, files ledger and turn band: expand-all, collapse-all, history, files, features, stats, config, guard',
+      argumentHint: 'expand-all | collapse-all | history | files | features | stats | config | guard | help',
     })
     return next(e)
   })
@@ -138,6 +199,12 @@ export const register: Register = on => {
       case 'history':
         await $.ui.open({ id: HISTORY_PANE, title: 'Bash history' })
         return { text: 'Bash history pane opened.' }
+      case 'files':
+        await $.ui.open({ id: FILES_PANE, title: 'Files' })
+        return { text: 'Files pane opened.' }
+      case 'features':
+        await $.ui.open({ id: FEATURES_PANE, title: 'q-bash features' })
+        return { text: 'Features pane opened.' }
       case 'stats': {
         const s = summarizeHistory(await read($, history))
         if (s.count === 0) return { text: 'No Bash commands recorded yet.' }
@@ -303,7 +370,7 @@ export const register: Register = on => {
     )
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={color} paddingX={1}>
+      <Box flexDirection="column" width="100%" borderStyle="round" borderColor={color} paddingX={1}>
         <Box flexDirection="row" justifyContent="space-between">
           <Button key={`q-bash-${e.requestId}`} plain onPress={toggle}>
             <Text color={color}>{isOpen ? '▾' : '▸'} </Text>
@@ -453,5 +520,299 @@ export const register: Register = on => {
         <Text dimColor>Press a row to copy its command.</Text>
       </Box>
     )
+  })
+
+  // ---- recorder: every tracked tool call feeds the ledger and the turn ------------------
+
+  on('turn.start', async ($, e, next) => {
+    const at = await $.clock.now()
+    // Keep the previous turn on show until this one does something: a follow-up turn
+    // with no tool calls (the reply after a background agent) would blank the band.
+    const prev = await read($, turn)
+    if (prev && hasActivity(prev)) await update($, lastTurn, () => prev)
+    await update($, turn, () => newTurn(e.turnId, at))
+    await update($, bandHidden, () => false)
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) await update($, turn, t => (t && t.turnId === e.turnId ? { ...t, isRunning: false, ms: e.durationMs } : t))
+    return next(e)
+  })
+
+  on('tool.call', async ($, e, next) => {
+    const ran = await next(e)
+    if (!TRACKED.has(String(e.tool))) return ran
+    try {
+      const input = e as unknown as Record<string, unknown>
+      const at = await $.clock.now()
+      const root = await $.session.root()
+      const before = await read($, ledger)
+      const { ledger: after, delta } = recordCall(before, root, {
+        tool: String(e.tool),
+        input,
+        result: ran.result,
+        isError: ran.isError === true || ran.deny !== undefined,
+        agentId: e.agentId,
+        at,
+      })
+      if (after !== before) await update($, ledger, () => after)
+      if (Object.keys(delta).length > 0) await update($, turn, t => (t ? addToTurn(t, delta) : t))
+      // Name the subagent for the files pane, from a finished or a backgrounded launch.
+      const launched = String(e.tool) === 'Agent' ? (ran.result as { agentId?: string; agentType?: string } | undefined) : undefined
+      if (launched?.agentId) {
+        const id = launched.agentId
+        await update($, agentNames, m => ({ ...m, [id]: launched.agentType ?? String(input.subagent_type ?? 'agent') }))
+      }
+    } catch {
+      // The ledger is a view; a failure here must never change the call.
+    }
+    return ran
+  }).catch(($, e, next) => next(e))
+
+  // ---- turn band above the prompt ---------------------------------------------------------
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const cfg = await read($, settings)
+    const current = await read($, turn)
+    const t = current && hasActivity(current) ? current : await read($, lastTurn)
+    if (e.props.hasSurvey || !cfg.band || !t || (await read($, bandHidden))) return next(e)
+    const files = await read($, ledger)
+    const inTurn = new Set(t.files)
+    const touched = files.filter(f => inTurn.has(f.path))
+    const readFiles = touched.filter(f => f.reads > 0).length
+    const changed = touched.filter(f => f.edits + f.writes > 0).length
+    const parts = turnParts(t, readFiles, changed)
+    if (parts.length === 0) return next(e)
+
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const head = t.isRunning ? 'this turn' : `last turn · ${formatMs(t.ms ?? 0)}`
+    return (
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        <Text dimColor>{head}</Text>
+        {parts.map((p, i) => (
+          <Text key={`p${i}`} color={p.tone}>
+            {p.text}
+          </Text>
+        ))}
+        <Button key="band-files" hotkey="f" label="Files" onPress={() => $.ui.open({ id: FILES_PANE, title: 'Files' })} />
+        <Button key="band-hide" hotkey="x" label="Hide" onPress={() => update($, bandHidden, () => true)} />
+      </Box>
+    )
+  })
+
+  // ---- files pane --------------------------------------------------------------------------
+
+  on('ui.render', { component: 'Pane', requestId: FILES_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const filter = await read($, filesFilter)
+    const names = await read($, agentNames)
+    const all = await read($, ledger)
+    const list = filterFiles(all, filter).sort((a, b) => b.last - a.last)
+    const width = Math.max(20, e.props.bodyColumns - 26)
+    const room = Math.max(1, (e.viewport?.rows ?? 24) - 7)
+    const tab = (f: FilesFilter, label: string, hotkey: string) => (
+      <Button key={`ff-${f}`} hotkey={hotkey} label={filter === f ? `${label} ●` : label} onPress={() => update($, filesFilter, () => f)} />
+    )
+    const n = (v: number) => (v === 0 ? '·' : String(v)).padStart(2)
+    const totals = all.reduce((s, f) => ({ added: s.added + f.added, removed: s.removed + f.removed }), { added: 0, removed: 0 })
+
+    return (
+      <Box flexDirection="column">
+        <Box flexDirection="row" columnGap={2}>
+          {tab('all', 'All', 'a')}
+          {tab('edited', 'Changed', 'e')}
+          {tab('read', 'Read only', 'r')}
+          {tab('agent', 'By agents', 'g')}
+          <Button key="ff-clear" hotkey="c" label="Clear" onPress={() => update($, ledger, () => [])} />
+        </Box>
+        <Text dimColor>
+          {all.length} files · {all.filter(f => f.edits + f.writes > 0).length} changed · +{totals.added} −{totals.removed}
+        </Text>
+        <Text dimColor> R  E  W   +/−         seen  file</Text>
+        {list.length === 0 && <Text dimColor>{all.length === 0 ? 'No files read or changed yet.' : 'No files match this filter.'}</Text>}
+        {list.slice(0, room).map(f => {
+          const notes = fileNotes(f)
+          const by = f.agents.map(id => names[id] ?? 'agent')
+          const diff = f.added + f.removed > 0 ? `+${f.added} −${f.removed}` : ''
+          return (
+            <Button key={`f-${f.path}`} plain onPress={press => copyText($, f.path, press.surface, 'Path')}>
+              <Text>
+                {n(f.reads)} {n(f.edits)} {n(f.writes)}{'   '}
+              </Text>
+              <Text color={diff ? 'green' : undefined}>{diff.padEnd(11)}</Text>
+              <Text color={seenLabel(f) === '100%' || seenLabel(f) === 'new' ? 'green' : 'yellow'}>{seenLabel(f).padStart(5)}</Text>
+              <Text>{'  '}{clip(f.path, width)}</Text>
+              {notes.map((x, i) => (
+                <Text key={`n${i}`} color={x.tone === 'dim' ? undefined : x.tone} dimColor={x.tone === 'dim'}>
+                  {'  '}
+                  {x.text}
+                </Text>
+              ))}
+              {by.length > 0 && <Text color="blue">{`  via ${[...new Set(by)].join(', ')}`}</Text>}
+            </Button>
+          )
+        })}
+        {list.length > room && <Text dimColor>… {list.length - room} more</Text>}
+        <Text dimColor>R reads · E edits · W writes · seen = share of lines read · press a row to copy its path</Text>
+      </Box>
+    )
+  })
+
+  // ---- features pane: turn each view on or off --------------------------------------------
+
+  on('ui.render', { component: 'Pane', requestId: FEATURES_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const cfg = await read($, settings)
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>Press a letter (or click) to turn a feature on or off. Saved for every session.</Text>
+        {FEATURES.map(f => {
+          const isOn = cfg[f.key] === true
+          return (
+            <Box key={`feat-${f.key}`} flexDirection="row" columnGap={1}>
+              <Button key={`feat-btn-${f.key}`} hotkey={f.hotkey} label={`${isOn ? '●' : '○'} ${f.name}`} onPress={() => saveSettings($, { [f.key]: !isOn })} />
+              <Text wrap="truncate-end">
+                <Text color={isOn ? 'green' : undefined} dimColor={!isOn}>
+                  {isOn ? 'on ' : 'off'}
+                </Text>
+                <Text dimColor>{`  ${f.what}`}</Text>
+              </Text>
+            </Box>
+          )
+        })}
+      </Box>
+    )
+  })
+
+  // ---- Read: a line saying how much of the file was read ------------------------------------
+
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    const p = e.props
+    if (p.isErrored) return next(e)
+    const cfg = await read($, settings)
+
+    if (p.tool === 'Read' && cfg.readSummary) {
+      const path = (p.output as { file?: { filePath?: string } } | undefined)?.file?.filePath
+      const entry = path ? (await read($, ledger)).find(f => path.endsWith(f.path)) : undefined
+      const line = readSummary(p.output, entry)
+      if (!line) return next(e)
+      const { Text } = $.ui.resolve(e)
+      const partial = !line.startsWith('all ') && line !== 'empty file'
+      return <Text color={partial ? 'yellow' : undefined} dimColor={!partial}>{line}</Text>
+    }
+    // The cards below draw the whole result, so the engine's block under them is dropped.
+    if (p.tool === 'Agent' && cfg.agentPanel && agentDone(p.output)) {
+      const { Box } = $.ui.resolve(e)
+      return <Box />
+    }
+    if (p.tool === 'TodoWrite' && cfg.todoPanel && todosOf(p.output)) {
+      const { Box } = $.ui.resolve(e)
+      return <Box />
+    }
+    return next(e)
+  })
+
+  // ---- Agent card and Todo progress --------------------------------------------------------
+
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const p = e.props
+    if ((p.tool !== 'Agent' && p.tool !== 'TodoWrite') || p.isRunning) return next(e)
+    const cfg = await read($, settings)
+    const width = Math.max(20, (e.viewport?.columns ?? 100) - 6)
+
+    if (p.tool === 'Agent' && cfg.agentPanel) {
+      const a = agentDone(p.output)
+      if (!a) return next(e)
+      const { Box, Text, Button, Markdown } = $.ui.resolve(e)
+      const input = (p.input ?? {}) as { description?: string; subagent_type?: string }
+      const isOpen = await read($, memberOf(reportOpen, e))
+      const report = a.content.map(c => c.text).join('\n').trim()
+      const s = a.toolStats
+      const badges = s
+        ? [
+            s.readCount > 0 && `read ${s.readCount}`,
+            s.searchCount > 0 && `search ${s.searchCount}`,
+            s.bashCount > 0 && `bash ${s.bashCount}`,
+            s.editFileCount > 0 && `${s.editFileCount} file${s.editFileCount === 1 ? '' : 's'} +${s.linesAdded} −${s.linesRemoved}`,
+            s.otherToolCount > 0 && `other ${s.otherToolCount}`,
+          ].filter((b): b is string => typeof b === 'string')
+        : []
+      const title = `Agent · ${a.agentType ?? input.subagent_type ?? 'general-purpose'}`
+      return (
+        <Box flexDirection="column" width="100%" borderStyle="round" borderColor="magenta" paddingX={1}>
+          <Box flexDirection="row" justifyContent="space-between">
+            <Button key={`q-agent-${e.requestId}`} plain onPress={() => update($, memberOf(reportOpen, e), v => !v)}>
+              <Text color="magenta">{isOpen ? '▾' : '▸'} </Text>
+              <Text bold>{title}</Text>
+              <Text> {clip(input.description ?? '', Math.max(10, width - title.length - 24))}</Text>
+            </Button>
+            <Text color="green"> done · {formatMs(a.totalDurationMs)}</Text>
+          </Box>
+          <Text dimColor>
+            {[a.resolvedModel, `${formatTokens(a.totalTokens)} tokens`, `${a.totalToolUseCount} tool calls`].filter(Boolean).join(' · ')}
+          </Text>
+          {badges.length > 0 && (
+            <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+              {badges.map((b, i) => (
+                <Text key={`ab${i}`} color="blue">
+                  [{b}]
+                </Text>
+              ))}
+            </Box>
+          )}
+          {a.worktreeBranch && <Text dimColor>worktree branch: {a.worktreeBranch}</Text>}
+          {isOpen && report !== '' && (
+            <Box flexDirection="column" marginTop={1}>
+              <Markdown text={report} />
+            </Box>
+          )}
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+            <Button key={`q-agent-toggle-${e.requestId}`} plain onPress={() => update($, memberOf(reportOpen, e), v => !v)}>
+              <Text dimColor>{isOpen ? '[ hide report ]' : '[ show report ]'}</Text>
+            </Button>
+            <Button key={`q-agent-copy-${e.requestId}`} plain onPress={press => copyText($, report, press.surface, 'Report')}>
+              <Text dimColor>[ copy report ]</Text>
+            </Button>
+            <Button key={`q-agent-prompt-${e.requestId}`} plain onPress={press => copyText($, a.prompt, press.surface, 'Prompt')}>
+              <Text dimColor>[ copy prompt ]</Text>
+            </Button>
+          </Box>
+        </Box>
+      )
+    }
+
+    if (p.tool === 'TodoWrite' && cfg.todoPanel) {
+      const todos = todosOf(p.output)
+      if (!todos) return next(e)
+      const { Box, Text } = $.ui.resolve(e)
+      const items = todoChanges(todos.oldTodos, todos.newTodos)
+      const done = items.filter(t => t.status === 'completed').length
+      const pct = items.length === 0 ? 0 : Math.round((done / items.length) * 100)
+      const bar = progressBar(done, items.length, Math.min(30, Math.max(10, width - 30)))
+      const glyph = { completed: '✓', in_progress: '▸', pending: '○' } as const
+      const tone = { completed: 'green', in_progress: 'yellow', pending: undefined } as const
+      return (
+        <Box flexDirection="column" width="100%" borderStyle="round" borderColor="blue" paddingX={1}>
+          <Box flexDirection="row" columnGap={1}>
+            <Text bold>Todos</Text>
+            <Text>
+              {done}/{items.length}
+            </Text>
+            <Text color="blue">{bar}</Text>
+            <Text>{pct}%</Text>
+          </Box>
+          {items.map((t, i) => (
+            <Box key={`t${i}`} flexDirection="row">
+              <Text color={tone[t.status]} dimColor={t.status === 'pending'}>
+                {glyph[t.status]} {clip(t.status === 'in_progress' ? t.activeForm : t.content, width - 18)}
+              </Text>
+              {t.change && <Text color="yellow">{`  ← ${t.change}`}</Text>}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
+    return next(e)
   })
 }

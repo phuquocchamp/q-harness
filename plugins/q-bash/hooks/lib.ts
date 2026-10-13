@@ -12,6 +12,10 @@ export const DEFAULT_SETTINGS: BashSettings = {
   commandBg: '#323334',
   outputBg: '#22282e',
   guardRules: [],
+  band: true,
+  agentPanel: true,
+  todoPanel: true,
+  readSummary: true,
 }
 
 /** Built-in destructive patterns. User rules from `/q-bash guard add` are appended. */
@@ -277,6 +281,8 @@ export const USAGE = [
   'Usage: /q-bash <subcommand>',
   '  expand-all | collapse-all     open or close every Bash panel',
   '  history                       open the command history pane',
+  '  files                         open the files pane (what Claude read and changed)',
+  '  features                      turn panels and the turn band on or off',
   '  stats                         summary of the recorded commands',
   '  config [<key> <value>]        show or change a setting',
   '  config reset                  restore the defaults',
@@ -286,7 +292,7 @@ export const USAGE = [
 ].join('\n')
 
 const NUMERIC = ['previewLines', 'maxExpandedLines', 'slowMs'] as const
-const BOOLEAN = ['guard', 'maskSecrets', 'unfoldGroups'] as const
+const BOOLEAN = ['guard', 'maskSecrets', 'unfoldGroups', 'band', 'agentPanel', 'todoPanel', 'readSummary'] as const
 const COLOR = ['commandBg', 'outputBg'] as const
 
 /** Parses `/q-bash config <key> <value>` into a settings patch, or an error message. */

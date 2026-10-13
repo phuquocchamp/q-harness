@@ -1,14 +1,25 @@
 # q-harness
 
-> A collection of Claude Code plugins by [**phuquocchamp**](https://github.com/phuquocchamp)
+![q-harness: a marketplace of plugin harnesses that equip Claude Code for real software engineering work](docs/images/q-harness.png)
 
-This repository is a plugin **marketplace** named `q-harness`. Each plugin lives in its own folder under `plugins/` and is installed, enabled and versioned on its own. A plugin can ship any mix of components: a mod (TypeScript running inside Claude Code), skills, agents, commands and MCP servers.
+> A marketplace of plugin harnesses that equip Claude Code for real software engineering work, by [**phuquocchamp**](https://github.com/phuquocchamp)
+
+This repository is a Claude Code plugin **marketplace** named `q-harness`. Each plugin lives in its own folder under `plugins/` and is installed, enabled and versioned on its own. A plugin can ship any mix of components:
+
+| Component | What it adds |
+|-----------|--------------|
+| Mods | TypeScript running inside Claude Code: panels, guards, bands above the prompt |
+| Subagents | Focused workers Claude can hand a task to |
+| Skills | Packaged know-how Claude loads when a task calls for it |
+| Commands | Slash-command workflows |
+| Hooks | Handlers on tool and prompt events |
+| MCP servers | External tools and data sources |
 
 ## Plugins
 
 | Plugin | Version | Components | Description |
 |--------|---------|------------|-------------|
-| [`q-bash`](plugins/q-bash/README.md) | 0.2.0 | mod | Draws each Bash call as a bordered panel with git badges, timing, test summaries and diffs; guards destructive commands and keeps a command history. |
+| [`q-bash`](plugins/q-bash/README.md) | 0.3.0 | mod | Draws each Bash call as a bordered panel with git badges, timing, test summaries and diffs; guards destructive commands, keeps a command history, tracks the files Claude reads and changes, and sums up each turn above the prompt. |
 | [`q-git`](plugins/q-git/README.md) | 0.1.0 | mod | Shows the repository status above the prompt and keeps a timeline of the session's commits, pushes and PRs. |
 
 ## Use case 1: Install from GitHub (users)
@@ -142,6 +153,7 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 │       └── README.md
 ├── docs/
 │   ├── guides/                   # How-to guides (see Docs below)
+│   ├── images/                   # README banner and other images
 │   └── playground/               # Scratch notes
 └── TODOS.md                      # Ideas for upcoming plugins
 ```
