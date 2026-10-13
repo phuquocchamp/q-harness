@@ -1,0 +1,7 @@
+{
+  "name": "q-files",
+  "version": "0.1.0",
+  "author": { "name": "phuquocchamp" },
+  "description": "Shows what each turn read and changed: one line above the prompt that stacks with other plugins' lines, and /q-files, a list of the files touched this session.",
+  "types": "./types/index.d.ts"
+}
