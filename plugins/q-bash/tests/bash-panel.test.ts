@@ -44,8 +44,11 @@ test('a Bash row is a bordered panel that previews the tail and expands on press
     await ui.press({ key: `q-bash-${id}` })
     expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeDefined()
 
-    await ui.press({ key: `q-bash-toggle-${id}` })
+    await ui.press({ key: `q-bash-${id}` })
     expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeUndefined()
+
+    // One button only: copy command.
+    expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))).toEqual([`q-bash-${id}`, `q-bash-copy-${id}`])
 
     await ui.unmount()
   }
@@ -108,23 +111,6 @@ test('background and timed-out commands are not shown as done', async $ => {
   await slow.unmount()
 })
 
-test('expand-all opens every panel, a panel can still close, and collapse-all resets choices', async $ => {
-  const ui = await $.ui.mount({ ...ROW('e1'), surface: 'terminal' })
-  await run($, 'expand-all')
-  expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeDefined()
-
-  // B1: under expand-all a panel's own collapse must take effect.
-  await ui.press({ key: 'q-bash-toggle-e1' })
-  expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeUndefined()
-
-  // Open it again by hand, then collapse-all must close it.
-  await ui.press({ key: 'q-bash-toggle-e1' })
-  expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeDefined()
-  await run($, 'collapse-all')
-  expect(await ui.find({ type: 'Text', text: /^line 1$/ })).toBeUndefined()
-  await ui.unmount()
-})
-
 test('/q-bash with an unknown argument answers with usage instead of collapsing', async $ => {
   const r = await run($, 'expnad-all')
   expect(r).toMatchObject({ exitCode: 2 })
@@ -151,13 +137,11 @@ test('git activity, changed files and a sandbox override draw as badges', async 
   })
   expect(await ui.find({ type: 'Text', text: /committed 9f3e21a on main/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /PR #42 created/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /1 files · \+2 −1/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '[+2 −1]' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /unsandboxed/ })).toBeDefined()
-  expect(await ui.find({ key: 'q-bash-pr-g1' })).toBeDefined()
-
+  // Text badges only: no PR-link button and no diff view.
+  expect(await ui.find({ key: 'q-bash-pr-g1' })).toBeUndefined()
   expect(await ui.find({ type: 'Code' })).toBeUndefined()
-  await ui.press({ key: 'q-bash-diff-g1' })
-  expect(await ui.find({ type: 'Code' })).toMatchObject({ props: { format: 'diff', path: 'a.ts' } })
   await ui.unmount()
 })
 
@@ -172,36 +156,6 @@ test('test-runner output gets a summary chip and exit-code notes are shown', asy
   })
   expect(await ui.find({ type: 'Text', text: /✓ 128 {2}✗ 2/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Some tests failed/ })).toBeDefined()
-  await ui.unmount()
-})
-
-test('token-like strings are masked until revealed', async $ => {
-  const token = 'ghp_' + 'a'.repeat(36)
-  const ui = await $.ui.mount({ ...ROW('m1', { output: { stdout: `token=${token}`, stderr: '', interrupted: false } }), surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: new RegExp(token) })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /reveal 1 secret/ })).toBeDefined()
-  await ui.press({ key: 'q-bash-reveal-m1' })
-  expect(await ui.find({ type: 'Text', text: new RegExp(token) })).toBeDefined()
-  await ui.unmount()
-})
-
-test('copied output keeps secrets masked until revealed', async ($, on) => {
-  const copied: string[] = []
-  on('ui.copy', (_$, e) => {
-    copied.push(e.text)
-    return { value: { isCopied: true } }
-  })
-  on('ui.toast', () => ({ value: undefined }))
-  const token = 'ghp_' + 'b'.repeat(36)
-  const ui = await $.ui.mount({ ...ROW('m2', { output: { stdout: `token=${token}`, stderr: '', interrupted: false } }), surface: 'terminal' })
-  await ui.press({ key: 'q-bash-copy-out-m2' })
-  await ui.press({ key: 'q-bash-copy-md-m2' })
-  expect(copied.length).toBe(2)
-  for (const text of copied) expect(text).not.toMatch(new RegExp(token))
-
-  await ui.press({ key: 'q-bash-reveal-m2' })
-  await ui.press({ key: 'q-bash-copy-out-m2' })
-  expect(copied.at(-1)).toMatch(new RegExp(token))
   await ui.unmount()
 })
 
@@ -233,22 +187,19 @@ test('the engine result block under a Bash row is blanked; images and other tool
   await read.unmount()
 })
 
-test('a tool group holding a Bash call is unfolded', async ($, on) => {
-  let seen: boolean | undefined
+test('only a group made entirely of Bash calls is unfolded', async ($, on) => {
+  const seen: (boolean | undefined)[] = []
   on('ui.render', { component: 'ToolGroup' }, (_$, e) => {
-    seen = e.props.isExpanded
+    seen.push(e.props.isExpanded)
     return { type: 'Text', props: {}, children: ['group'] }
   })
-  const ui = await $.ui.mount({
-    plugin: 'q-bash',
-    surface: 'terminal',
-    component: 'ToolGroup',
-    props: {
-      isActive: false,
-      isExpanded: false,
-      calls: [{ tool_use_id: 'g1', tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false }],
-    },
-  })
-  expect(seen).toBe(true)
-  await ui.unmount()
+  const call = (id: string, tool: string) => ({ tool_use_id: id, tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false })
+  const mount = (calls: ReturnType<typeof call>[]) =>
+    $.ui.mount({ plugin: 'q-bash', surface: 'terminal', component: 'ToolGroup', props: { isActive: false, isExpanded: false, calls } })
+
+  const bashOnly = await mount([call('g1', 'Bash'), call('g2', 'Bash')])
+  await bashOnly.unmount()
+  const mixed = await mount([call('g3', 'Bash'), call('g4', 'Read')])
+  await mixed.unmount()
+  expect(seen).toEqual([true, false])
 })

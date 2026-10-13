@@ -1,24 +1,30 @@
 // Pure helpers shared by the q-bash hooks. No `$` access here, so everything is easy to test.
 
-import type { GuardRule, HistoryEntry, BashSettings } from '../types'
+import type { BashSettings } from '../types'
 
 export const DEFAULT_SETTINGS: BashSettings = {
   previewLines: 4,
-  maxExpandedLines: 400,
-  slowMs: 10_000,
   guard: true,
-  maskSecrets: true,
   unfoldGroups: true,
-  commandBg: '#323334',
-  outputBg: '#22282e',
-  guardRules: [],
-  band: true,
-  agentPanel: true,
-  todoPanel: true,
-  readSummary: true,
 }
 
-/** Built-in destructive patterns. User rules from `/q-bash guard add` are appended. */
+/** Fixed limits; not settings, to keep the surface small. */
+export const MAX_EXPANDED_LINES = 400
+export const SLOW_MS = 10_000
+
+/** Takes only the current settings from a stored value, so keys left by older versions are ignored. */
+export const pickSettings = (saved: unknown): BashSettings => {
+  const s = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>
+  return {
+    previewLines: Number.isInteger(s.previewLines) && (s.previewLines as number) > 0 ? (s.previewLines as number) : DEFAULT_SETTINGS.previewLines,
+    guard: typeof s.guard === 'boolean' ? s.guard : DEFAULT_SETTINGS.guard,
+    unfoldGroups: typeof s.unfoldGroups === 'boolean' ? s.unfoldGroups : DEFAULT_SETTINGS.unfoldGroups,
+  }
+}
+
+export type GuardRule = { pattern: string; why: string }
+
+/** Destructive patterns the guard asks about. Extra patterns belong in Claude Code's `permissions.ask` rules. */
 export const BUILTIN_RULES: GuardRule[] = [
   { pattern: String.raw`\bgit\s+push\b[^|;&]*\s(--force(?![-\w])|-f\b)`, why: 'force-push rewrites remote history' },
   { pattern: String.raw`\bgit\s+reset\s+[^|;&]*--hard\b`, why: 'git reset --hard discards local changes' },
@@ -114,28 +120,6 @@ export const headTail = (all: Line[], max: number): { head: Line[]; tail: Line[]
   return { head: all.slice(0, half), tail: all.slice(all.length - (max - half)), gap: all.length - max }
 }
 
-// Token shapes worth hiding on a shared screen. Display-only: the model's copy is untouched.
-const SECRETS: RegExp[] = [
-  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\b(AKIA|ASIA)[A-Z0-9]{16}\b/g,
-  /\bsk-[A-Za-z0-9_-]{20,}\b/g,
-  /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g,
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
-  /\b(npm_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,})\b/g,
-]
-
-export const maskSecrets = (text: string): { text: string; count: number } => {
-  let count = 0
-  let out = text
-  for (const re of SECRETS)
-    out = out.replace(re, m => {
-      count += 1
-      return m.slice(0, 4) + '•'.repeat(8)
-    })
-  return { text: out, count }
-}
-
 export const formatMs = (ms: number) =>
   ms < 1000 ? `${Math.round(ms)}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
 
@@ -168,17 +152,6 @@ export const parseTestSummary = (text: string): TestSummary | undefined => {
   return undefined
 }
 
-/** Builds a unified diff text from the engine's per-file hunks, for a `Code format="diff"`. */
-export const toUnifiedDiff = (file: {
-  filePath: string
-  hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }[]
-}) =>
-  [
-    `--- a/${file.filePath}`,
-    `+++ b/${file.filePath}`,
-    ...file.hunks.flatMap(h => [`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@`, ...h.lines]),
-  ].join('\n')
-
 export const diffStats = (files: { hunks: { lines: string[] }[] }[]) => {
   let added = 0
   let removed = 0
@@ -191,20 +164,6 @@ export const diffStats = (files: { hunks: { lines: string[] }[] }[]) => {
   return { added, removed }
 }
 
-export const summarizeHistory = (list: HistoryEntry[]) => {
-  const done = list.filter(h => h.status !== 'running')
-  const failed = done.filter(h => h.status === 'failed' || h.status === 'denied').length
-  const total = done.reduce((s, h) => s + (h.ms ?? 0), 0)
-  const slowest = [...done].sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0)).slice(0, 5)
-  const counts = new Map<string, number>()
-  for (const h of done) {
-    const head = h.command.trim().split(/\s+/).slice(0, 2).join(' ')
-    counts.set(head, (counts.get(head) ?? 0) + 1)
-  }
-  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
-  return { count: done.length, failed, total, slowest, top }
-}
-
 // ---- Bash result record -------------------------------------------------------------
 
 export type BashInput = {
@@ -214,12 +173,7 @@ export type BashInput = {
   dangerouslyDisableSandbox?: boolean
 }
 
-export type DiffFile = {
-  filePath: string
-  hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }[]
-  created?: true
-  deleted?: true
-}
+export type DiffFile = { filePath: string; hunks: { lines: string[] }[] }
 
 /** The fields of the Bash result record the panel reads. */
 export type BashOutput = {
@@ -279,21 +233,14 @@ export const gitBadges = (out: BashOutput) => {
 
 export const USAGE = [
   'Usage: /q-bash <subcommand>',
-  '  expand-all | collapse-all     open or close every Bash panel',
-  '  history                       open the command history pane',
-  '  files                         open the files pane (what Claude read and changed)',
-  '  features                      turn panels and the turn band on or off',
-  '  stats                         summary of the recorded commands',
-  '  config [<key> <value>]        show or change a setting',
-  '  config reset                  restore the defaults',
-  '  guard on | off | list         destructive-command guard',
-  '  guard add <regex> [reason]    add a guard rule',
-  '  guard remove <n>              remove one of your rules by its number',
+  '  config                     show the settings',
+  '  config <key> <value>       change a setting (previewLines, guard, unfoldGroups)',
+  '  config reset               restore the defaults',
+  '  help                       this text',
 ].join('\n')
 
-const NUMERIC = ['previewLines', 'maxExpandedLines', 'slowMs'] as const
-const BOOLEAN = ['guard', 'maskSecrets', 'unfoldGroups', 'band', 'agentPanel', 'todoPanel', 'readSummary'] as const
-const COLOR = ['commandBg', 'outputBg'] as const
+const NUMERIC = ['previewLines'] as const
+const BOOLEAN = ['guard', 'unfoldGroups'] as const
 
 /** Parses `/q-bash config <key> <value>` into a settings patch, or an error message. */
 export const parseConfig = (key: string, value: string): Partial<BashSettings> | string => {
@@ -306,20 +253,8 @@ export const parseConfig = (key: string, value: string): Partial<BashSettings> |
     if (!['on', 'off', 'true', 'false'].includes(value)) return `${key} needs on or off.`
     return { [key]: value === 'on' || value === 'true' }
   }
-  if ((COLOR as readonly string[]).includes(key)) {
-    if (!/^(#[0-9a-fA-F]{6}|[a-zA-Z]+)$/.test(value)) return `${key} needs a #rrggbb color or a color name.`
-    return { [key]: value }
-  }
-  return `Unknown setting "${key}". BashSettings: ${[...NUMERIC, ...BOOLEAN, ...COLOR].join(', ')}.`
-}
-
-/** Splits `/q-bash guard add` arguments: a pattern, optionally quoted, then a free-text reason. */
-export const parseRuleArgs = (text: string): { pattern: string; why: string } => {
-  const quoted = /^\s*(['"])(.+?)\1\s*(.*)$/.exec(text)
-  if (quoted) return { pattern: quoted[2] ?? '', why: (quoted[3] ?? '').trim() }
-  const [pattern = '', ...why] = text.trim().split(/\s+/)
-  return { pattern, why: why.join(' ') }
+  return `Unknown setting "${key}". Settings: ${[...NUMERIC, ...BOOLEAN].join(', ')}.`
 }
 
 export const showSettings = (cfg: BashSettings) =>
-  [...NUMERIC, ...BOOLEAN, ...COLOR].map(k => `  ${k.padEnd(18)} ${String(cfg[k])}`).join('\n')
+  [...NUMERIC, ...BOOLEAN].map(k => `  ${k.padEnd(14)} ${typeof cfg[k] === 'boolean' ? (cfg[k] ? 'on' : 'off') : String(cfg[k])}`).join('\n')

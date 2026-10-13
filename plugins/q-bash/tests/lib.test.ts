@@ -6,11 +6,10 @@ import {
   compileRules,
   displayWidth,
   headTail,
-  maskSecrets,
   matchRule,
   parseConfig,
-  parseRuleArgs,
   parseTestSummary,
+  pickSettings,
   previewTail,
   stripAnsi,
 } from '../hooks/lib'
@@ -45,12 +44,6 @@ test('test summaries of common runners', () => {
   expect(parseTestSummary('hello world')).toBeUndefined()
 })
 
-test('secrets are masked', () => {
-  const r = maskSecrets(`AKIAABCDEFGHIJKLMNOP and sk-${'x'.repeat(30)}`)
-  expect(r.count).toBe(2)
-  expect(r.text).not.toMatch(/AKIAABCDEFGHIJKLMNOP/)
-})
-
 test('guard rules compile and skip invalid patterns', () => {
   const rules = compileRules([...BUILTIN_RULES, { pattern: '(', why: 'broken' }, { pattern: 'kubectl\\s+delete', why: 'k8s' }])
   expect(rules.length).toBe(BUILTIN_RULES.length + 1)
@@ -60,13 +53,15 @@ test('guard rules compile and skip invalid patterns', () => {
 test('config values are validated', () => {
   expect(parseConfig('previewLines', '8')).toEqual({ previewLines: 8 })
   expect(parseConfig('guard', 'off')).toEqual({ guard: false })
-  expect(parseConfig('commandBg', '#112233')).toEqual({ commandBg: '#112233' })
-  expect(typeof parseConfig('nope', '1')).toBe('string')
-  expect(typeof parseConfig('slowMs', '-1')).toBe('string')
+  expect(parseConfig('unfoldGroups', 'on')).toEqual({ unfoldGroups: true })
+  expect(typeof parseConfig('previewLines', '-1')).toBe('string')
+  // Settings removed in 0.4 are unknown now.
+  expect(typeof parseConfig('commandBg', '#112233')).toBe('string')
+  expect(typeof parseConfig('maskSecrets', 'on')).toBe('string')
 })
 
-test('guard rule arguments accept a quoted pattern', () => {
-  expect(parseRuleArgs(`'kubectl\\s+delete' deletes objects`)).toEqual({ pattern: 'kubectl\\s+delete', why: 'deletes objects' })
-  expect(parseRuleArgs('terraform\\s+destroy wipes infra')).toEqual({ pattern: 'terraform\\s+destroy', why: 'wipes infra' })
-  expect(parseRuleArgs('"rm -rf build"')).toEqual({ pattern: 'rm -rf build', why: '' })
+test('stored settings are read back with stale keys dropped and bad values defaulted', () => {
+  expect(pickSettings({ previewLines: 8, guard: false, band: true, guardRules: [] })).toEqual({ previewLines: 8, guard: false, unfoldGroups: true })
+  expect(pickSettings({ previewLines: -3, guard: 'yes' })).toEqual({ previewLines: 4, guard: true, unfoldGroups: true })
+  expect(pickSettings(undefined)).toEqual({ previewLines: 4, guard: true, unfoldGroups: true })
 })

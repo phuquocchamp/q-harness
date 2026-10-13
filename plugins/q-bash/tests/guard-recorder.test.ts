@@ -14,9 +14,17 @@ const fakeHost = (on: On) => {
     store.set(e.key, e.value)
     return { value: undefined }
   })
+  on('store.delete', (_$, e) => {
+    store.delete(e.key)
+    return { value: undefined }
+  })
   on('clock.now', () => ({ value: (now += 250) }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
   return store
 }
+
+const start = ($: Engine) => $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as Parameters<Engine['session']['start']>[0])
 
 test('the guard asks before destructive commands and leaves others alone', async ($, on) => {
   on('tool.check', () => ({ decision: 'allow' }))
@@ -44,12 +52,13 @@ test('the guard never loosens a deny', async ($, on) => {
   expect(await $.tool.check({ tool: 'Bash', input: { command: 'git reset --hard' } })).toMatchObject({ decision: 'deny', reason: 'rule' })
 })
 
-test('the recorder times a Bash call and keeps it in the history', async ($, on) => {
+test('the recorder times a Bash call and stores nothing', async ($, on) => {
   const store = fakeHost(on)
   on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }))
   await $.tool.call({ tool: 'Bash', command: 'echo ok', tool_use_id: 'rec1' })
 
-  expect(store.get('history')).toMatchObject([{ id: 'rec1', command: 'echo ok', status: 'done' }])
+  // No history: a Bash call leaves the store untouched.
+  expect([...store.keys()]).toEqual([])
 
   // The panel of that call shows the recorded duration.
   const ui = await $.ui.mount({
@@ -61,8 +70,6 @@ test('the recorder times a Bash call and keeps it in the history', async ($, on)
   })
   expect(await ui.find({ type: 'Text', text: /· \d+ms/ })).toBeDefined()
   await ui.unmount()
-
-  expect((await run($, 'stats')).text).toMatch(/1 commands · 0 failed/)
 })
 
 test('/q-bash config validates, applies and persists a setting', async ($, on) => {
@@ -74,22 +81,27 @@ test('/q-bash config validates, applies and persists a setting', async ($, on) =
   expect((await run($, 'config')).text).toMatch(/previewLines\s+8/)
 })
 
-test('/q-bash guard off disables the guard; user rules are matched', async ($, on) => {
+test('/q-bash config guard off disables the guard', async ($, on) => {
   fakeHost(on)
   on('tool.check', () => ({ decision: 'allow' }))
-  await run($, `guard add 'kubectl\\s+delete' deletes cluster objects`)
-  expect(await $.tool.check({ tool: 'Bash', input: { command: 'kubectl delete ns prod' } })).toMatchObject({ decision: 'ask' })
-
-  await run($, 'guard off')
+  expect(await $.tool.check({ tool: 'Bash', input: { command: 'git reset --hard' } })).toMatchObject({ decision: 'ask' })
+  await run($, 'config guard off')
   expect(await $.tool.check({ tool: 'Bash', input: { command: 'git reset --hard' } })).toMatchObject({ decision: 'allow' })
 })
 
-test('the history stores long commands truncated, so the store stays small', async ($, on) => {
+test('session start deletes the history older versions stored and keeps only current settings', async ($, on) => {
   const store = fakeHost(on)
-  on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
-  const huge = `cat <<'EOF'\n${'x'.repeat(50_000)}\nEOF`
-  await $.tool.call({ tool: 'Bash', command: huge, tool_use_id: 'big1' })
-  const [entry] = store.get('history') as { command: string; status: string }[]
-  expect(entry?.status).toBe('done')
-  expect(entry?.command.length).toBeLessThanOrEqual(501)
+  store.set('history', [{ id: 'old', command: 'curl -H "Authorization: Bearer secret"', status: 'done', at: 1 }])
+  store.set('settings', { previewLines: 6, guard: false, maskSecrets: true, guardRules: [{ pattern: 'x', why: 'y' }] })
+  await start($)
+  expect(store.has('history')).toBe(false)
+  expect((await run($, 'config')).text).toMatch(/previewLines\s+6[\s\S]*guard\s+off[\s\S]*unfoldGroups\s+on/)
+  expect((await run($, 'config')).text).not.toMatch(/maskSecrets|guardRules/)
+})
+
+test('/q-bash help and unknown subcommands', async ($, on) => {
+  fakeHost(on)
+  expect((await run($, 'help')).text).toMatch(/config <key> <value>/)
+  expect(await run($, 'history')).toMatchObject({ exitCode: 2 })
+  expect((await run($, 'config reset')).text).toMatch(/defaults/)
 })
