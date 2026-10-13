@@ -31,6 +31,7 @@ q-harness/
 ├── .claude-plugin/marketplace.json
 └── plugins/
     ├── q-git/                        # mod
+    ├── q-files/                      # mod
     ├── q-bash/                       # mod (+ optional skills/agents)
     │   ├── .claude-plugin/plugin.json
     │   ├── hooks/hooks.json · hooks/register.tsx

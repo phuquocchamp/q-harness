@@ -19,8 +19,9 @@ This repository is a Claude Code plugin **marketplace** named `q-harness`. Each 
 
 | Plugin | Version | Components | Description |
 |--------|---------|------------|-------------|
-| [`q-bash`](plugins/q-bash/README.md) | 0.3.0 | mod | Draws each Bash call as a bordered panel with git badges, timing, test summaries and diffs; guards destructive commands, keeps a command history, tracks the files Claude reads and changes, and sums up each turn above the prompt. |
-| [`q-git`](plugins/q-git/README.md) | 0.1.0 | mod | Shows the repository status above the prompt and keeps a timeline of the session's commits, pushes and PRs. |
+| [`q-bash`](plugins/q-bash/README.md) | 0.4.0 | mod | Draws each Bash call as a clear bordered panel (status, time, error tail, test and git badges) and asks before destructive commands. |
+| [`q-git`](plugins/q-git/README.md) | 0.1.1 | mod | Shows the repository status above the prompt and keeps a timeline of the session's commits, pushes and PRs. |
+| [`q-files`](plugins/q-files/README.md) | 0.1.0 | mod | Shows what each turn read and changed in one line above the prompt, and lists the session's files with +/− lines and how much of each was read. |
 
 ## Use case 1: Install from GitHub (users)
 
@@ -142,6 +143,7 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 ├── .claude/                      # Claude Code settings and rules for working on this repo
 ├── plugins/                      # One folder per plugin; only these folders are shipped
 │   ├── q-git/                    # Plugin with a mod (same layout as q-bash)
+│   ├── q-files/                  # Plugin with a mod (same layout as q-bash)
 │   └── q-bash/                   # Plugin with a mod
 │       ├── .claude-plugin/plugin.json
 │       ├── hooks/hooks.json      # { "modules": ["./register.tsx"] } makes it a mod
