@@ -89,31 +89,36 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // The band is shared: draw what the plugins beneath drew, then q-git's row under it.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const below = await next(e)
     const s = await read($, status)
-    if (e.props.hasSurvey || s === null || !(await read($, band))) return next(e)
+    if (e.props.hasSurvey || s === null || !(await read($, band))) return below
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const count = (await read($, timeline)).length
     return (
-      <Box flexDirection="row" columnGap={2}>
-        <Text wrap="truncate-end">
-          <Text color="blue">{s.detached ? '⎇ detached at' : '⎇'} {s.branch}</Text>
-          {s.upstream ? <Text dimColor> → {s.upstream}</Text> : <Text dimColor> (no upstream)</Text>}
-          {(s.ahead > 0 || s.behind > 0) && <Text color={s.behind > 0 ? 'yellow' : undefined}>  ↑{s.ahead} ↓{s.behind}</Text>}
-          {s.staged > 0 && <Text color="green">  ●{s.staged} staged</Text>}
-          {s.modified > 0 && <Text color="yellow">  ✚{s.modified} modified</Text>}
-          {s.untracked > 0 && <Text dimColor>  ?{s.untracked} untracked</Text>}
-          {s.conflicts > 0 && <Text color="red">  ✖{s.conflicts} conflicts</Text>}
-          {s.staged + s.modified + s.untracked + s.conflicts === 0 && <Text color="green">  ✓ clean</Text>}
-          {s.stash > 0 && <Text dimColor>  stash {s.stash}</Text>}
-        </Text>
-        <Button key="q-git-timeline" plain onPress={() => $.ui.open({ id: TIMELINE_PANE, title: 'Git timeline' })}>
-          <Text dimColor>[ timeline{count > 0 ? ` ${count}` : ''} ]</Text>
-        </Button>
-        <Button key="q-git-hide" plain onPress={() => update($, band, () => false)}>
-          <Text dimColor>[ hide ]</Text>
-        </Button>
+      <Box flexDirection="column">
+        {below}
+        <Box flexDirection="row" columnGap={2}>
+          <Text wrap="truncate-end">
+            <Text color="blue">{s.detached ? '⎇ detached at' : '⎇'} {s.branch}</Text>
+            {s.upstream ? <Text dimColor> → {s.upstream}</Text> : <Text dimColor> (no upstream)</Text>}
+            {(s.ahead > 0 || s.behind > 0) && <Text color={s.behind > 0 ? 'yellow' : undefined}>  ↑{s.ahead} ↓{s.behind}</Text>}
+            {s.staged > 0 && <Text color="green">  ●{s.staged} staged</Text>}
+            {s.modified > 0 && <Text color="yellow">  ✚{s.modified} modified</Text>}
+            {s.untracked > 0 && <Text dimColor>  ?{s.untracked} untracked</Text>}
+            {s.conflicts > 0 && <Text color="red">  ✖{s.conflicts} conflicts</Text>}
+            {s.staged + s.modified + s.untracked + s.conflicts === 0 && <Text color="green">  ✓ clean</Text>}
+            {s.stash > 0 && <Text dimColor>  stash {s.stash}</Text>}
+          </Text>
+          <Button key="q-git-timeline" plain onPress={() => $.ui.open({ id: TIMELINE_PANE, title: 'Git timeline' })}>
+            <Text dimColor>[ timeline{count > 0 ? ` ${count}` : ''} ]</Text>
+          </Button>
+          <Button key="q-git-hide" plain onPress={() => update($, band, () => false)}>
+            <Text dimColor>[ hide ]</Text>
+          </Button>
+        </Box>
       </Box>
     )
   })

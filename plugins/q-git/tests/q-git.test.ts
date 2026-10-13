@@ -104,6 +104,30 @@ test('the band shows the status and hides on press', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /●2 staged/ })).toBeDefined()
   await ui.press({ key: 'q-git-hide' })
   expect(await ui.find({ type: 'Text', text: 'engine band' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /feat\/git-badges/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+const BAND_PROPS = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 9 }, view: {} }
+
+test('the band stacks under what the plugins beneath drew', async ($, on) => {
+  fakeHost(on)
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['below'] }))
+  await run($, 'refresh')
+  const ui = await $.ui.mount({ plugin: 'q-git', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS } as Parameters<Engine['ui']['mount']>[0])
+  expect(await ui.find({ type: 'Text', text: 'below' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /feat\/git-badges/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('with the band off only what lies beneath is drawn', async ($, on) => {
+  fakeHost(on)
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['below'] }))
+  await run($, 'refresh')
+  await run($, 'band off')
+  const ui = await $.ui.mount({ plugin: 'q-git', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS } as Parameters<Engine['ui']['mount']>[0])
+  expect(await ui.find({ type: 'Text', text: 'below' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /feat\/git-badges/ })).toBeUndefined()
   await ui.unmount()
 })
 
