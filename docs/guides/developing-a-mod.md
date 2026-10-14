@@ -148,7 +148,7 @@ The test `$` has no `$.state`. Check state through what the mod draws, or throug
 - `atom(...)` references must be created in `register.tsx` too, so the validator can read their `plugin` and `key`.
 - Pure helpers (parsing, formatting, constants) can live in `hooks/lib.ts` (or `hooks/lib/*.ts`, as q-panel does) and be unit-tested directly from `tests/`.
 
-In `types/index.d.ts`, don't name a type the same as one in the `claude-code` module. Inside `declare module 'claude-code'` the module's own type wins, silently. For example, a contract field typed `Settings` resolves to Claude Code's `Readonly<Record<string, unknown>>`. q-panel uses `BashSettings` for this reason.
+In `types/index.d.ts`, don't name a type the same as one in the `claude-code` module. Inside `declare module 'claude-code'` the module's own type wins, silently. For example, a contract field typed `Settings` resolves to Claude Code's `Readonly<Record<string, unknown>>`. q-panel uses `PanelSettings` for this reason.
 
 ## 6. Debug
 

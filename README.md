@@ -149,7 +149,7 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 │   │   ├── tests/*.test.ts
 │   │   ├── tsconfig.json
 │   │   └── README.md
-│   └── q-advisor/ · q-engine/ · q-graph/   # Idea notes (TODOS.md), not plugins yet
+│   └── q-advisor/ · q-engine/ · q-graph/   # Not plugins yet: idea notes (TODOS.md); q-advisor also has a design README
 ├── docs/
 │   ├── guides/                   # How-to guides (see Docs below)
 │   ├── images/                   # README banner and other images

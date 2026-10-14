@@ -11,6 +11,7 @@ for f in \
   plugins/q-panel/hooks/lib/*.ts \
   plugins/q-panel/tests/bash-panel.test.ts \
   plugins/q-panel/tests/code-blocks.test.ts \
+  plugins/q-panel/tests/file-panel.test.ts \
   plugins/q-panel/types/index.d.ts
 do
   echo "===== $f"
