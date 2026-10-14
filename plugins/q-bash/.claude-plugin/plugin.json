@@ -1,7 +1,0 @@
-{
-  "name": "q-bash",
-  "version": "0.2.0",
-  "author": { "name": "phuquocchamp" },
-  "description": "Draws each Bash call as a bordered panel with git badges, timing, test summaries and diffs; guards destructive commands and keeps a command history.",
-  "types": "./types/index.d.ts"
-}

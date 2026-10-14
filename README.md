@@ -1,15 +1,25 @@
 # q-harness
 
-> A collection of Claude Code plugins by [**phuquocchamp**](https://github.com/phuquocchamp)
+![q-harness: a marketplace of plugin harnesses that equip Claude Code for real software engineering work](docs/images/q-harness.png)
 
-This repository is a plugin **marketplace** named `q-harness`. Each plugin lives in its own folder under `plugins/` and is installed, enabled and versioned on its own. A plugin can ship any mix of components: a mod (TypeScript running inside Claude Code), skills, agents, commands and MCP servers.
+> A marketplace of plugin harnesses that equip Claude Code for real software engineering work, by [**phuquocchamp**](https://github.com/phuquocchamp)
+
+This repository is a Claude Code plugin **marketplace** named `q-harness`. Each plugin lives in its own folder under `plugins/` and is installed, enabled and versioned on its own. A plugin can ship any mix of components:
+
+| Component | What it adds |
+|-----------|--------------|
+| Mods | TypeScript running inside Claude Code: panels, guards, bands above the prompt |
+| Subagents | Focused workers Claude can hand a task to |
+| Skills | Packaged know-how Claude loads when a task calls for it |
+| Commands | Slash-command workflows |
+| Hooks | Handlers on tool and prompt events |
+| MCP servers | External tools and data sources |
 
 ## Plugins
 
 | Plugin | Version | Components | Description |
 |--------|---------|------------|-------------|
-| [`q-bash`](plugins/q-bash/README.md) | 0.2.0 | mod | Draws each Bash call as a bordered panel with git badges, timing, test summaries and diffs; guards destructive commands and keeps a command history. |
-| [`q-git`](plugins/q-git/README.md) | 0.1.0 | mod | Shows the repository status above the prompt and keeps a timeline of the session's commits, pushes and PRs. |
+| [`q-panel`](plugins/q-panel/README.md) | 0.2.0 | mod | Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with a collapse toggle. Replaces `q-bash`, `q-git` and `q-files`. |
 
 ## Use case 1: Install from GitHub (users)
 
@@ -18,7 +28,7 @@ You only want to use the plugins. Nothing to clone.
 **One step**, at the prompt of a Claude Code terminal session:
 
 ```text
-/plugin install q-bash --marketplace phuquocchamp/q-harness
+/plugin install q-panel --marketplace phuquocchamp/q-harness
 ```
 
 Answer `y` to add the marketplace, then pick a scope (`user`, `project` or `local`).
@@ -27,7 +37,7 @@ Answer `y` to add the marketplace, then pick a scope (`user`, `project` or `loca
 
 ```bash
 claude plugin marketplace add phuquocchamp/q-harness   # GitHub shorthand; a git URL also works
-claude plugin install q-bash@q-harness                 # -s user|project|local, default user
+claude plugin install q-panel@q-harness                 # -s user|project|local, default user
 ```
 
 Then run `/reload-plugins` in an open session (or start a new one). Check the result with `claude plugin list` or `/plugin`.
@@ -38,9 +48,9 @@ Install more plugins from the same marketplace with `claude plugin install <plug
 
 ```bash
 claude plugin marketplace update q-harness   # fetch the latest marketplace from GitHub
-claude plugin update q-bash                  # then restart or /reload-plugins
-claude plugin disable q-bash                 # turn off without removing (enable to turn back on)
-claude plugin uninstall q-bash               # remove the plugin
+claude plugin update q-panel                  # then restart or /reload-plugins
+claude plugin disable q-panel                 # turn off without removing (enable to turn back on)
+claude plugin uninstall q-panel               # remove the plugin
 claude plugin marketplace remove q-harness   # remove the marketplace
 ```
 
@@ -59,7 +69,7 @@ claude plugin validate .                              # marketplace + every plug
 Requirements: Claude Code with plugin support (`claude plugin --help` should list `validate`, `test` and `tag`). Node is only needed for the optional type-check (`npx`).
 
 > If you already installed `q-harness` from GitHub (use case 1), remove it first so the GitHub copy and your working copy do not both load:
-> `claude plugin uninstall q-bash && claude plugin marketplace remove q-harness`
+> `claude plugin uninstall q-panel && claude plugin marketplace remove q-harness`
 
 ### 2. Load a plugin while you edit
 
@@ -68,34 +78,34 @@ Pick one of two ways. Both read the files from your working copy.
 **A. Load one plugin folder directly (fastest loop).** No install, nothing to clean up:
 
 ```bash
-claude --plugin-dir ./plugins/q-bash                                  # saving a file reloads the mod
-claude --plugin-dir ./plugins/q-bash --plugin-dir ./plugins/<other>   # repeat the flag for several
-claude --debug --plugin-dir ./plugins/q-bash                          # also logs skipped hooks / refused trees
+claude --plugin-dir ./plugins/q-panel                                  # saving a file reloads the mod
+claude --plugin-dir ./plugins/q-panel --plugin-dir ./plugins/<other>   # repeat the flag for several
+claude --debug --plugin-dir ./plugins/q-panel                          # also logs skipped hooks / refused trees
 ```
 
 **B. Add the clone as a local marketplace (tests the real install flow).** Use this to check what a user gets from use case 1:
 
 ```bash
 claude plugin marketplace add ./           # adds "q-harness" from this folder
-claude plugin install q-bash@q-harness     # or pick specific plugins: <plugin>@q-harness
+claude plugin install q-panel@q-harness     # or pick specific plugins: <plugin>@q-harness
 claude plugin list                         # "Read from:" points at your clone
 ```
 
-Because each marketplace entry's `source` is a relative path (`./plugins/q-bash`), Claude Code reads the plugin straight from your clone. After editing, run `/reload-plugins` in the session. No reinstall or version bump is needed.
+Because each marketplace entry's `source` is a relative path (`./plugins/q-panel`), Claude Code reads the plugin straight from your clone. After editing, run `/reload-plugins` in the session. No reinstall or version bump is needed.
 
 Clean up when you are done:
 
 ```bash
-claude plugin uninstall q-bash
+claude plugin uninstall q-panel
 claude plugin marketplace remove q-harness
 ```
 
 ### 3. Test
 
 ```bash
-claude plugin validate ./plugins/q-bash      # manifest, state contract, what it hooks and calls
-claude plugin test ./plugins/q-bash          # run tests/*.test.ts
-npx -p typescript tsc -p plugins/q-bash      # optional type-check
+claude plugin validate ./plugins/q-panel      # manifest, state contract, what it hooks and calls
+claude plugin test ./plugins/q-panel          # run tests/*.test.ts
+npx -p typescript tsc -p plugins/q-panel      # optional type-check
 ```
 
 Then try it by hand: start a session with way A or B, ask Claude to run a Bash command, and check the panel.
@@ -130,18 +140,19 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 │   └── marketplace.json          # The marketplace: lists every plugin and its folder
 ├── .claude/                      # Claude Code settings and rules for working on this repo
 ├── plugins/                      # One folder per plugin; only these folders are shipped
-│   ├── q-git/                    # Plugin with a mod (same layout as q-bash)
-│   └── q-bash/                   # Plugin with a mod
-│       ├── .claude-plugin/plugin.json
-│       ├── hooks/hooks.json      # { "modules": ["./register.tsx"] } makes it a mod
-│       ├── hooks/register.tsx    # every hook lives here
-│       ├── hooks/lib.ts          # pure helpers (no $), imported by register.tsx
-│       ├── types/index.d.ts
-│       ├── tests/*.test.ts
-│       ├── tsconfig.json
-│       └── README.md
+│   ├── q-panel/                  # Plugin with a mod
+│   │   ├── .claude-plugin/plugin.json
+│   │   ├── hooks/hooks.json      # { "modules": ["./register.tsx"] } makes it a mod
+│   │   ├── hooks/register.tsx    # every hook, and every helper that takes $
+│   │   ├── hooks/lib/*.ts        # pure helpers (no $), imported by register.tsx
+│   │   ├── types/index.d.ts
+│   │   ├── tests/*.test.ts
+│   │   ├── tsconfig.json
+│   │   └── README.md
+│   └── q-advisor/ · q-engine/ · q-graph/   # Not plugins yet: idea notes (TODOS.md); q-advisor also has a design README
 ├── docs/
 │   ├── guides/                   # How-to guides (see Docs below)
+│   ├── images/                   # README banner and other images
 │   └── playground/               # Scratch notes
 └── TODOS.md                      # Ideas for upcoming plugins
 ```
@@ -156,3 +167,4 @@ Files at the repository root (`README.md`, `docs/`, `TODOS.md`, `.claude/`) are 
 | [Developing a mod](docs/guides/developing-a-mod.md) | The files a mod needs, loading, type-checking, testing, debugging |
 | [Marketplace and release](docs/guides/marketplace.md) | Installing from the local folder or GitHub, publishing, versioning and tagging |
 | [Command cheat sheet](docs/guides/commands.md) | Every command, grouped: create, run, check, test, marketplace, install, release |
+| [Claude Code tools](docs/guides/claude-code-tools.md) | Built-in and MCP tools, skills, when to use each, rules of tool use, permissions |

@@ -79,7 +79,7 @@ claude --plugin-dir ./plugins/<name>
 
 - The session watches the folder. Saving a file reloads the module: `register` runs again and `session.start` fires again.
 - Values in `$.state` (per session) and `$.store` (across sessions) survive a reload. Variables in the module do not.
-- Load several mods with several flags: `claude --plugin-dir ./plugins/q-bash --plugin-dir ./plugins/<name>`.
+- Load several mods with several flags: `claude --plugin-dir ./plugins/q-panel --plugin-dir ./plugins/<name>`.
 - On the first load Claude Code writes `.claude-plugin/types/` inside the mod: the API types, the built-in tools, the connected MCP tools and a `tsconfig.json`. It is git-ignored and regenerated on every load. Do not edit it.
 
 `CLAUDE_CODE_PLUGIN_DIRS` does the same where you cannot pass a flag (desktop app, SDK). It is read from the process environment or from `~/.claude/settings.json`, not from a project's `.claude/settings.json`.
@@ -125,7 +125,7 @@ test('draws on every surface', async $ => {
 })
 ```
 
-See `plugins/q-bash/tests/bash-panel.test.ts` for a full example.
+See `plugins/q-panel/tests/bash-panel.test.ts` for a full example.
 
 Nothing beneath the plugins answers `$.store`, `$.clock`, `$.process` or `$.ui.open` in a test. A hook that calls them is skipped with `no implementation for store.set` (or similar). Answer them in the test with `on(...)`, returning `{ value }`:
 
@@ -137,7 +137,7 @@ on('clock.now', () => ({ value: 1_000 }))
 on('process.run', () => ({ value: { exitCode: 0, stdout: '…', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
 ```
 
-The test `$` has no `$.state`. Check state through what the mod draws, or through what it wrote to the fake store. `plugins/q-bash/tests/guard-recorder.test.ts` and `plugins/q-git/tests/q-git.test.ts` show both.
+The test `$` has no `$.state`. Check state through what the mod draws, or through what it wrote to the fake store. `plugins/q-panel/tests/code-blocks.test.ts` and `plugins/q-panel/tests/settings.test.ts` show both.
 
 ## Splitting a mod across files
 
@@ -146,9 +146,9 @@ The test `$` has no `$.state`. Check state through what the mod draws, or throug
 - Every `on(...)` call stays in `register.tsx`. Passing `on` to an imported `registerX(on)` is refused.
 - `$` may only be passed to functions declared in `register.tsx`. A helper in another file that takes `$` is refused (`$ is followed only into a function declared in this same file, never across an import`).
 - `atom(...)` references must be created in `register.tsx` too, so the validator can read their `plugin` and `key`.
-- Pure helpers (parsing, formatting, constants) can live in `hooks/lib.ts` and be unit-tested directly from `tests/`.
+- Pure helpers (parsing, formatting, constants) can live in `hooks/lib.ts` (or `hooks/lib/*.ts`, as q-panel does) and be unit-tested directly from `tests/`.
 
-In `types/index.d.ts`, don't name a type the same as one in the `claude-code` module. Inside `declare module 'claude-code'` the module's own type wins, silently. For example, a contract field typed `Settings` resolves to Claude Code's `Readonly<Record<string, unknown>>`. q-bash uses `BashSettings` for this reason.
+In `types/index.d.ts`, don't name a type the same as one in the `claude-code` module. Inside `declare module 'claude-code'` the module's own type wins, silently. For example, a contract field typed `Settings` resolves to Claude Code's `Readonly<Record<string, unknown>>`. q-panel uses `PanelSettings` for this reason.
 
 ## 6. Debug
 

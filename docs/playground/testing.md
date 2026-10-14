@@ -2,15 +2,17 @@
 ## Bash Command
 ```bash
 for f in \
-  .claude/settings.json \
   README.md \
   TODOS.md \
   .claude-plugin/marketplace.json \
-  plugins/q-bash/.claude-plugin/plugin.json \
-  plugins/q-bash/hooks/hooks.json \
-  plugins/q-bash/hooks/register.tsx \
-  plugins/q-bash/tests/bash-panel.test.ts \
-  plugins/q-bash/types/index.d.ts
+  plugins/q-panel/.claude-plugin/plugin.json \
+  plugins/q-panel/hooks/hooks.json \
+  plugins/q-panel/hooks/register.tsx \
+  plugins/q-panel/hooks/lib/*.ts \
+  plugins/q-panel/tests/bash-panel.test.ts \
+  plugins/q-panel/tests/code-blocks.test.ts \
+  plugins/q-panel/tests/file-panel.test.ts \
+  plugins/q-panel/types/index.d.ts
 do
   echo "===== $f"
   cat "$f"

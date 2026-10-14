@@ -18,8 +18,8 @@ Guides with more context:
 
 | Command | What it does |
 |---------|--------------|
-| `claude --plugin-dir ./plugins/q-bash` | Starts a session with the mod loaded. Saving a file reloads it. Repeat the flag to load several mods. |
-| `claude --debug --plugin-dir ./plugins/q-bash` | Same, and writes every skipped hook and refused tree to the debug log. |
+| `claude --plugin-dir ./plugins/q-panel` | Starts a session with the mod loaded. Saving a file reloads it. Repeat the flag to load several mods. |
+| `claude --debug --plugin-dir ./plugins/q-panel` | Same, and writes every skipped hook and refused tree to the debug log. |
 | `/reload-plugins` *(in a session)* | Re-reads installed plugins, including ones installed from a local folder marketplace. |
 | `/plugin` *(in a session)* | Shows installed plugins and how many mods are active; enable or disable them here. |
 
@@ -27,17 +27,17 @@ Guides with more context:
 
 | Command | What it does |
 |---------|--------------|
-| `claude plugin validate ./plugins/q-bash` | Checks one mod: manifest, state contract, and lists what it hooks and calls. |
+| `claude plugin validate ./plugins/q-panel` | Checks one mod: manifest, state contract, and lists what it hooks and calls. |
 | `claude plugin validate .` | Checks the marketplace: every entry resolves to a valid plugin. |
 | `claude plugin validate . --strict` | Treats warnings as errors (exit 1). Use in CI. |
 | `claude plugin validate . --json` | Prints the report as JSON. |
-| `npx -p typescript tsc -p plugins/q-bash` | Type-checks the mod against the types Claude Code generated in `.claude-plugin/types/`. |
+| `npx -p typescript tsc -p plugins/q-panel` | Type-checks the mod against the types Claude Code generated in `.claude-plugin/types/`. |
 
 ## Test
 
 | Command | What it does |
 |---------|--------------|
-| `claude plugin test ./plugins/q-bash` | Runs every `*.test.ts(x)` under the mod folder. Exits 1 when a test fails. |
+| `claude plugin test ./plugins/q-panel` | Runs every `*.test.ts(x)` under the mod folder. Exits 1 when a test fails. |
 | `for d in plugins/*/; do [ -d "$d/tests" ] && { claude plugin test "$d" \|\| exit 1; }; done` | Runs the tests of every plugin that has a `tests/` folder. |
 
 ## Marketplace
@@ -54,21 +54,21 @@ Guides with more context:
 
 | Command | What it does |
 |---------|--------------|
-| `/plugin install q-bash --marketplace phuquocchamp/q-harness` *(in a session)* | One-step install for users: adds the marketplace, then installs. |
-| `claude plugin install q-bash@q-harness` | Installs from a marketplace that is already added. `-s user\|project\|local` sets the scope. |
-| `claude plugin install q-bash --marketplace ./` | Adds the local marketplace and installs in one step. |
+| `/plugin install q-panel --marketplace phuquocchamp/q-harness` *(in a session)* | One-step install for users: adds the marketplace, then installs. |
+| `claude plugin install q-panel@q-harness` | Installs from a marketplace that is already added. `-s user\|project\|local` sets the scope. |
+| `claude plugin install q-panel --marketplace ./` | Adds the local marketplace and installs in one step. |
 | `claude plugin list` | Lists installed plugins and where each is read from. |
-| `claude plugin details q-bash` | Shows the plugin's components and projected token cost. |
-| `claude plugin disable q-bash` / `enable q-bash` | Turns the mod off or on without uninstalling it. |
-| `claude plugin update q-bash` | Updates to the latest version from its marketplace (restart to apply). |
-| `claude plugin uninstall q-bash` | Removes the mod. `--keep-data` keeps its saved data. |
+| `claude plugin details q-panel` | Shows the plugin's components and projected token cost. |
+| `claude plugin disable q-panel` / `enable q-panel` | Turns the mod off or on without uninstalling it. |
+| `claude plugin update q-panel` | Updates to the latest version from its marketplace (restart to apply). |
+| `claude plugin uninstall q-panel` | Removes the mod. `--keep-data` keeps its saved data. |
 
 ## Release
 
 | Command | What it does |
 |---------|--------------|
-| `claude plugin tag plugins/q-bash --dry-run` | Shows the tag it would create (`q-bash--v0.2.0`) after checking `plugin.json` and the marketplace entry agree. |
-| `claude plugin tag plugins/q-bash --push` | Creates the tag and pushes it to `origin`. |
+| `claude plugin tag plugins/q-panel --dry-run` | Shows the tag it would create (`q-panel--v0.2.0`) after checking `plugin.json` and the marketplace entry agree. |
+| `claude plugin tag plugins/q-panel --push` | Creates the tag and pushes it to `origin`. |
 
 ## Turn mods off
 

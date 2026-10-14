@@ -1,0 +1,3 @@
+# q-graph
+
+When claude code spawn multiple subagent, agent team i want to visualize it or if it it can i want to have an workflow digram which containt subagent, skills, rule, used ....
