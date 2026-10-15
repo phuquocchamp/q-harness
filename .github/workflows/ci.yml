@@ -28,3 +28,9 @@ jobs:
           done
       - name: Viewer tests (q-graph)
         run: node --test plugins/q-graph/viewer/*.test.mjs
+      - name: Shared UI copies are in sync
+        run: node scripts/sync-ui.mjs --check
+      - name: Script tests
+        run: node --test scripts/*.test.mjs
+      - name: Runner tests (q-pilot)
+        run: node --test plugins/q-pilot/runner/*.test.mjs
