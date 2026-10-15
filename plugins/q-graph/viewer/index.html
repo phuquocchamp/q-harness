@@ -299,7 +299,8 @@ details.fold.sec[open]>summary{margin-bottom:6px}
       const a = g.agents[id]
       const uses = a ? usesOf(a, now) : []
       const rows = uses.length
-      uses.forEach((use, i) => pos.set('use:' + id + ':' + use.key, { x: depth * COL + USE_X, y: y + ROW - 14 + i * USE_ROW }))
+      // Relative to the agent's card: a use node is a child of its card, so the two move together.
+      uses.forEach((use, i) => pos.set('use:' + id + ':' + use.key, { x: USE_X, y: ROW - 14 + i * USE_ROW }))
       for (const k of (kids.get(id) || []).filter(k => !seen.has(k))) place(k, depth + 1)
       cursor = Math.max(cursor, y + ROW + rows * USE_ROW + (rows ? 10 : 0))
     }
@@ -358,7 +359,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
       // Each agent's own uses hang under its card, one edge each: two agents on Bash are two nodes.
       for (const use of usesOf(a, now)) {
         const nid = 'use:' + id + ':' + use.key
-        nodes.push({ id: nid, type: 'use', position: moved.get(nid) || pos.get(nid), data: { u: use } })
+        nodes.push({ id: nid, type: 'use', parentNode: id, draggable: false, position: pos.get(nid), data: { u: use } })
         edges.push({ id: id + '>' + nid, source: id, sourceHandle: 'u', target: nid, type: 'flow', data: { active: use.hot, color: USE_VAR[use.kind], faint: true } })
       }
     }
@@ -759,7 +760,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
 
   const IDLE_MS = 60000, IDLE_PAD = 4000, BREAK_PX = 76, PAD_L = 14, PAD_R = 56, AXIS_H = 26
   const ROW_H = 16, LANE_TOP = 10, LANE_BOT = 6, LANE_MIN = 36, BLOCK_MIN = 3, MAX_W = 8e6, MAX_PPS = 2000, MIN_PPS = 1e-4
-  const VIEW_KEY = 'q-graph.view', GAP_KEY = 'q-graph.tl.compress', PIN_KEY = 'q-graph.pin'
+  const VIEW_KEY = 'q-graph.view', GAP_KEY = 'q-graph.tl.compress', PIN_KEY = 'q-graph.pin', WORK_KEY = 'q-graph.working'
   const loadPref = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v } catch (e) { return d } }
   const savePref = (k, v) => { try { localStorage.setItem(k, v) } catch (e) { /* private window: the choice resets */ } }
   const msOf = iso => { const t = typeof iso === 'string' ? Date.parse(iso) : NaN; return isNaN(t) ? null : t }
@@ -1186,6 +1187,11 @@ details.fold.sec[open]>summary{margin-bottom:6px}
     const [sideW, setSideW] = React.useState(loadW)
     const resize = (w, dragging) => { setSideW(w); if (!dragging) saveW(w) }
     const moved = React.useRef(new Map())
+    const [movedAny, setMovedAny] = React.useState(false)
+    const tidy = () => {
+      moved.current.clear(); setMovedAny(false)
+      if (snap) { const { nodes: fresh } = build(snap.graph, now, moved.current, keep); const at = new Map(fresh.map(n => [n.id, n.position])); setNodes(prev => prev.map(n => (at.has(n.id) ? { ...n, position: at.get(n.id) } : n))) }
+    }
     const rf = React.useRef(null), canvas = React.useRef(null), framed = React.useRef(false)
     const [ready, setReady] = React.useState(0)
     const [nodes, setNodes, onNodesChange] = RF.useNodesState([])
@@ -1216,7 +1222,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
           const was = old.get(n.id)
           if (!was) return { ...n, selected: n.id === shown }
           const position = moved.current.has(n.id) || was.dragging ? was.position : n.position
-          return { ...was, data: n.data, position, selected: n.id === shown }
+          return { ...was, data: n.data, position, parentNode: n.parentNode, selected: n.id === shown }
         })
       })
       setEdges(built.edges)
@@ -1237,7 +1243,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
         if (!inst || !el || framed.current) return
         framed.current = true
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity
-        for (const n of nodes) { x0 = Math.min(x0, n.position.x); y0 = Math.min(y0, n.position.y); x1 = Math.max(x1, n.position.x + (n.width || NODE_W[n.type] || 220)) }
+        for (const n of nodes) if (!n.parentNode) { x0 = Math.min(x0, n.position.x); y0 = Math.min(y0, n.position.y); x1 = Math.max(x1, n.position.x + (n.width || NODE_W[n.type] || 220)) }
         const zoom = Math.max(FRAME_MIN, Math.min(1, (el.clientWidth - 2 * FRAME_PAD) / (x1 - x0)))
         inst.setViewport({ x: FRAME_PAD - x0 * zoom, y: FRAME_PAD - y0 * zoom, zoom })
       })
@@ -1268,7 +1274,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
           nodes, edges, nodeTypes, edgeTypes, minZoom: 0.2, maxZoom: 2,
           onInit: inst => { rf.current = inst; setReady(n => n + 1) },
           onNodesChange: changes => {
-            for (const c of changes) if (c.type === 'position' && c.position) moved.current.set(c.id, c.position)
+            for (const c of changes) if (c.type === 'position' && c.position && !c.id.startsWith('use:')) { moved.current.set(c.id, c.position); if (!movedAny) setMovedAny(true) }
             // Selection belongs to `sel`; React Flow's own select changes would fight it.
             onNodesChange(changes.filter(c => c.type !== 'select' && c.type !== 'remove'))
           },
@@ -1279,7 +1285,9 @@ details.fold.sec[open]>summary{margin-bottom:6px}
           proOptions: { hideAttribution: true },
         },
           h(RF.Background, { gap: 22, size: 1.3, color: getComputedStyle(document.documentElement).getPropertyValue('--grid').trim() }),
-          h(RF.Controls, { showInteractive: false }),
+          h(RF.Controls, { showInteractive: false },
+            // Tidy: drop every manual drag so all cards go back to the tree layout.
+            h(RF.ControlButton, { title: 'Tidy layout: put moved cards back in the tree', 'aria-label': 'Tidy layout', disabled: !movedAny, onClick: tidy }, '⟲')),
           h(RF.MiniMap, { pannable: true, zoomable: true, nodeColor: n => (n.type === 'use' ? { tool: '#a86a0b', skill: '#6a4fc2', mcp: '#1f73ad', rule: '#4c7a24' }[n.data.u?.kind] || '#888' : { main: '#2f45b8', subagent: '#0d8a7e', teammate: '#b2337f' }[n.data.a?.kind] || '#888') }))),
       shown ? h(Sidebar, { snap, sel: shown, now, focus, onSelect: setSel, onClose: close, width: sideW, onResize: resize, pinned, togglePin }) : null))
   }
