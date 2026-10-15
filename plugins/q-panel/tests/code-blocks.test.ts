@@ -28,8 +28,12 @@ test('a fenced block is drawn framed and highlighted, prose stays markdown', asy
     expect(code?.props).toMatchObject({ source: 'const a = 1', language: 'ts' })
     expect(all(await ui.drawn(), 'Box').some(b => b.props?.borderStyle === 'round')).toBe(true)
     expect(await ui.find({ type: 'Text', text: /▾ ts/ })).toBeDefined()
-    // No copy or fold buttons: the header is the only one.
-    expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))).toEqual([`q-panel-code-m-${surface}-1`])
+    // Header toggle, then copy and collapse on the right.
+    expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))).toEqual([
+      `q-panel-code-m-${surface}-1`,
+      `q-panel-code-copy-m-${surface}-1`,
+      `q-panel-code-fold-m-${surface}-1`,
+    ])
     // The terminal gets the reply's bullet back; other surfaces draw none.
     expect(await ui.find({ type: 'Text', text: '⏺' })).toEqual(surface === 'terminal' ? expect.anything() : undefined)
     await ui.unmount()
@@ -57,6 +61,42 @@ test('a short block collapses and expands on press', async ($, on) => {
   await ui.unmount()
 })
 
+test('copy puts the block on the clipboard; the fold button collapses and expands', async ($, on) => {
+  fakeHost(on)
+  const copied: string[] = []
+  on('ui.copy', (_$, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  const ui = await $.ui.mount({ ...REPLY('cp', '```py\nprint(1)\nprint(2)\n```'), surface: 'terminal' })
+  await ui.press({ key: 'q-panel-code-copy-cp-0' })
+  expect(copied).toEqual(['print(1)\nprint(2)'])
+  expect(await ui.find({ type: 'Text', text: /\[ collapse \]/ })).toBeDefined()
+  await ui.press({ key: 'q-panel-code-fold-cp-0' })
+  expect(await sources(ui, 'Code')).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /\[ expand \]/ })).toBeDefined()
+  await ui.press({ key: 'q-panel-code-fold-cp-0' })
+  expect(await sources(ui, 'Code')).toEqual(['print(1)\nprint(2)'])
+  await ui.unmount()
+})
+
+test('a failing clipboard is reported instead of thrown', async ($, on) => {
+  fakeHost(on)
+  const toasts: string[] = []
+  on('ui.copy', () => {
+    throw new Error('no pbcopy')
+  })
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  const ui = await $.ui.mount({ ...REPLY('bad', '```py\nprint(1)\n```'), surface: 'terminal' })
+  await ui.press({ key: 'q-panel-code-copy-bad-0' })
+  expect(toasts).toHaveLength(1)
+  expect(toasts[0]).toMatch(/^Could not copy: /)
+  await ui.unmount()
+})
+
 test('a long block starts collapsed and shows all of it on press', async ($, on) => {
   fakeHost(on)
   const ui = await $.ui.mount({ ...REPLY('long', '```js\n' + LONG + '\n```'), surface: 'terminal' })
@@ -72,6 +112,11 @@ test('a block still streaming stays open; codeBlocks off leaves replies alone', 
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine'] }))
   const streaming = await $.ui.mount({ ...REPLY('s', '```py\nprint(1)'), surface: 'terminal' })
   expect(await sources(streaming, 'Code')).toEqual(['print(1)'])
+  // No copy button until the fence closes, so a partial snippet cannot be copied.
+  expect((await streaming.findAll({ type: 'Button' })).map(b => String(b.props.key))).toEqual([
+    'q-panel-code-s-0',
+    'q-panel-code-fold-s-0',
+  ])
   await streaming.unmount()
 
   await run($, 'config codeBlocks off')

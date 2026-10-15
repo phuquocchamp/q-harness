@@ -1,7 +1,8 @@
 {
   "name": "q-panel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": { "name": "phuquocchamp" },
-  "description": "Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with a collapse toggle.",
+  "license": "MIT",
+  "description": "Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with copy and collapse buttons.",
   "types": "./types/index.d.ts"
 }
