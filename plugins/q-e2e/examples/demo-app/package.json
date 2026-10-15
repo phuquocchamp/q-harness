@@ -1,0 +1,12 @@
+{
+  "name": "q-e2e-demo-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "playwright test --reporter=json,line"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "testDir": "tests",
+  "smokeTag": "@smoke",
+  "map": {
+    "src/checkout/**": ["tests/checkout*.spec.ts"],
+    "src/auth/**": ["tests/seed.spec.ts"],
+    "src/components/**": ["tests/**/*.spec.ts"]
+  },
+  "ignore": ["**/*.md", "docs/**", "**/*.test.ts", "**/*.stories.tsx"]
+}

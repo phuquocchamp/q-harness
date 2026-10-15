@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env*)",
+      "Read(./playwright/.auth/**)",
+      "Read(./**/*.har)",
+      "Read(./test-results/**/trace.zip)"
+    ]
+  }
+}

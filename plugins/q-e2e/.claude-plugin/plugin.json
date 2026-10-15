@@ -1,0 +1,58 @@
+{
+  "name": "q-e2e",
+  "version": "0.1.0",
+  "author": { "name": "phuquocchamp" },
+  "license": "MIT",
+  "description": "Turns \"tests pass\" into evidence: runs the Playwright specs a turn affected when Claude tries to stop, blocks on real app bugs, triages red specs with Jev (Haiku fallback) and heals drifted locators with a guarded Haiku subagent.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "jevApiKey": {
+      "type": "string",
+      "title": "TypeSafe Jev API key",
+      "description": "Optional. Used only in the Authorization header of the triage request to api.typesafe.ai. Empty: TYPESAFE_API_KEY from the environment, else Haiku triage.",
+      "sensitive": true,
+      "required": false
+    },
+    "mode": {
+      "type": "string",
+      "title": "Gate mode",
+      "description": "off: never run at stop. affected: run the specs this turn's edits affect. all: run the whole suite at stop.",
+      "options": ["off", "affected", "all"],
+      "default": "affected"
+    },
+    "maxStopSeconds": {
+      "type": "number",
+      "title": "Max seconds at stop",
+      "description": "Time budget of the stop gate: the Playwright run, triage and one flaky retry.",
+      "default": 60,
+      "min": 10,
+      "max": 600
+    },
+    "runner": {
+      "type": "string",
+      "title": "Runner",
+      "description": "Command that runs Playwright, split on spaces (npx, pnpm exec, bunx, yarn).",
+      "default": "npx"
+    },
+    "followUp": {
+      "type": "string",
+      "title": "Follow-up when red",
+      "description": "Used when the classic Stop hook cannot run (e.g. managed settings bypass it): auto submits the failures as a follow-up prompt (max 2 per prompt), suggest proposes it in the prompt box, off only notes it for the next prompt.",
+      "options": ["auto", "suggest", "off"],
+      "default": "auto"
+    },
+    "triage": {
+      "type": "string",
+      "title": "Triage",
+      "description": "shadow: Jev/Haiku labels are logged and shown but every red spec gates as an app bug and no healer starts. on: labels decide (drift → healer, env-auth → notify, app-bug → block).",
+      "options": ["shadow", "on"],
+      "default": "shadow"
+    },
+    "envWrapper": {
+      "type": "string",
+      "title": "Env wrapper",
+      "description": "Optional prefix that injects test-account secrets, split on spaces, e.g. \"op run --env-file=.env.e2e --\".",
+      "default": ""
+    }
+  }
+}
