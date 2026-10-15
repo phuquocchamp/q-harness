@@ -9,7 +9,7 @@
 // one module); pure helpers are in ./lib.
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, PluginOptions, Register, SessionMessage } from 'claude-code'
+import type { EngineInterface, PluginOptions, Register, SessionMessage, ThemeKey } from 'claude-code'
 
 import type { AdvAdvice, AdvFocus, AdvSettings, AdvVerdict } from '../types'
 import { ADVICE_KINDS } from './lib/contract'
@@ -47,7 +47,7 @@ const ADVICE_LOG = 200
 const HANDOFF_TTL_MS = 30 * 60_000
 /** Prompt origins that are the person's own prompt. */
 const USER_ORIGINS = new Set(['composer', 'sdk', 'bridge'])
-const WARN_HEX = '#ffc04d'
+const WARN_COLOR: ThemeKey = 'warning'
 
 const USAGE = [
   'Usage: /q-advisor [subcommand]',
@@ -667,7 +667,7 @@ export const register: Register = (on, options) => {
     const label = isCompactKind(advice.kind) ? 'Compact' : advice.command.replace(/^\//, '')
     return (
       <Box flexDirection="row" gap={2}>
-        <Text key="advice" wrap="truncate" color={WARN_HEX}>
+        <Text key="advice" wrap="truncate" color={WARN_COLOR}>
           {adviceLine(advice)}
         </Text>
         <Button key="accept" label={label} variant="primary" onPress={() => acceptAdvice($)} />

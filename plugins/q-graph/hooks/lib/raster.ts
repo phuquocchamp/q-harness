@@ -19,15 +19,15 @@ export const COLORS = {
   ok: 0x4cbf7f,
   warn: 0xc07a10,
   bad: 0xf0675a,
-  tool: 0xb0720c,
+  tool: 0x8b5628,
   ink: 0x15191f,
 } as const
 
-export const KIND_COLOR: Record<AgentKind, number> = { main: 0x7d8cff, subagent: 0x2fbfae, teammate: 0xe46db6 }
+export const KIND_COLOR: Record<AgentKind, number> = { main: 0x3969de, subagent: 0x1f966f, teammate: 0xa72f83 }
 /** One hue per kind of use under a card. */
-export const USE_COLOR: Record<UseKind, number> = { tool: COLORS.tool, skill: 0xa98bf0, mcp: 0x4aa3df, rule: 0x7fb35a }
+export const USE_COLOR: Record<UseKind, number> = { tool: COLORS.tool, skill: 0x9a55d1, mcp: 0x1080a6, rule: 0x3ea313 }
 /** The same hues, quieter: the border of a card that is not running. */
-const KIND_DIM: Record<AgentKind, number> = { main: 0x5b66a8, subagent: 0x2b7d74, teammate: 0x93507c }
+const KIND_DIM: Record<AgentKind, number> = { main: 0x5071bd, subagent: 0x408c7a, teammate: 0x924e87 }
 
 // Keyed by string so a status the union does not list yet (`lost`) still has a colour.
 const STATUS_COLOR: Record<string, number> = {

@@ -6,7 +6,7 @@
 // one module); pure helpers are in ./lib.
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, ThemeKey, Timer } from 'claude-code'
 
 import type { AgentNode, GraphSettings, NodeStatus, SessionGraph } from '../types'
 import {
@@ -60,9 +60,11 @@ const RUNTIMES = ['node', 'bun']
 /** The system's "open this URL" commands, tried in order: macOS, Linux, Windows. */
 const OPENERS = [['open'], ['xdg-open'], ['cmd', '/c', 'start', '""']]
 
-const KIND_HEX = { main: '#8ea0ff', subagent: '#4fd1c0', teammate: '#f07fc4' } as const
-const STATUS_HEX: Partial<Record<NodeStatus, string>> = { completed: '#6fd49a', failed: '#ff7b6b' }
-const WARN_HEX = '#ffc04d'
+// Kinds need hex (the theme has no kind colours): mid-luminance, readable on light and dark terminals.
+// Status uses the host theme's keys, so it follows the terminal theme.
+const KIND_HEX = { main: '#3969de', subagent: '#1f966f', teammate: '#a72f83' } as const
+const STATUS_COLOR: Partial<Record<NodeStatus, ThemeKey>> = { completed: 'success', failed: 'error' }
+const WARN_COLOR: ThemeKey = 'warning'
 const SPINNER = '◐◓◑◒'
 
 async function saveSettings($: EngineInterface, next: GraphSettings) {
@@ -617,7 +619,7 @@ export const register: Register = on => {
         {chips.map(c => (
           <Text key={`chip-${c.a.id}`} wrap="truncate">
             <Text color={KIND_HEX[c.a.kind]}>{c.label}</Text>{' '}
-            <Text color={needsYou(c.a) ? WARN_HEX : STATUS_HEX[c.a.status]} dimColor={!needsYou(c.a) && !STATUS_HEX[c.a.status]}>
+            <Text color={needsYou(c.a) ? WARN_COLOR : STATUS_COLOR[c.a.status]} dimColor={!needsYou(c.a) && !STATUS_COLOR[c.a.status]}>
               {c.status}
             </Text>
           </Text>
@@ -667,7 +669,7 @@ export const register: Register = on => {
           </Box>
           {layout.hidden > 0 && (
             <Box flexDirection="row" gap={2}>
-              <Text color={WARN_HEX}>+{layout.hidden} agents too deep or too many to draw here</Text>
+              <Text color={WARN_COLOR}>+{layout.hidden} agents too deep or too many to draw here</Text>
               <Button key="show-all" label="show all in browser" onPress={openWeb} />
             </Box>
           )}
