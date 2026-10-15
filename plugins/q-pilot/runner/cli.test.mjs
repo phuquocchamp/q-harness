@@ -314,3 +314,13 @@ test('the browser is headed by default, headless on Q_PILOT_HEADLESS=1, in CI or
   assert.equal(headless({}, 'linux'), true)
   assert.equal(headless({ DISPLAY: ':0' }, 'linux'), false)
 })
+
+test('--dashboard and --keep-trace are accepted flags; --keep-trace keeps the trace of a clean pass', () =>
+  withApp({}, async ({ root }) => {
+    const stub = stubJev(() => assert.fail('jev must not be called'))
+    try {
+      const f = flowOf(await run(root, '--dashboard', '--keep-trace'))
+      assert.equal(f.outcome, 'pass')
+      assert.ok(f.trace && existsSync(f.trace), 'the Playwright trace is kept')
+    } finally { stub.restore() }
+  }))

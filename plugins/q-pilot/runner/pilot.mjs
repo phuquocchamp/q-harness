@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ConfigError, flowIds, ID, loadConfig, loadConfigOptional, loadFlow, validateSpec, validateTask } from './flow.mjs'
 import { blankEntry, runExplore } from './explore.mjs'
 import { createJev } from './jev.mjs'
-import { openBrowser, resolvePlaywright, storageStateOf } from './driver.mjs'
+import { closeBrowser, openBrowser, resolvePlaywright, storageStateOf } from './driver.mjs'
 import { ensureServer, ServerError, stopAllServers } from './server.mjs'
 import { accept, newRun, readTrace, RUN_ID, saveRun, writeResult } from './trace.mjs'
 import { runFlow } from './run.mjs'
@@ -17,7 +17,7 @@ import { askViaCli, askViaMod, createAsker } from './ask.mjs'
 import { visionDefaults } from './record.mjs'
 import { spawn } from 'node:child_process'
 
-const FLAGS = { all: true, 'no-jev': true, inspect: true, 'inspect-pause': true, help: true, linger: true, 'ask-via-mod': true, box: true }
+const FLAGS = { all: true, 'no-jev': true, inspect: true, 'inspect-pause': true, help: true, linger: true, 'ask-via-mod': true, box: true, dashboard: true, 'keep-trace': true }
 /** With a dashboard open, the final state stays on screen this long before the browser closes. */
 const HOLD_MS = 3000
 
@@ -89,13 +89,13 @@ async function runCommand(command, opts, root, cfg, env, spec) {
   if (inspector) console.error(`[q-pilot] inspector ${inspector.url}`)
   let dashboard = null
   // Started once and shared; begun next to the server start so the two overlap.
-  const launch = () => (launching ||= Promise.resolve().then(() => openBrowser(playwright.pw, env, { headless: headless() })))
+  const launch = () => (launching ||= Promise.resolve().then(() => openBrowser(playwright.pw, env, { headless: headless(), dashboard: Boolean(opts.dashboard), title: ids.length === 1 ? `${command} ${ids[0]}` : command, root })))
   const cleanup = async () => {
     stopped = true
     stopAllServers()
     await dashboard?.close().catch(() => {})
     await inspector?.close().catch(() => {})
-    await launching?.then(b => b.browser.close()).catch(() => {})
+    await launching?.then(b => closeBrowser(b.browser)).catch(() => {})
   }
   const onSignal = sig => () => {
     signaled = sig
@@ -115,8 +115,8 @@ async function runCommand(command, opts, root, cfg, env, spec) {
     }
     const ctx = {
       root, cfg, jev, env, runDir, storageState, inspector,
-      // A dashboard that stays up for review keeps the run's Playwright trace whatever the outcome.
-      keepTrace: linger,
+      // A dashboard that stays up for review (or --keep-trace) keeps the run's Playwright trace whatever the outcome.
+      keepTrace: linger || Boolean(opts['keep-trace']),
       vision,
       get deadline() { return deadline },
       extend: ms => {

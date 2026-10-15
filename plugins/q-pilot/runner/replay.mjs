@@ -3,6 +3,7 @@ import { observe, collapse } from './snapshot.mjs'
 import { perform, toStep, describe, onLogin, canPressEnter, focusedNode } from './act.mjs'
 import { chooseAction, JevError } from './jev.mjs'
 import { shot } from './shot.mjs'
+import { traced } from './driver.mjs'
 import { redact, redactValue } from './redact.mjs'
 
 export const MAX_HEALS = 2
@@ -39,7 +40,7 @@ const blocked = (error, steps, diverged) => ({ end: 'blocked', error, steps, div
  * Replays `trace.steps` on `page`. Returns { end: 'done' | 'blocked' | 'env', error, steps, diverged }.
  * `steps` are the steps as run (healed ones replaced) with `by`; `diverged` lists old -> new for healed steps.
  */
-export async function replay(page, { flow, trace, fixtures, secrets = [], jev, loginPath, deadline, shotFile, guard, maxHeals = MAX_HEALS, minHealP = MIN_HEAL_P }) {
+export async function replay(page, { flow, trace, fixtures, secrets = [], jev, loginPath, deadline, shotFile, guard, tracer = null, maxHeals = MAX_HEALS, minHealP = MIN_HEAL_P }) {
   const steps = [], diverged = [], history = []
   let healed = 0
   for (const [i, step] of trace.steps.entries()) {
@@ -90,7 +91,8 @@ export async function replay(page, { flow, trace, fixtures, secrets = [], jev, l
         diverged.push({ step: n, was: missed, now: pick(toStep(snap, action, fixtureKey)), p: +p.toFixed(3) })
       }
       const ran = toStep(snap, action, fixtureKey)
-      await perform(page, action, fixtures[fixtureKey])
+      // The group title names role and name only: never a typed value.
+      await traced(tracer, `Step ${n} · ${redact(describe(ran), secrets)} · ${by === 'jev' ? `healed p ${p.toFixed(2)}` : 'replay'}`, () => perform(page, action, fixtures[fixtureKey]))
       steps.push({ ...ran, by, ...(by === 'jev' && { p: +p.toFixed(3) }) })
       history.push({ action: redact(describe(ran), secrets), kind: action.kind, fixture: ran.fixture })
       const off = guard?.check(page)

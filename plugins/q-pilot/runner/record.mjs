@@ -5,6 +5,7 @@ import { observe, elementIndex, pathOf } from './snapshot.mjs'
 import { perform, toStep, describe, onLogin, canPressEnter, trackNetwork } from './act.mjs'
 import { askBox, chooseAction, JevError } from './jev.mjs'
 import { redact } from './redact.mjs'
+import { traced } from './driver.mjs'
 
 const MAX_IDLE = 3 // CLICK, TYPE_TEXT, SELECT, PRESS_ENTER that changed nothing
 const MAX_IDLE_PASSIVE = 10 // WAIT and scroll have their own allowance: waiting for a slow page is legitimate
@@ -95,7 +96,7 @@ const escapable = snap => snap.actions.some(a => a.expanded === 'true' || a.role
  * never executed. `helper` (optional, task mode): asks Claude where Jev is stuck. `deadline` may be a number or a
  * function (it moves while Claude is asked). `by` is 'claude' when Claude ended the run with DONE.
  */
-export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath, deadline, guard, inspector = null, helper = null, checkDone = null, vision = visionDefaults() }) {
+export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath, deadline, guard, inspector = null, helper = null, checkDone = null, vision = visionDefaults(), tracer = null }) {
   const steps = [], history = []
   const until = typeof deadline === 'function' ? deadline : () => deadline
   // Every Jev decision as Jev saw it (redacted elements, both probability heads): written next to the run for debugging.
@@ -137,6 +138,8 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     keyFills = new Map()
     sigs = []
   }
+  /** Trace group title: step number, role and name of the target, p and source; never a typed value. */
+  const titleOf = (snap, action, fixture, p, by) => `Step ${steps.length + 1} · ${redact(describe(toStep(snap, action, fixture)), secrets)} · p ${p.toFixed(2)} · ${by}`
   const record = (snap, action, fixture, p, by, latencyMs = null) => {
     const ran = toStep(snap, action, fixture)
     steps.push({ ...ran, by, p: +p.toFixed(3) })
@@ -214,7 +217,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     if (!ok) return false
     const action = { kind: 'click_at', x, y }
     try {
-      await perform(page, action)
+      await traced(tracer, titleOf(snap, action, undefined, r.confidence * r.present, 'box'), () => perform(page, action))
     } catch (e) {
       console.error(`[q-pilot] box click failed: ${redact(e.message.split('\n')[0], secrets)}`)
       return false
@@ -245,7 +248,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     const value = act.op === 'fill' ? (act.fixture ? fixtures[act.fixture] : act.text) : undefined
     if (act.op === 'fill' && value === undefined) return { ok: false, op: act.op, index: act.index, error: `unknown fixture "${act.fixture}"` }
     try {
-      await perform(page, action, value)
+      await traced(tracer, titleOf(snap, action, act.fixture, 1, 'claude'), () => perform(page, action, value))
     } catch (e) {
       return { ok: false, op: act.op, index: act.index, error: redact(e.message.split('\n')[0], secrets) }
     }
@@ -340,6 +343,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
             continue
           }
           staleEnds = 0
+          await traced(tracer, `Step ${steps.length + 1} · ${d.end} · p ${d.p.toFixed(2)} · jev`, () => {})
           // The decision that ends (or would end) the run gets its own row in the inspector's trail.
           inspector?.acted({ step: steps.length + 1, action: d.end, p: d.p, latencyMs: d.detail?.latencyMs, by: 'jev', end: true })
           if (d.end === 'DONE') {
@@ -387,7 +391,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
         }
         let r
         try {
-          r = await perform(page, d.action, fixtures[d.fixture])
+          r = await traced(tracer, titleOf(snap, d.action, d.fixture, d.p, 'jev'), () => perform(page, d.action, fixtures[d.fixture]))
           if (await takeTab()) filled = null
           else if (d.action.kind === 'click' && fp !== null && fingerprint(await observe(page)) === fp) {
             await page.waitForTimeout(RETRY_CLICK_MS)

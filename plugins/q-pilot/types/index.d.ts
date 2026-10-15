@@ -87,7 +87,8 @@ declare module 'claude-code' {
       /** The last outcome of every flow that ran, by flow id. */
       lastByFlow: Record<string, PilotLast>
       /** What `/q-pilot config` set (only the changed keys); restored from `$.store` at session start. */
-      settings: Partial<import('../hooks/lib/settings').PilotSettings>
+      // Values of hooks/lib/settings.ts PilotSettings; the contract cannot import it.
+      settings: Record<string, string | number | boolean>
       /** The main loop's running turn, from `turn.start`; null before the first. */
       currentTurn: string | null
       /** Set by the classic.Stop hook when it ran for the main turn; the turn.complete fallback skips that turn. */

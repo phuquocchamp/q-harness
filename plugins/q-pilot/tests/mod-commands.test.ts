@@ -171,6 +171,7 @@ test('/q-pilot config shows, sets, checks and resets the settings; they survive 
   expect(shown).toMatch(/helper +haiku/)
   expect(shown).toMatch(/vision +gated/)
   expect(shown).toMatch(/box +off/)
+  expect(shown).toMatch(/dashboard +off/)
   expect((await run($, 'config helper Opus')).text).toBe('q-pilot helper opus.')
   expect((await run($, 'config box on')).text).toBe('q-pilot box on.')
   expect((await run($, 'config visionmodel jev-1.14.0')).text).toBe('q-pilot visionModel jev-1.14.0.')

@@ -91,8 +91,9 @@ export function resolvePlaywright(root, env = process.env, { roots = globalRoots
 /**
  * The browser for a command: attach to a running Chrome when Q_PILOT_CDP_URL is set (its default profile, so the
  * user's logins), else launch Chromium. Returns { browser, cdp }. `close()` on an attached browser only disconnects.
+ * `dashboard`: bind a launched browser so the Playwright Dashboard (`playwright-cli show`) lists it as `title`.
  */
-export async function openBrowser(pw, env, { headless }) {
+export async function openBrowser(pw, env, { headless, dashboard = false, title = 'run', root = process.cwd() }) {
   if (env.Q_PILOT_CDP_URL) {
     const attach = () => pw.chromium.connectOverCDP(env.Q_PILOT_CDP_URL, { timeout: 5000 })
     try {
@@ -110,7 +111,27 @@ export async function openBrowser(pw, env, { headless }) {
       throw new ConfigError(`cannot attach to Chrome at Q_PILOT_CDP_URL ${env.Q_PILOT_CDP_URL}: ${String(e.message).split('\n')[0]}`)
     }
   }
-  return { browser: await pw.chromium.launch({ headless }), cdp: false }
+  const browser = await pw.chromium.launch({ headless })
+  if (dashboard && typeof browser.bind === 'function') {
+    try { await browser.bind(`q-pilot · ${title}`, { workspaceDir: root }) } catch {}
+  }
+  return { browser, cdp: false }
+}
+
+/** Closes a launched browser; a Dashboard binding is released first. Never throws. */
+export async function closeBrowser(browser) {
+  try { if (typeof browser.unbind === 'function') await browser.unbind() } catch {}
+  await browser.close().catch(() => {})
+}
+
+/** Runs `fn` inside a named group of the session's Playwright trace (a no-op without one). Errors of `fn` pass through. */
+export async function traced(session, title, fn) {
+  await session?.group(title)
+  try {
+    return await fn()
+  } finally {
+    await session?.groupEnd()
+  }
 }
 
 /** config.storageState: a path inside the project root, or undefined. */
@@ -126,10 +147,12 @@ export function storageStateOf(root, cfg) {
 /**
  * One attempt's page. Launched: a fresh context (with storageState). Attached over CDP: a new tab in the user's
  * default context, so its cookies apply; only that tab is closed. `traceFile`: record a Playwright trace there
- * (null to skip). Never in an attached context: a trace covers every tab of the context, the user's own included.
- * Returns { page, pageErrors, close(keepTrace) } where close returns the trace path or null.
+ * (null to skip), named `title` in the trace viewer. Never in an attached context: a trace covers every tab of the
+ * context, the user's own included.
+ * Returns { page, pageErrors, group(title), groupEnd(), close(keepTrace) }: group/groupEnd name the steps in the trace
+ * (no-ops without tracing or a Playwright that has no groups, never throw); close returns the trace path or null.
  */
-export async function openSession({ browser, cdp }, { baseURL, storageState, traceFile = null, viewport = VIEWPORT }) {
+export async function openSession({ browser, cdp }, { baseURL, storageState, traceFile = null, viewport = VIEWPORT, title }) {
   let context, own
   if (cdp && browser.contexts().length) {
     context = browser.contexts()[0]
@@ -141,7 +164,7 @@ export async function openSession({ browser, cdp }, { baseURL, storageState, tra
   let tracing = false, page
   try {
     if (traceFile && own) {
-      tracing = await context.tracing.start({ screenshots: true, snapshots: true }).then(() => true, () => false)
+      tracing = await context.tracing.start({ screenshots: true, snapshots: true, ...(title && { title }) }).then(() => true, () => false)
     }
     page = await context.newPage()
   } catch (e) {
@@ -159,9 +182,16 @@ export async function openSession({ browser, cdp }, { baseURL, storageState, tra
     const goto = page.goto.bind(page)
     page.goto = (url, opts) => goto(new URL(url, baseURL).href, opts)
   }
+  const grouping = tracing && typeof context.tracing.group === 'function'
   return {
     page,
     pageErrors,
+    async group(name) {
+      try { if (grouping) await context.tracing.group(name) } catch {}
+    },
+    async groupEnd() {
+      try { if (grouping) await context.tracing.groupEnd() } catch {}
+    },
     async close(keepTrace) {
       let kept = null
       if (tracing) {

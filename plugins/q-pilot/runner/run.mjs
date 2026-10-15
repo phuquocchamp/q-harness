@@ -18,19 +18,19 @@ import { openSession } from './driver.mjs'
  * secret fixtures: a trace stores typed values unredacted.
  */
 async function attempt(ctx, flow, fixtures, trace, { allowJev, shotFile, secrets, traceFile }) {
-  const session = await openSession(ctx.browser, { baseURL: ctx.cfg.baseURL, storageState: ctx.storageState, traceFile: secrets.length ? null : traceFile })
+  const session = await openSession(ctx.browser, { baseURL: ctx.cfg.baseURL, storageState: ctx.storageState, traceFile: secrets.length ? null : traceFile, title: `q-pilot flow ${flow.id}` })
   let r = { end: 'error', steps: [], diverged: [] }
   try {
-    r = await drive(ctx, session.page, flow, fixtures, trace, { allowJev, shotFile, secrets })
+    r = await drive(ctx, session.page, flow, fixtures, trace, { allowJev, shotFile, secrets, tracer: session })
     return r
   } finally {
     const clean = r.end === 'done' && !r.verifyFails?.length && !r.diverged?.length
-    r.trace = await session.close(!clean)
+    r.trace = await session.close(!clean || ctx.keepTrace)
     r.pageErrors = redactDeep(session.pageErrors, secrets)
   }
 }
 
-async function drive(ctx, page, flow, fixtures, trace, { allowJev, shotFile, secrets }) {
+async function drive(ctx, page, flow, fixtures, trace, { allowJev, shotFile, secrets, tracer }) {
   trackNetwork(page)
   page.setDefaultTimeout(5000)
   const guard = makeGuard(ctx.cfg.baseURL, ctx.env)
@@ -47,8 +47,8 @@ async function drive(ctx, page, flow, fixtures, trace, { allowJev, shotFile, sec
   const jev = allowJev ? ctx.jev : { available: false }
   const deadline = Math.min(ctx.deadline, Date.now() + flow.budget.seconds * 1000)
   const r = trace
-    ? await replay(page, { flow, trace, fixtures, secrets, jev, loginPath: ctx.cfg.loginPath, deadline, shotFile, guard })
-    : await pilot(page, { flow, fixtures, secrets, jev, loginPath: ctx.cfg.loginPath, deadline, guard })
+    ? await replay(page, { flow, trace, fixtures, secrets, jev, loginPath: ctx.cfg.loginPath, deadline, shotFile, guard, tracer })
+    : await pilot(page, { flow, fixtures, secrets, jev, loginPath: ctx.cfg.loginPath, deadline, guard, tracer })
   if (r.end === 'done') {
     r.verifyFails = await runVerify(page, flow.verify, { secrets })
     if (!flow.verify.length) r.suggestedVerify = await suggestVerify(page, secrets)

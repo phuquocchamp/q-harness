@@ -350,7 +350,11 @@ Every check has exactly one target and at most one expectation. An unknown key m
 | `.q-pilot/traces/<id>.json` | The recorded steps: `op`, `role`, accessible `name`, `scope`, `url`. A `fill` stores the fixture's key, never its value. No timings or probabilities. | Yes. Only `/q-pilot record` and `/q-pilot accept` write it. |
 | `.q-pilot/runs/<runId>/` | `result.json`, screenshots, a proposed trace `<id>.trace.json` for a drift or a first recording, and a Playwright trace `<id>.trace.zip` for a run that was not a clean pass | No (git-ignored) |
 
-The Playwright trace holds the DOM before and after every action, network and console. Open it with `npx playwright show-trace <file>`, or from the shell with `npx playwright trace open <file>` then `trace actions` (Playwright 1.59+). Use the same Playwright the run used (see `playwright` in the result): `npx` in a folder without it downloads one. A flow or spec with `$env:` fixtures records no Playwright trace, because a trace stores typed values unredacted. Each result also lists `pageErrors`: uncaught page errors and console errors, at most 10.
+The Playwright trace holds the DOM before and after every action, network and console. Open it with `npx playwright show-trace <file>`, or from the shell with `npx playwright trace open <file>` then `trace actions` (Playwright 1.59+). Use the same Playwright the run used (see `playwright` in the result): `npx` in a folder without it downloads one.
+
+The trace is named `q-pilot task <name>` (or `test`, `flow <id>`), and each executed step is a group titled with its number, target and source, for example `Step 3 · click button "Search" · p 0.83 · jev`. Sources are `jev`, `claude` (a help answer), `box` (Box rescue), `replay`, and `healed p 0.71` for a step Jev re-picked; a DONE or BLOCKED decision is an empty group. Titles carry the role and accessible name only, never a typed value. Older Playwright versions without trace groups just record the plain actions. `--keep-trace` on the runner keeps the trace of a clean pass too (failures always keep it).
+
+**Playwright Dashboard.** With `/q-pilot config dashboard on`, the launched browser is bound as `q-pilot · <task>`. Run `playwright-cli show` in a terminal to list it, look over the run and take control. Combine it with `/q-pilot config inspector pause` so the run waits before step 1 while you open the Dashboard. A flow or spec with `$env:` fixtures records no Playwright trace, because a trace stores typed values unredacted. Each result also lists `pageErrors`: uncaught page errors and console errors, at most 10.
 
 During replay a step matches an observed element with the same `op`, `role` and exact accessible `name`. If several look alike, the `scope` (the name of the nearest form, dialog, landmark or list) must pick exactly one. Otherwise it is a miss. q-pilot never guesses between look-alikes.
 
@@ -430,6 +434,7 @@ Everything else is set with `/q-pilot config`, the same way q-graph does it. The
 | `visionModel` | `jev-1.13.0` | The Jev model that answers with the screenshot (`jev-1.14.0` is the preview) |
 | `box` | `off` | `on`: Box rescue with Jev 1.14 before a stuck run goes to the helper |
 | `inspector` | `on` | `on`: a live dashboard opens in your browser with every task. `pause`: the same, held before the first step. `off`: none. |
+| `dashboard` | `off` | `on`: runs show up in the Playwright Dashboard (`playwright-cli show`), where you can watch and take over the launched browser. Pause in the inspector (`inspector pause`) before you take control. Needs a Playwright with `browser.bind`; ignored otherwise and with `cdpUrl`. |
 | `mode` | `affected` | Stop gate: `off`, `affected` (flows the turn's edits affect), or `all`. `/q-pilot mode <value>` is a short form. |
 | `cdpUrl` | off | Run the browser under test in your own running Chrome, e.g. `http://127.0.0.1:9222`. See [Use your own Chrome](#use-your-own-chrome) |
 | `node` | `node` | Command that runs the runner, e.g. `/opt/homebrew/bin/node` |

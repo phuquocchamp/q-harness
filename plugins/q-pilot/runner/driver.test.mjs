@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join, win32 } from 'node:path'
 import { DEMO, freePort } from './testkit.mjs'
-import { globalRoots, openBrowser, openSession, resolvePlaywright, storageStateOf } from './driver.mjs'
+import { closeBrowser, globalRoots, openBrowser, openSession, resolvePlaywright, storageStateOf, traced } from './driver.mjs'
 
 const tmp = () => realpathSync(mkdtempSync(join(tmpdir(), 'q-pilot-driver-')))
 /** A fake package `name` inside the node_modules folder `dir`. */
@@ -137,4 +137,59 @@ test('attached over CDP: a tab in the default context, no Playwright trace, the 
     await host.close()
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+/** A fake context whose tracing records its calls; `groups: false` leaves out group/groupEnd like an older Playwright. */
+const fakeBrowser = ({ groups = true, throws = false } = {}) => {
+  const calls = []
+  const rec = name => async (...a) => { calls.push([name, ...a]); if (throws) throw new Error('boom') }
+  const tracing = { start: rec('start'), stop: rec('stop'), ...(groups && { group: rec('group'), groupEnd: rec('groupEnd') }) }
+  const page = { on() {}, close: async () => {} }
+  const context = { tracing, newPage: async () => page, close: async () => {} }
+  return { calls, b: { browser: { newContext: async () => context, contexts: () => [] }, cdp: false } }
+}
+
+test('a traced session names the trace and groups steps; groupEnd closes them', async () => {
+  const { calls, b } = fakeBrowser()
+  const s = await openSession(b, { baseURL: 'http://x', traceFile: '/t.zip', title: 'q-pilot task buy' })
+  assert.deepEqual(calls[0], ['start', { screenshots: true, snapshots: true, title: 'q-pilot task buy' }])
+  assert.equal(await traced(s, 'Step 1 · click button "Go" · replay', async () => 7), 7)
+  assert.deepEqual(calls.slice(1), [['group', 'Step 1 · click button "Go" · replay'], ['groupEnd']])
+})
+
+test('groups are no-ops without tracing or when Playwright has no tracing.group, and never throw', async () => {
+  const off = fakeBrowser()
+  const noTrace = await openSession(off.b, { baseURL: 'http://x', traceFile: null })
+  await noTrace.group('x')
+  await noTrace.groupEnd()
+  assert.deepEqual(off.calls, [])
+  const old = fakeBrowser({ groups: false })
+  const s = await openSession(old.b, { baseURL: 'http://x', traceFile: '/t.zip' })
+  await s.group('x')
+  await s.groupEnd()
+  assert.deepEqual(old.calls.map(c => c[0]), ['start'])
+  assert.equal(old.calls[0][1].title, undefined)
+  const bad = fakeBrowser({ throws: true })
+  const t = await openSession(bad.b, { baseURL: 'http://x', traceFile: '/t.zip' })
+  await t.group('x')
+  await t.groupEnd()
+  await assert.rejects(traced(t, 'y', async () => { throw new Error('step') }), /step/)
+  assert.equal(await traced(null, 'z', async () => 1), 1)
+})
+
+test('--dashboard binds a launched browser when bind exists, swallows failures, and unbinds on close', async () => {
+  const calls = []
+  const mk = bind => ({ chromium: { launch: async () => ({ ...(bind && { bind }), unbind: async () => calls.push('unbind'), close: async () => calls.push('close') }) } })
+  const root = tmp()
+  try {
+    await openBrowser(mk(async (...a) => calls.push(a)), {}, { headless: true, dashboard: true, title: 'task buy', root })
+    assert.deepEqual(calls, [['q-pilot · task buy', { workspaceDir: root }]])
+    calls.length = 0
+    await openBrowser(mk(async (...a) => calls.push(a)), {}, { headless: true, root })
+    assert.deepEqual(calls, [], 'off by default')
+    const failing = await openBrowser(mk(async () => { throw new Error('no') }), {}, { headless: true, dashboard: true, root })
+    await openBrowser(mk(undefined), {}, { headless: true, dashboard: true, root })
+    await closeBrowser(failing.browser)
+    assert.deepEqual(calls, ['unbind', 'close'])
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })

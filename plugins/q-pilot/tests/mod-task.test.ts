@@ -170,6 +170,22 @@ test('with the inspector the run stays up for review: pilot_run answers at the r
   expect(host.closed.n).toBe(1)
 })
 
+test('the dashboard setting reaches the runner as --dashboard, and is absent by default', async ($, on) => {
+  const host = fakeHost(on)
+  host.runner.task = [say([DONE], 'task')]
+  await start($)
+  await call($, TASK)
+  expect(calls(host.runs, 'task')[0]).not.toContain('--dashboard')
+})
+
+test('dashboard on adds --dashboard to the task args', { options: { dashboard: 'on', inspector: 'off' } }, async ($, on) => {
+  const host = fakeHost(on)
+  host.runner.task = [say([DONE], 'task')]
+  await start($)
+  await call($, TASK)
+  expect(calls(host.runs, 'task')[0]).toContain('--dashboard')
+})
+
 test('vision options reach the runner: always on 1.14 with Box rescue', { options: { vision: 'always', visionModel: 'jev-1.14.0', visionBox: 'on', inspector: 'off' } }, async ($, on) => {
   const host = fakeHost(on)
   host.runner.task = [say([DONE], 'task')]

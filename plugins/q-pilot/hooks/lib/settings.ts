@@ -10,6 +10,7 @@ export type PilotSettings = {
   visionModel: 'jev-1.13.0' | 'jev-1.14.0'
   box: boolean
   inspector: 'on' | 'pause' | 'off'
+  dashboard: boolean
   mode: 'off' | 'affected' | 'all'
   cdpUrl: string
   node: string
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS: PilotSettings = {
   visionModel: 'jev-1.13.0',
   box: false,
   inspector: 'on',
+  dashboard: false,
   mode: 'affected',
   cdpUrl: '',
   node: 'node',
@@ -49,6 +51,7 @@ export const SPECS: Record<Key, Spec> = {
   visionModel: { kind: 'enum', values: ['jev-1.13.0', 'jev-1.14.0'], help: 'Jev model that answers with the screenshot' },
   box: { kind: 'bool', help: 'Box rescue: Jev 1.14 finds the control on the screenshot when stuck' },
   inspector: { kind: 'enum', values: ['on', 'pause', 'off'], help: 'live inspector in your browser for each task (pause: hold before step 1)' },
+  dashboard: { kind: 'bool', help: 'show runs in the Playwright Dashboard (playwright-cli show); pause in the inspector before taking control' },
   mode: { kind: 'enum', values: ['off', 'affected', 'all'], help: 'stop gate: which saved flows run when a turn ends' },
   cdpUrl: { kind: 'string', help: 'run in your own Chrome (e.g. http://127.0.0.1:9222); off: launch Chromium' },
   node: { kind: 'string', help: 'Node 18+ command that runs the runner' },

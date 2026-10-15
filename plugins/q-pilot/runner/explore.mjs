@@ -46,7 +46,7 @@ export async function runExplore(ctx, spec) {
     if (!spec.checks.length) res.warnings.push('unverified')
     else if (spec.checks.every(isWeak)) res.warnings.push('weak-checks')
     const browser = await ctx.getBrowser()
-    const session = await openSession(browser, { baseURL: spec.baseURL, storageState: ctx.storageState, traceFile: secrets.length ? null : join(ctx.runDir, `${spec.name}.trace.zip`), ...(spec.task && { viewport: TASK_VIEWPORT }) })
+    const session = await openSession(browser, { baseURL: spec.baseURL, storageState: ctx.storageState, traceFile: secrets.length ? null : join(ctx.runDir, `${spec.name}.trace.zip`), title: `q-pilot ${spec.task ? 'task' : 'test'} ${spec.name}`, ...(spec.task && { viewport: TASK_VIEWPORT }) })
     let live = null
     try {
       const { page } = session
@@ -79,7 +79,7 @@ export async function runExplore(ctx, spec) {
         ? async p => (await runChecks(p, spec.checks, { secrets, timeoutMs: 1500 })).filter(c => !c.ok).map(({ check, actual }) => redactDeep({ check, actual }, secrets))
         : null
       // Vision settings are one object shared with the inspector, which may change them during the run.
-      const r = await pilot(page, { flow, fixtures, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector: ctx.inspector, helper, checkDone, ...(ctx.vision && { vision: ctx.vision }) })
+      const r = await pilot(page, { flow, fixtures, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector: ctx.inspector, helper, checkDone, tracer: session, ...(ctx.vision && { vision: ctx.vision }) })
       if (helper) res.helpRequests = helper.used()
       if (r.by === 'claude') res.doneBy = 'claude'
       if (r.decisions?.length) {

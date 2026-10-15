@@ -58,8 +58,8 @@ const DIFF_CAP = 200_000
 const MAX_FLOWS = 200
 const FLOW_ID = /^[a-z0-9-]+$/
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
-const RED_HEX = '#ff7b6b'
-const WARN_HEX = '#ffc04d'
+const RED_COLOR = 'error'
+const WARN_COLOR = 'warning'
 
 const USAGE = [
   'Usage: /q-pilot <subcommand>',
@@ -154,6 +154,8 @@ type Opts = {
   vision: 'off' | 'gated' | 'always'
   visionModel: 'jev-1.13.0' | 'jev-1.14.0'
   visionBox: boolean
+  /** Show runs in the Playwright Dashboard (`playwright-cli show`). */
+  dashboard: boolean
   /** The Claude model that answers Jev's help requests before the session does; session: the chat answers them. */
   helper: Helper
   node: string[]
@@ -178,6 +180,7 @@ const optsOf = (s: PilotSettings, jevKey: string): Opts => {
     vision: s.vision,
     visionModel: s.visionModel,
     visionBox: s.box,
+    dashboard: s.dashboard,
     helper: s.helper,
     node: node.length > 0 ? node : ['node'],
     jevKey,
@@ -403,7 +406,7 @@ async function pilotTest($: EngineInterface, o: Opts, input: Record<string, unkn
 
 async function runTest($: EngineInterface, o: Opts, spec: Record<string, unknown>, specJson: string): Promise<string> {
   const { budgetMs, timeoutMs } = stopBudget(o.maxTestMs)
-  const out = await runRunner($, o, ['explore', '--spec-json', specJson, '--budget-ms', String(budgetMs)], timeoutMs)
+  const out = await runRunner($, o, ['explore', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...(o.dashboard ? ['--dashboard'] : [])], timeoutMs)
   if ('unavailable' in out) return `pilot_test: ${out.unavailable}. Nothing was run; tell the user.`
   if ('error' in out) return `pilot_test: ${out.error}`
   const f = out.result.flows?.[0]
@@ -755,7 +758,7 @@ async function pilotRun($: EngineInterface, o: Opts, input: Record<string, unkno
     // session's client (--ask-via-mod); the helper model (else the session's) is shown as the one that answers help requests.
     const sessionModel = inspect.length ? (o.helper !== 'session' ? `${o.helper}, then this session` : await $.session.model().catch(() => '')) : ''
     const extra = inspect.length ? ['--linger', '--ask-via-mod', ...(sessionModel ? ['--session-model', sessionModel] : [])] : []
-    const vision = ['--vision', o.vision, '--vision-model', o.visionModel, ...(o.visionBox ? ['--box'] : [])]
+    const vision = ['--vision', o.vision, '--vision-model', o.visionModel, ...(o.visionBox ? ['--box'] : []), ...(o.dashboard ? ['--dashboard'] : [])]
     const started = await startTask($, o, ['task', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...inspect, '--help', ...extra, ...vision], name)
     if ('unavailable' in started) return `pilot_run: ${started.unavailable}. Nothing was run; tell the user.`
     live = started
@@ -1428,7 +1431,7 @@ export const register: Register = (on, options) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="row" gap={2}>
-        <Text key="red" wrap="truncate" color={driftOnly ? WARN_HEX : RED_HEX}>
+        <Text key="red" wrap="truncate" color={driftOnly ? WARN_COLOR : RED_COLOR}>
           {`pilot ${summarize(run.flows, o.trust)}${driftOnly ? ' · /q-pilot accept' : ''}`}
         </Text>
       </Box>
