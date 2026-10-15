@@ -137,6 +137,8 @@ on('clock.now', () => ({ value: 1_000 }))
 on('process.run', () => ({ value: { exitCode: 0, stdout: '…', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
 ```
 
+Work a hook starts detached (`void (async () => { … })()`) keeps running after the hook returns. The fake host answers across event-loop ticks, so before asserting, wait on macrotasks and not only on microtasks. `plugins/q-e2e/tests/host.ts` (`settle`) shows how.
+
 The test `$` has no `$.state`. Check state through what the mod draws, or through what it wrote to the fake store. `plugins/q-panel/tests/code-blocks.test.ts` and `plugins/q-panel/tests/settings.test.ts` show both.
 
 ## Splitting a mod across files
@@ -155,6 +157,8 @@ In `types/index.d.ts`, don't name a type the same as one in the `claude-code` mo
 - While a session hot-reloads the mod, a failed hook or module shows as one dim line in the transcript, naming the mod, the event and the reason.
 - `claude --debug --plugin-dir ./plugins/<name>` writes every skipped hook and every refused UI tree to the debug log (`ui.render (<Component>): a hook returned a tree that does not validate`).
 - `claude --safe-mode` starts a session with no mods, if a mod breaks the UI.
+- Managed settings can skip a user-installed mod's `classic.*` hooks. The debug log then says `<mod>: classic.Stop bypassed by <managed plugin> (tier user); beneath runs`. A mod that must act at turn end should have a fallback on an engine event such as `turn.complete`. `plugins/q-e2e` shows one.
+- In testing with `--plugin-dir`, Claude's edits under the loaded plugin's own folder were refused as a sensitive file. Try a demo project from a copy outside the plugin.
 
 ## Ship skills, agents and commands
 

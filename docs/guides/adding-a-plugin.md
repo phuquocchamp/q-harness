@@ -19,10 +19,10 @@ A **mod** is not a separate layer. It is a plugin whose `hooks/hooks.json` has a
 | Mod | `hooks/hooks.json` with `{ "modules": ["./register.tsx"] }` + `hooks/register.tsx` | Runs in every session while the plugin is enabled |
 | Skill | `skills/<skill>/SKILL.md` (+ `references/`, `scripts/`) | `<plugin>:<skill>` |
 | Agent | `agents/<agent>.md` | `<plugin>:<agent>` |
-| Command | `commands/<cmd>.md` | `/<plugin>:<cmd>` |
+| Command | `commands/<cmd>.md` (legacy; prefer a skill with `disable-model-invocation: true`, as in `q-engine`'s `feature` and `reproduce-bug`) | `/<plugin>:<cmd>` |
 | MCP server | `.mcp.json` | The server's tools |
 
-These folder names are discovered automatically. To use other locations, declare them in `plugin.json` with paths that start with `./` (for example `"agents": ["./agents", "./more-agents"]`).
+These folder names are discovered automatically. Other folders, such as `rules/` or a plugin-root `CLAUDE.md`, are **not** loaded; put that guidance in a skill. To use other locations, declare them in `plugin.json` with paths that start with `./` (for example `"agents": ["./agents", "./more-agents"]`).
 
 ## Layout with several plugins
 

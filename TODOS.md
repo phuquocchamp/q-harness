@@ -11,3 +11,5 @@
   - When to start new session
   - When to compact session
   - With the `big plan`, `loop`, `goal` suggest to 
+3. ~~Visualize subagents and agent teams~~: q-graph 0.1 (roster band, needs-you alert, graph pane); roadmap in [q-graph](plugins/q-graph/README.md)
+4. ~~E2E evidence gate~~: q-e2e 0.1 (Playwright gate with a turn.complete fallback, Jev triage in shadow mode, guarded healer, explorer); follow-ups in [q-e2e TODOS](plugins/q-e2e/TODOS.md)

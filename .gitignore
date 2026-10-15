@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+
+# q-e2e evidence store and Playwright output (traces may contain cookies and auth headers)
+.q-e2e/
+playwright/.auth/
+test-results/
+playwright-report/
+blob-report/
+
+# q-pilot run output (screenshots, proposals); traces under .q-pilot/traces/ are committed
+.q-pilot/runs/
+
+# Mods are TypeScript loaded by the host; compiled .js next to the sources is never shipped
+plugins/*/hooks/**/*.js
+plugins/*/tests/**/*.js
