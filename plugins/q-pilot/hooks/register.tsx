@@ -167,6 +167,8 @@ type Opts = {
   cdpUrl: string
   /** The setting comes from a scope above the default: the runner gets Q_PILOT_CDP_URL, an empty one included (off beats the shell's). */
   cdpUrlSet: boolean
+  /** The inspector's `--settings-sources`: where its settings came from (JSON; no secrets, only non-personal keys). */
+  sourcesJson: string
 }
 
 const words = (v: unknown) => String(v ?? '').split(/\s+/).filter(Boolean)
@@ -192,8 +194,14 @@ const optsOf = (r: Resolved, jevKey: string): Opts => {
     jevKey,
     cdpUrl: s.cdpUrl.trim(),
     cdpUrlSet: r.sources.cdpUrl.scope !== 'default',
+    sourcesJson: JSON.stringify(Object.fromEntries(SHOWN_KEYS.map(k => [k, { value: s[k], scope: r.sources[k].scope, overridden: r.sources[k].overridden }]))),
   }
 }
+
+/** The settings the inspector shows a source for: none of them is personal. */
+const SHOWN_KEYS = ['vision', 'visionModel', 'box', 'helper', 'inspector', 'dashboard'] as const
+/** What the inspector's "Save as default" may write. */
+const SAVE_KEYS = ['vision', 'visionModel', 'box']
 
 /** The runner's vision flags: its own default is off, so every run that drives Jev gets the resolved settings. */
 const visionArgs = (o: Opts) => ['--vision', o.vision, '--vision-model', o.visionModel, ...(o.visionBox ? ['--box'] : [])]
@@ -480,6 +488,8 @@ let live: LiveTask | null = null
 let lingering: LiveTask | null = null
 /** The runner's stderr line for each "Ask Claude" question from the inspector (runner/ask.mjs ASK_MARK). */
 const ASK_MARK = '[q-pilot] ask '
+/** The runner's stderr line for each "Save as default" from the inspector (runner/settings-save.mjs SAVE_MARK). */
+const SAVE_MARK = '[q-pilot] settings-save '
 /** The runner's stderr line with the live inspector's URL (runner/pilot.mjs). */
 const INSPECTOR_MARK = '[q-pilot] inspector '
 
@@ -561,6 +571,15 @@ async function startTask($: EngineInterface, o: Opts, args: string[], name: stri
             try {
               const a = JSON.parse(text.slice(ASK_MARK.length)) as { file: string }
               void answerAsk($, a.file)
+            } catch {
+              // Not ours.
+            }
+            continue
+          }
+          if (text.startsWith(SAVE_MARK)) {
+            try {
+              const a = JSON.parse(text.slice(SAVE_MARK.length)) as { file: string }
+              void applySaveRequest($, a.file)
             } catch {
               // Not ours.
             }
@@ -786,7 +805,7 @@ async function pilotRun($: EngineInterface, o: Opts, input: Record<string, unkno
     // session's client (--ask-via-mod); the helper model (else the session's) is shown as the one that answers help requests.
     const sessionModel = inspect.length ? (o.helper !== 'session' ? `${o.helper}, then this session` : await $.session.model().catch(() => '')) : ''
     const extra = inspect.length ? ['--linger', '--ask-via-mod', ...(sessionModel ? ['--session-model', sessionModel] : [])] : []
-    const vision = [...visionArgs(o), ...(o.dashboard ? ['--dashboard'] : [])]
+    const vision = [...visionArgs(o), ...(o.dashboard ? ['--dashboard'] : []), ...(inspect.length ? ['--settings-sources', o.sourcesJson] : [])]
     const started = await startTask($, o, ['task', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...inspect, '--help', ...extra, ...vision], name)
     if ('unavailable' in started) return `pilot_run: ${started.unavailable}. Nothing was run; tell the user.`
     live = started
@@ -1347,6 +1366,47 @@ async function commandConfig($: EngineInterface, rest: string[]): Promise<{ text
   if (key in next && src.scope !== scope) return { text: `${text}\nNote: ${src.scope} overrides it, so ${key} stays ${shownValue(r.values[key])} (${src.scope}).${extra}` }
   if (sub === 'unset') return { text: `q-pilot ${key} unset in ${scope}; now ${shownValue(r.values[key])} (${src.scope}).${extra}` }
   return { text: `${text}${extra}` }
+}
+
+/**
+ * The inspector's "Save as default": the runner wrote a request (keys and scope) and waits for the answer file.
+ * Only the vision settings, only the user, project and local scopes, and each value checked like `config set`.
+ */
+async function applySaveRequest($: EngineInterface, file: string): Promise<void> {
+  const answer = (out: { ok: true; message: string } | { error: string }) => $.fs.write(file.replace(/\.json$/, '.answer.json'), JSON.stringify(out)).catch(() => undefined)
+  const fail = async (error: string) => {
+    $.ui.toast(`q-pilot: settings not saved: ${error}`, { timeoutMs: 8000 })
+    await answer({ error })
+  }
+  if (!/settings-save-\d+\.json$/.test(file)) return
+  let req: { keys?: Record<string, unknown>; scope?: string }
+  try {
+    req = JSON.parse(await $.fs.read(file))
+  } catch (err) {
+    return await fail(`the request could not be read (${errMsg(err)})`)
+  }
+  const scope = req.scope as WriteScope
+  const keys = req.keys && typeof req.keys === 'object' && !Array.isArray(req.keys) ? Object.entries(req.keys) : []
+  if (!WRITE_SCOPES.includes(scope)) return await fail(`scope must be ${WRITE_SCOPES.join(', ')}`)
+  if (!keys.length) return await fail('no settings to save')
+  const loaded = await readWritable($, scope)
+  if ('error' in loaded) return await fail(loaded.error)
+  let layer: Layer = loaded.layer
+  for (const [key, value] of keys) {
+    if (!SAVE_KEYS.includes(key)) return await fail(`${key} cannot be saved from the inspector (${SAVE_KEYS.join(', ')})`)
+    const next = applyConfig(layer, key, typeof value === 'boolean' ? (value ? 'on' : 'off') : String(value), scope)
+    if (typeof next === 'string') return await fail(next)
+    layer = next
+  }
+  try {
+    await writeLayer($, scope, layer)
+  } catch (err) {
+    return await fail(`could not write the ${scope} settings: ${errMsg(err)}`)
+  }
+  const what = keys.map(([k, v]) => `${k}=${shownValue(v)}`).join(', ')
+  const message = `saved ${what} to ${scope}${scope === 'user' ? '' : ` (${SETTINGS_FILES[scope]})`}`
+  $.ui.toast(`q-pilot: ${message}`, { timeoutMs: 8000 })
+  await answer({ ok: true, message })
 }
 
 // ---- register --------------------------------------------------------------------------------------

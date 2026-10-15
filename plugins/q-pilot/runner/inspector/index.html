@@ -122,7 +122,13 @@
                 <label class="model-pick">Model <select id="vision-model"></select></label>
                 <label class="switch" title="When Jev is stuck, Jev 1.14 locates the control on the screenshot (Box) and the run clicks it, before asking Claude"><input type="checkbox" id="vision-box-toggle" /><span class="track" aria-hidden="true"></span>Box rescue</label>
               </div>
+              <p class="vision-src" id="vision-src" hidden></p>
               <p class="vision-note" id="vision-note"></p>
+              <div class="vision-save" id="vision-save" hidden>
+                <button type="button" id="save-default" title="Keep these three settings for later runs">Save as default</button>
+                <label class="model-pick">in <select id="save-scope" aria-label="Where to save"><option value="user">user</option><option value="project">project</option><option value="local">local</option></select></label>
+                <span class="save-note" id="save-note" aria-live="polite"></span>
+              </div>
             </div>
           </section>
 

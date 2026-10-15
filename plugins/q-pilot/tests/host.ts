@@ -10,7 +10,7 @@ export const ROOT = '/repo'
 /** A help request the fake runner raises (task mode) before it prints its result: written to `file`, then announced. */
 type Help = { n: number; reason: string; request: Record<string, unknown> }
 /** linger: after the result the fake runner stays up (an inspector open for review), raises `asks`, and ends only when the mod closes it. */
-type Proc = { exitCode?: number; stdout?: string; stderr?: string; throws?: string; helps?: Help[]; linger?: boolean; asks?: { model: string; prompt: string }[] }
+type Proc = { exitCode?: number; stdout?: string; stderr?: string; throws?: string; helps?: Help[]; linger?: boolean; asks?: { model: string; prompt: string }[]; saves?: { keys: unknown; scope: unknown }[] }
 
 /** One flow of a runner result; every field of the contract that the mod reads has a default. */
 export type FakeFlow = {
@@ -79,6 +79,8 @@ export const fakeHost = (on: On) => {
   /** Inspector questions the mod answered (the request to $.model.complete and the answer file it wrote). */
   const completes: { model: string; prompt: string; system?: string }[] = []
   const asked: unknown[] = []
+  /** The mod's answers to the inspector's "Save as default" requests. */
+  const saved: unknown[] = []
   /** How many lingering fake runners the mod closed. */
   const closed = { n: 0 }
   const suggested: string[] = []
@@ -88,6 +90,7 @@ export const fakeHost = (on: On) => {
     answers,
     completes,
     asked,
+    saved,
     closed,
     suggested,
     filled,
@@ -205,6 +208,14 @@ export const fakeHost = (on: On) => {
           const answer = file.replace(/\.json$/, '.answer.json')
           while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
           asked.push(JSON.parse(files.get(answer)!))
+        }
+        for (const [k, a] of (next.saves ?? []).entries()) {
+          const file = `${runDir}/settings-save-${k + 1}.json`
+          files.set(file, JSON.stringify({ n: k + 1, ...a }))
+          yield { stream: 'stderr' as const, text: `[q-pilot] settings-save ${JSON.stringify({ n: k + 1, file })}\n` }
+          const answer = file.replace(/\.json$/, '.answer.json')
+          while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
+          saved.push(JSON.parse(files.get(answer)!))
         }
         // Progress lines while it serves the inspector: a generator only takes return() at a yield.
         for (;;) {

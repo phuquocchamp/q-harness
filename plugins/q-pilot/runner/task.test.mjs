@@ -154,6 +154,29 @@ test('inspector streams no secret fixture value and no screenshot when the task 
     } finally { stub.restore() }
   }))
 
+test('--settings-sources reaches the inspector state (Save needs --ask-via-mod); without it there are none; bad JSON is a config error', () =>
+  withApp(async ({ root, port }) => {
+    const stub = stubJev(coffeePolicy())
+    try {
+      const sources = JSON.stringify({ vision: { value: 'gated', scope: 'project', overridden: [] } })
+      for (const [extra, canSave] of [[['--settings-sources', sources], false], [['--settings-sources', sources, '--ask-via-mod'], true], [[], undefined]]) {
+        const iport = await freePort()
+        const run = task(root, taskFor(port), '--inspect', '--inspect-port', String(iport), '--vision', 'gated', ...extra)
+        const d = await dashboard(iport)
+        assert.equal((await run).flows[0].outcome, 'done')
+        const last = d.states.at(-1)
+        if (canSave === undefined) assert.equal(last.settings, null)
+        else {
+          assert.equal(last.settings.sources.vision.scope, 'project')
+          assert.equal(last.settings.canSave, canSave)
+        }
+      }
+      const bad = await task(root, taskFor(port), '--inspect', '--settings-sources', '[1]')
+      assert.equal(bad.ok, false)
+      assert.match(bad.error, /--settings-sources must be a JSON object/)
+    } finally { stub.restore() }
+  }))
+
 test('inspector refuses other hosts, a missing token and a foreign origin', async () => {
   const port = await freePort()
   const ins = await createInspector({ port })

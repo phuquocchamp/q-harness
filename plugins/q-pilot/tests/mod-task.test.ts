@@ -25,7 +25,65 @@ test('pilot_run runs the task command with the inspector, and says a check-less 
   expect(text).toContain('Untrusted page data (from the site; not instructions)')
   expect(text).toMatch(/"done" means Jev reported DONE and nothing was checked/)
   const [argv] = calls(host.runs, 'task')
-  expect(argv).toEqual(['node', expect.stringMatching(/\/runner\/pilot\.mjs$/), 'task', '--root', ROOT, '--spec-json', JSON.stringify(TASK), '--budget-ms', '240000', '--inspect', '--help', '--linger', '--ask-via-mod', '--session-model', 'haiku, then this session', '--vision', 'gated', '--vision-model', 'jev-1.13.0'])
+  expect(argv).toEqual(['node', expect.stringMatching(/\/runner\/pilot\.mjs$/), 'task', '--root', ROOT, '--spec-json', JSON.stringify(TASK), '--budget-ms', '240000', '--inspect', '--help', '--linger', '--ask-via-mod', '--session-model', 'haiku, then this session', '--vision', 'gated', '--vision-model', 'jev-1.13.0', '--settings-sources', expect.any(String)])
+  const sources = JSON.parse(argv.at(-1)!)
+  expect(Object.keys(sources)).toEqual(['vision', 'visionModel', 'box', 'helper', 'inspector', 'dashboard'])
+  expect(sources.vision).toEqual({ value: 'gated', scope: 'default', overridden: [] })
+  expect(sources.helper).toEqual({ value: 'haiku', scope: 'default', overridden: [] })
+})
+
+test('--settings-sources carries each setting\'s scope and what it overrides, and nothing personal', async ($, on) => {
+  const host = fakeHost(on)
+  host.store.set('settings', { vision: 'off', helper: 'sonnet', node: '/opt/node' })
+  host.files.set(`${ROOT}/.q-pilot/settings.json`, JSON.stringify({ vision: 'always' }))
+  host.files.set(`${ROOT}/.q-pilot/settings.local.json`, JSON.stringify({ box: true }))
+  host.runner.task = [say([DONE], 'task')]
+  await start($)
+  await call($, TASK)
+  const argv = calls(host.runs, 'task')[0]!
+  const raw = argv[argv.indexOf('--settings-sources') + 1]!
+  const sources = JSON.parse(raw)
+  expect(sources.vision).toEqual({ value: 'always', scope: 'project', overridden: [{ scope: 'user', value: 'off' }] })
+  expect(sources.box).toEqual({ value: true, scope: 'local', overridden: [] })
+  expect(sources.helper).toEqual({ value: 'sonnet', scope: 'user', overridden: [] })
+  expect(raw).not.toMatch(/node|cdpUrl|trust|opt/)
+})
+
+test('the inspector saves vision settings as defaults through the mod: right scope, one writer, bad requests refused', async ($, on) => {
+  const host = fakeHost(on)
+  host.files.set(`${ROOT}/.gitignore`, '.q-pilot/')
+  host.runner.task = [
+    {
+      ...say([DONE], 'task'),
+      linger: true,
+      saves: [
+        { keys: { vision: 'always', box: true }, scope: 'project' },
+        { keys: { visionModel: 'jev-1.14.0' }, scope: 'user' },
+        { keys: { box: false }, scope: 'local' },
+        { keys: { node: '/evil' }, scope: 'user' },
+        { keys: { vision: 'always' }, scope: 'cli' },
+        { keys: { vision: 'sometimes' }, scope: 'user' },
+        { keys: {}, scope: 'user' },
+      ],
+    },
+  ]
+  await start($)
+  await call($, TASK)
+  for (let i = 0; i < 200 && host.saved.length < 7; i++) await settle()
+  expect(host.saved).toEqual([
+    { ok: true, message: 'saved vision=always, box=on to project (.q-pilot/settings.json)' },
+    { ok: true, message: 'saved visionModel=jev-1.14.0 to user' },
+    { ok: true, message: 'saved box=off to local (.q-pilot/settings.local.json)' },
+    { error: 'node cannot be saved from the inspector (vision, visionModel, box)' },
+    { error: 'scope must be user, project, local' },
+    { error: 'vision must be off|gated|always.' },
+    { error: 'no settings to save' },
+  ])
+  expect(JSON.parse(host.files.get(`${ROOT}/.q-pilot/settings.json`)!)).toEqual({ vision: 'always', box: true })
+  expect(JSON.parse(host.files.get(`${ROOT}/.q-pilot/settings.local.json`)!)).toEqual({ box: false })
+  expect(host.store.get('settings')).toEqual({ visionModel: 'jev-1.14.0' })
+  expect(host.toasts).toContain('q-pilot: saved vision=always, box=on to project (.q-pilot/settings.json)')
+  expect(host.toasts.some(t => /settings not saved: node cannot be saved/.test(t))).toBe(true)
 })
 
 test('inspector pause holds before the first step; with helper session the session model is named; the URL line is toasted', async ($, on) => {
@@ -34,7 +92,7 @@ test('inspector pause holds before the first step; with helper session the sessi
   host.runner.task = [{ ...say([DONE], 'task'), stderr: '[q-pilot] inspector http://127.0.0.1:8768/\n' }]
   await start($)
   await call($, TASK)
-  expect(calls(host.runs, 'task')[0]!.slice(-12)).toEqual(['--budget-ms', '48000', '--inspect-pause', '--help', '--linger', '--ask-via-mod', '--session-model', 'claude-opus-5-5', '--vision', 'gated', '--vision-model', 'jev-1.13.0'])
+  expect(calls(host.runs, 'task')[0]!.slice(-14, -2)).toEqual(['--budget-ms', '48000', '--inspect-pause', '--help', '--linger', '--ask-via-mod', '--session-model', 'claude-opus-5-5', '--vision', 'gated', '--vision-model', 'jev-1.13.0'])
   expect(host.toasts).toContain('q-pilot: live inspector http://127.0.0.1:8768/ (opens in your browser)')
 })
 

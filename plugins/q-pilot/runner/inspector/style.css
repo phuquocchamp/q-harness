@@ -281,6 +281,13 @@ a.btn:hover { background: var(--q-sunken); }
 .vision-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .vision-note { margin: 0; font-size: 11px; color: var(--q-muted); }
 .vision-note.bad { color: var(--q-bad); }
+.vision-src { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--q-muted); }
+.vision-src .src { display: inline-flex; align-items: center; gap: 4px; }
+.src-chip { font-size: 10px; padding: 0 6px; }
+.src-chip.changed { color: var(--q-held); background: var(--q-held-soft); border-color: var(--q-held-line); }
+.vision-save { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.save-note { font-size: 11px; color: var(--q-muted); }
+.save-note.bad { color: var(--q-bad); }
 .vision-chip { color: var(--q-held); background: var(--q-held-soft); border-color: var(--q-held-line); }
 .box.jev { border: 2px solid var(--q-held); background: color-mix(in srgb, var(--q-held) 8%, transparent); z-index: 3; }
 .box.jev span { background: var(--q-held); color: var(--q-accent-fg); }

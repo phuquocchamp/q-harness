@@ -84,26 +84,23 @@ $('history').addEventListener('click', e => {
 })
 
 // ---- Ask Claude ----
-const QKEY = 'q-pilot.ask.model'
+// The Ask model starts at the `helper` setting (the mod passes it with its source); it is not remembered per browser,
+// so a changed setting shows here at once.
 function askSetup() {
   const a = state.ask
   $('ask-box').hidden = !a
   if (!a) return
   const sel = $('ask-model')
   if (!sel.options.length) {
-    let saved = null
-    try { saved = localStorage.getItem(QKEY) } catch {}
+    const helper = state.settings?.sources.helper?.value
     sel.innerHTML = a.models.map(m => `<option value="${esc(m.alias)}">${esc(m.label)} · ${esc(m.note)}</option>`).join('')
-    sel.value = a.models.some(m => m.alias === saved) ? saved : a.default
+    sel.value = a.models.some(m => m.alias === helper) ? helper : a.default
   }
   const helper = state.helper?.model
   const id = a.models.find(m => m.alias === sel.value)?.id ?? sel.value
-  $('ask-meta').innerHTML = `Answers here: <b>${esc(id)}</b>${a.via === 'cli' ? ' via the claude CLI (reads the screenshot)' : ' via your Claude Code session (page text, no screenshot)'}<br>Jev's help requests: <b>${helper ? esc(helper) : 'the Claude Code session'}</b>`
+  $('ask-meta').innerHTML = `Answers here: <b>${esc(id)}</b>${a.via === 'cli' ? ' via the claude CLI (reads the screenshot)' : ' via your Claude Code session (page text, no screenshot)'}<br>Jev's help requests: <b>${helper ? esc(helper) : 'the Claude Code session'}</b>${srcChip('', 'helper')}`
 }
-$('ask-model').addEventListener('change', () => {
-  try { localStorage.setItem(QKEY, $('ask-model').value) } catch {}
-  askSetup()
-})
+$('ask-model').addEventListener('change', askSetup)
 async function ask(question) {
   if (!question.trim()) return
   $('ask-send').disabled = true
@@ -163,6 +160,41 @@ $('vision-mode').addEventListener('click', e => {
 })
 $('vision-model').addEventListener('change', () => setVision({ model: $('vision-model').value }))
 $('vision-box-toggle').addEventListener('change', () => setVision({ box: $('vision-box-toggle').checked }))
+// ---- Where each setting came from, and Save as default (the mod writes the file; the runner never does) ----
+const SRC_LABEL = { cli: 'cli', env: 'env', local: 'local', project: 'project', user: 'user', default: 'default' }
+const srcChip = (label, key) => {
+  const s = state.settings
+  const src = s?.sources[key]
+  if (!src) return ''
+  const changed = s.changed.includes(key)
+  const over = src.overridden?.length ? ` · overrides ${src.overridden.map(o => `${o.scope}=${o.value}`).join(', ')}` : ''
+  return `<span class="src">${esc(label)} <span class="chip src-chip ${changed ? 'changed' : esc(src.scope)}" title="${esc(changed ? `Changed here for this run; the setting is ${src.value} (${src.scope})` : `From the ${src.scope} scope${over}`)}">${changed ? 'changed for this run' : esc(SRC_LABEL[src.scope] ?? src.scope)}</span></span>`
+}
+async function saveDefault() {
+  const v = state.vision
+  $('save-default').disabled = true
+  try {
+    const r = await fetch('/api/settings/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pilot-token': token }, body: JSON.stringify({ scope: $('save-scope').value, keys: { vision: v.mode, visionModel: v.model, box: v.box } }) })
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`)
+  } catch (e) {
+    $('toast').textContent = `Save failed: ${e.message}`
+    $('toast').hidden = false
+    $('save-default').disabled = false
+  }
+}
+$('save-default').addEventListener('click', saveDefault)
+function renderSettings() {
+  const s = state.settings
+  const src = $('vision-src')
+  src.hidden = !s
+  $('vision-save').hidden = !s?.canSave
+  if (!s) return
+  src.innerHTML = [srcChip('Mode', 'vision'), srcChip('Model', 'visionModel'), srcChip('Box', 'box')].join('')
+  const save = s.save
+  $('save-default').disabled = save?.status === 'pending' || Boolean(state.vision?.blocked)
+  $('save-note').textContent = !save ? '' : save.status === 'pending' ? `Saving to ${save.scope}…` : save.status === 'saved' ? `Saved: ${save.message ?? `to ${save.scope}`}` : `Not saved: ${save.message}`
+  $('save-note').classList.toggle('bad', save?.status === 'error')
+}
 function renderVision() {
   const v = state.vision
   $('vision-box').hidden = !v
@@ -184,6 +216,7 @@ function renderVision() {
   const note = $('vision-note')
   note.textContent = v.blocked ?? (ended ? 'The run has ended.' : `${VISION_TEXT[v.mode]}${v.box ? ' Box rescue: when Jev is stuck, Jev 1.14 locates the control on the screenshot and the run clicks it, before asking Claude.' : ''} Screenshots are sent to TypeSafe.`)
   note.classList.toggle('bad', Boolean(v.blocked))
+  renderSettings()
 }
 
 // ---- Title and tab icon follow the run ----

@@ -15,7 +15,7 @@ Done in 0.7.0: Jev vision (preview): gated or every-step screenshots, the vision
 
 What is still left out.
 
-- **Settings sources in the inspector.** The inspector shows the vision settings but not which scope they came from, and nothing in the mod fills the `cli` scope yet (the resolver supports it). Env covers only `Q_PILOT_CDP_URL`. The stop gate's replay and `record` pass no vision flags (replay uses no model; a healed step runs with the runner's own default, vision off).
+- **Settings scopes still thin.** Nothing in the mod fills the `cli` scope yet (the resolver supports it). Env covers only `Q_PILOT_CDP_URL`. The stop gate's replay and `record` pass no vision flags (replay uses no model; a healed step runs with the runner's own default, vision off).
 - **Haiku fallback.** Without Jev, prompt mode ends as `blocked`, a missed step in a saved flow ends as `blocked`, and an untraced flow as `untraced`. A guarded Haiku pick for those cases was in the first design report and is not built.
 - **YAML flows.** Flows are JSON. A YAML reader (and a converter) could come later.
 - **Scope disambiguation beyond landmarks.** Look-alike elements are told apart only by the name of the nearest form, dialog, landmark or list. Anything finer (row text, position) is a miss today.

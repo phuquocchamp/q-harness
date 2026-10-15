@@ -14,6 +14,7 @@ import { runFlow } from './run.mjs'
 import { createInspector, DEFAULT_PORT } from './inspect.mjs'
 import { createHelper } from './help.mjs'
 import { askViaCli, askViaMod, createAsker } from './ask.mjs'
+import { saveViaMod } from './settings-save.mjs'
 import { visionDefaults } from './record.mjs'
 import { spawn } from 'node:child_process'
 
@@ -71,6 +72,9 @@ async function runCommand(command, opts, root, cfg, env, spec) {
   // Jev vision (preview, docs.typesafe.ai/images): --vision off|gated|always, --vision-model, --box. The inspector
   // shares this object and may change it during the run.
   const vision = visionOf(opts)
+  // Where the mod's settings came from (--settings-sources); saving one goes back through the mod, which is the only writer.
+  const sources = sourcesOf(opts)
+  const settings = sources && { sources, save: opts['ask-via-mod'] ? saveViaMod({ runDir }) : null }
   // "Ask Claude" in the dashboard: through the mod (the session's own client) when it started the run, else the CLI.
   const asker = createAsker(opts['ask-via-mod']
     ? { transport: askViaMod({ runDir }), via: 'session' }
@@ -82,7 +86,7 @@ async function runCommand(command, opts, root, cfg, env, spec) {
     spawn(process.execPath, [cli, 'show-trace', file], { detached: true, stdio: 'ignore' }).unref()
   }
   const inspector = prompted && (opts.inspect || opts['inspect-pause'])
-    ? await createInspector({ port: num(opts['inspect-port'], 'inspect-port') ?? (Number(env.Q_PILOT_INSPECT_PORT) || DEFAULT_PORT), mode: opts['inspect-pause'] ? 'pause' : 'run', asker, sessionModel: opts['session-model'] ?? null, openTrace, vision })
+    ? await createInspector({ port: num(opts['inspect-port'], 'inspect-port') ?? (Number(env.Q_PILOT_INSPECT_PORT) || DEFAULT_PORT), mode: opts['inspect-pause'] ? 'pause' : 'run', asker, sessionModel: opts['session-model'] ?? null, openTrace, vision, settings })
     : null
   // --linger: the dashboard stays up after the run (the result is printed first); see the CLI entry at the end.
   const linger = Boolean(inspector && opts.linger && !headless())
@@ -207,6 +211,14 @@ async function runCommand(command, opts, root, cfg, env, spec) {
 export const VISION_MODES = ['off', 'gated', 'always']
 export const VISION_MODELS = ['jev-1.13.0', 'jev-1.14.0']
 /** The vision settings from the flags; a bad value is a ConfigError, like any other flag. */
+function sourcesOf(opts) {
+  if (opts['settings-sources'] === undefined) return null
+  let v
+  try { v = JSON.parse(opts['settings-sources']) } catch {}
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new ConfigError('--settings-sources must be a JSON object')
+  return v
+}
+
 function visionOf(opts) {
   const v = visionDefaults()
   if (opts.vision !== undefined) {

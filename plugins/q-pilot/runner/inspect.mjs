@@ -44,7 +44,17 @@ const VISION_MODELS = [
   { id: 'jev-1.14.0', label: 'Jev 1.14', note: 'preview' },
 ]
 
-export async function createInspector({ port = DEFAULT_PORT, mode = 'run', asker = null, sessionModel = null, openTrace = null, vision = null } = {}) {
+const SAVE_SCOPES = ['user', 'project', 'local']
+/** What "Save as default" may store: the vision settings only (never a personal key). */
+const SAVE_KEYS = { vision: v => VISION_MODES.includes(v), visionModel: v => VISION_MODELS.some(m => m.id === v), box: v => typeof v === 'boolean' }
+/** The settings of the run's inspector that have a source chip. */
+const VISION_KEYS = { vision: 'mode', visionModel: 'model', box: 'box' }
+
+/**
+ * `settings`: { sources, save } from the mod. `sources` is {key: {value, scope, overridden}} for the settings the page
+ * shows; `save({ keys, scope })` hands a change to the mod, which writes it (absent: no Save button).
+ */
+export async function createInspector({ port = DEFAULT_PORT, mode = 'run', asker = null, sessionModel = null, openTrace = null, vision = null, settings = null } = {}) {
   const token = randomBytes(24).toString('base64url')
   const clients = new Set()
   const state = {
@@ -58,6 +68,8 @@ export async function createInspector({ port = DEFAULT_PORT, mode = 'run', asker
     // Jev vision as the run uses it now; the dashboard can change it (/api/settings). `blocked`: why it is forced off.
     vision: vision ? { ...vision, models: VISION_MODELS, modes: VISION_MODES, blocked: null, stats: { steps: 0, seen: 0, boxes: 0 } } : null,
     box: null,
+    // Where each setting came from, which of the vision ones this page changed for the run, and the last Save.
+    settings: settings?.sources ? { sources: settings.sources, canSave: Boolean(settings.save), changed: [], save: null } : null,
   }
   const frames = []
   let secrets = [], waiter = null, stopped = false, ended = false, actual = port, closed = false
@@ -69,6 +81,10 @@ export async function createInspector({ port = DEFAULT_PORT, mode = 'run', asker
   }
   const frameMeta = f => ({ i: f.i, step: f.step, url: f.url, title: f.title, label: f.decision?.label ?? null, p: f.decision?.p ?? null, help: f.help ?? null, by: f.by ?? null, shot: Boolean(f.screenshot), vision: Boolean(f.decision?.vision?.used), box: Boolean(f.box) })
 
+  const syncChanged = () => {
+    if (!state.settings || !state.vision) return
+    state.settings.changed = Object.entries(VISION_KEYS).filter(([k, f]) => k in state.settings.sources && state.settings.sources[k].value !== state.vision[f]).map(([k]) => k)
+  }
   const push = () => {
     const data = `data: ${JSON.stringify(state)}\n\n`
     for (const res of clients) res.write(data)
@@ -181,8 +197,43 @@ export async function createInspector({ port = DEFAULT_PORT, mode = 'run', asker
         if (v.model !== undefined) vision.model = v.model
         if (v.box !== undefined) vision.box = Boolean(v.box)
         Object.assign(state.vision, { mode: vision.mode, model: vision.model, box: vision.box })
+        syncChanged()
         push()
         send(200, JSON.stringify({ ok: true, mode: vision.mode, model: vision.model, box: vision.box }))
+      })
+      return
+    }
+    if (req.method === 'POST' && url.pathname === '/api/settings/save') {
+      if (req.headers['x-pilot-token'] !== token || (req.headers.origin !== undefined && req.headers.origin !== origin)) return send(403, '{"error":"local dashboard requests only"}')
+      if (!settings?.save) return send(409, '{"error":"saving settings is not available for this run"}')
+      let body = ''
+      req.on('data', c => {
+        body += c
+        if (body.length > 1024) req.destroy()
+      })
+      req.on('end', () => {
+        let v
+        try { v = JSON.parse(body) } catch {}
+        if (!v || typeof v !== 'object') return send(400, '{"error":"the request must be an object"}')
+        if (!SAVE_SCOPES.includes(v.scope)) return send(400, `{"error":"scope must be one of ${SAVE_SCOPES.join(', ')}"}`)
+        const keys = v.keys && typeof v.keys === 'object' && !Array.isArray(v.keys) ? Object.keys(v.keys) : []
+        if (!keys.length) return send(400, '{"error":"keys must hold at least one setting"}')
+        const bad = keys.find(k => !Object.hasOwn(SAVE_KEYS, k))
+        if (bad) return send(400, JSON.stringify({ error: `${bad} cannot be saved from the dashboard (${Object.keys(SAVE_KEYS).join(', ')})` }))
+        const wrong = keys.find(k => !SAVE_KEYS[k](v.keys[k]))
+        if (wrong) return send(400, JSON.stringify({ error: `bad value for ${wrong}` }))
+        const request = { keys: Object.fromEntries(keys.map(k => [k, v.keys[k]])), scope: v.scope }
+        let done
+        try { done = settings.save(request) } catch (e) { return send(500, JSON.stringify({ error: `could not hand the change to the session: ${e.message}` })) }
+        const row = { status: 'pending', scope: request.scope, keys: request.keys, message: null }
+        state.settings.save = row
+        push()
+        // The mod applies it (its stderr marker) and answers through the run dir; the page learns the result from the state.
+        done.then(r => {
+          Object.assign(row, r.ok ? { status: 'saved', message: r.message ?? null } : { status: 'error', message: r.error ?? 'not saved' })
+          push()
+        })
+        send(200, JSON.stringify({ ok: true, pending: true, scope: request.scope }))
       })
       return
     }
