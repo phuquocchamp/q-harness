@@ -145,7 +145,7 @@ In shadow mode the gate never writes `.q-pilot/traces/`. At most 2 blocks or fol
 
 The band above the prompt shows `pilot ✗ 1 of 3 flows: checkout app-bug` while a run is red, and `pilot ≈ 1 of 3 flows: checkout drift · /q-pilot accept` (amber) when the only problem is drift. The status line shows `pilot ✓ 3/3 flows` when all pass. (Text as reported by the mod agent; not run by me.)
 
-As in q-e2e, `classic.Stop` is the primary path and `turn.complete` is the fallback for machines where managed settings skip `classic.Stop` hooks in user-installed plugins.
+`classic.Stop` is the primary path and `turn.complete` is the fallback for machines where managed settings skip `classic.Stop` hooks in user-installed plugins.
 
 ## Commands
 
@@ -196,7 +196,7 @@ Page text and element values are redacted before sending. Traces and proposals s
 
 ## How it differs
 
-- **q-e2e** runs Playwright specs you write and maintain. When a locator drifts, the spec fails and waits out its timeout. q-pilot keeps no spec: the flow is the source, the trace is generated, and a drifted step is re-picked in under a second. q-pilot can [export](#commands) a flow as a spec when you want one.
+- **q-e2e** (removed; q-pilot replaces it) ran Playwright specs you write and maintain. When a locator drifts, the spec fails and waits out its timeout. q-pilot keeps no spec: the flow is the source, the trace is generated, and a drifted step is re-picked in under a second. q-pilot can [export](#commands) a flow as a spec when you want one.
 - **jev-ultrafast** is a loop where the model picks every action. q-pilot uses Jev only to record and to heal. The pass/fail verdict comes from `verify`, not from Jev reporting DONE.
 
 ## Limits
@@ -230,4 +230,4 @@ claude plugin test ./plugins/q-pilot        # mod tests (tests/*.test.ts)
 node --test plugins/q-pilot/runner/*.test.mjs   # runner and export tests
 ```
 
-The export test also runs an exported spec with `playwright test` against a copy of `q-e2e/examples/demo-app`. It is skipped when Playwright is not installed there.
+The export test also runs an exported spec with `playwright test` against a copy of `examples/demo-app`. It is skipped when Playwright is not installed there.

@@ -74,7 +74,7 @@ Subagents cost tokens: each starts fresh and re-reads what it needs. Use the tea
 
 ## Works with
 
-- **q-e2e**: when both are installed, use q-e2e for writing, running and healing Playwright **specs**. `playwright-cli` is for ad-hoc browser work.
+- **q-pilot**: when both are installed, use q-pilot for checking user flows at turn end (`/q-pilot record`, `/q-pilot run`). `playwright-cli` is for ad-hoc browser work.
 - **q-graph**: shows the agents q-engine spawns as a live graph.
 
 ## Credits

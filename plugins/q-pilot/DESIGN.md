@@ -22,7 +22,7 @@ plugins/q-pilot/
   runner/*.mjs                 runner agent (snapshot, executor, replay, record, jev, verify, redact, flow, trace)
   runner/export.mjs            export agent: exportSpec()
   runner/*.test.mjs            node --test (runner and export agents, own files only)
-  examples/demo-app/           runner agent (copy of q-e2e's demo app + flows + q-pilot.config.json)
+  examples/demo-app/           runner agent (static demo shop + flows + q-pilot.config.json)
   skills/flows/SKILL.md        docs agent (not skills/q-pilot: that name collides with the /q-pilot command)
   README.md, TODOS.md, LICENSE docs agent
 ```
@@ -193,14 +193,14 @@ On a crash after start: `{ "ok": false, "command": "...", "error": "..." }`.
 
 One request per decision, like jev-ultrafast: `operation` head (CLICK, TYPE_TEXT, SELECT, SCROLL_UP/DOWN, WAIT, DONE, BLOCKED; only the ones with candidates), one target head per operation with candidates (criteria keyed by element index), and a `fixture` head (criteria = fixture **key names**) when TYPE_TEXT is offered. Every used head is checked with `validateChoice` (port of jev-ultrafast `validate_choice`); an invalid answer → no action, outcome `blocked` with the reason. State sent: `page.url`, `page.title`, `page.text` (visible text, max 6000 chars), `elements` (index, role, label, value, operations), `fixtures_available` (key names), `recent_actions` (last 10), and for a heal `step_to_replace` (the missed step's op/role/name).
 
-**Never sent, never stored:** fixture values. Before sending, the runner redacts page text and element values: cookie / Authorization / Bearer / password= / JWT patterns (port of q-e2e `lib/jev.ts` `redact`) plus the exact resolved fixture values. A runner test asserts a fixture value does not appear in a saved trace, a proposal, or a captured Jev request.
+**Never sent, never stored:** fixture values. Before sending, the runner redacts page text and element values: cookie / Authorization / Bearer / password= / JWT patterns (ported from the q-e2e plugin's redact, which q-pilot replaced) plus the exact resolved fixture values. A runner test asserts a fixture value does not appear in a saved trace, a proposal, or a captured Jev request.
 
 Limits: 2 healed steps per flow, `budget.steps` actions, `budget.seconds`.
 
 ## Mod behaviour
 
 - Options (`plugin.json` userConfig): `jevApiKey` (sensitive; empty → env `TYPESAFE_API_KEY`), `mode` off|affected|all (default affected), `trust` shadow|on (default shadow), `followUp` auto|suggest|off (default auto), `maxStopSeconds` (default 60), `node` (default `node`, the command that runs the runner).
-- Gate: same structure as q-e2e: `classic.Stop` primary, `turn.complete` fallback (port q-e2e's detection as is; on this machine `classic.Stop` is bypassed by managed policy), at most 2 blocks / follow-ups per user prompt.
+- Gate: same structure as the removed q-e2e plugin: `classic.Stop` primary, `turn.complete` fallback (port q-e2e's detection as is; on this machine `classic.Stop` is bypassed by managed policy), at most 2 blocks / follow-ups per user prompt.
 - Impact map (pure, `hooks/lib/impact.ts`): a changed file selects a flow when it matches a `covers` glob. A UI-relevant changed file that selects nothing selects the flows tagged `smoke`. When some changed files select flows and others select none, add the `smoke` flows. `mode: all` runs every flow. Not UI-relevant: `ignore` globs, docs, configs, unit tests, `.q-pilot/**`, `flows/**`.
 - The mod runs the runner with `$.process.run([node, `${$.plugin.root}/runner/pilot.mjs`, 'run', '--root', root, '--flows', ids, '--budget-ms', n], { cwd: root, env: { TYPESAFE_API_KEY }, timeoutMs })` and parses the last stdout line.
 - Decisions: `pass`/`flaky`(trust on) → allow. `app-bug`, `blocked`, `error` → block with flow, step, failed checks and actual values. `drift` → shadow: reported once (one block on the Stop path, one note/toast on the fallback path, no follow-up prompt), then the flow's pending edits are cleared so an unchanged follow-up turn does not re-run it; the user runs `/q-pilot accept`; on: auto-accept when the turn's diff mentions the old or the new element name (deterministic `touched`), else block. `env` → shadow: block; on: allow + notify. `untraced` / `needs-verify` → allow + note asking the user to run `/q-pilot record <id>`.
@@ -234,6 +234,6 @@ Limits: 2 healed steps per flow, `budget.steps` actions, `budget.seconds`.
 ## Rules for every agent
 
 - Never run git commands that write: no `add`, `commit`, `stash`, `checkout`, `reset`, `clean`, `restore`. Most of the repo is untracked; one of these can destroy the user's work.
-- Edit only files you own (see Layout). Do not touch `plugins/q-e2e/` or other plugins.
+- Edit only files you own (see Layout). Do not touch other plugins.
 - `node`/`npx` on PATH are broken in this shell: use `/opt/homebrew/bin/node` and `/opt/homebrew/bin/npx`.
 - Live Jev calls only behind `Q_PILOT_LIVE=1`, and only a few: it is the user's paid key.

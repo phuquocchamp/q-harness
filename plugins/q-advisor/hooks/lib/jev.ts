@@ -29,7 +29,7 @@ const KEEP_CRITERIA = {
 
 const CAP = { recentWork: 1500, lastReply: 1200, newPrompt: 1500, item: 400, todoState: 400, toolErrors: 400, remainingWork: 1500 }
 
-// redact and validateChoice are copied verbatim from q-e2e/hooks/lib/jev.ts.
+// redact and validateChoice port jev-ultrafast's validate_choice and the redaction rules q-pilot's runner/redact.mjs also uses.
 export const REDACTED = '[redacted]'
 const MIN_SECRET = 4
 

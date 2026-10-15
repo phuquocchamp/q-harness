@@ -16,11 +16,6 @@
       "description": "Shows the subagents and teammates of a session as a live graph: a roster band above the prompt, an alert when one waits for you, and a pane with the agent tree, what each agent used (tools, skills, MCP servers, rules) and the session's harness."
     },
     {
-      "name": "q-e2e",
-      "source": "./plugins/q-e2e",
-      "description": "Turns \"tests pass\" into evidence: runs the Playwright specs a turn affected when it ends, sends Claude back on red, triages failures with Jev (Haiku fallback, shadow mode first) and heals drifted locators with a guarded Haiku subagent."
-    },
-    {
       "name": "q-pilot",
       "source": "./plugins/q-pilot",
       "description": "Checks, when Claude tries to stop after UI edits, that your user flows still work: replays recorded flows with no model, re-picks a changed step with Jev, and judges pass or fail by code from each flow's verify block."

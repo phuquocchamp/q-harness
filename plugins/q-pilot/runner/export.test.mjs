@@ -138,19 +138,28 @@ test('throws on an unknown op, an unknown check and a missing fixture', () => {
   )
 })
 
-const demo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'q-e2e', 'examples', 'demo-app')
+const demo = join(dirname(fileURLToPath(import.meta.url)), '..', 'examples', 'demo-app')
 const playwrightCli = join(demo, 'node_modules', '@playwright', 'test', 'cli.js')
-const skipReason = existsSync(playwrightCli) ? false : 'Playwright is not installed in q-e2e/examples/demo-app/node_modules'
+const skipReason = existsSync(playwrightCli) ? false : 'Playwright is not installed in examples/demo-app/node_modules'
+
+// A minimal Playwright config for the temp copy: the demo server on the port the exported spec uses.
+const PLAYWRIGHT_CONFIG = `import { defineConfig } from '@playwright/test'
+export default defineConfig({
+  testDir: './tests',
+  use: { baseURL: '${baseURL}' },
+  webServer: { command: 'node server.mjs', url: '${baseURL}', env: { PORT: '${new URL(baseURL).port}' }, reuseExistingServer: false },
+})
+`
 
 test('the exported spec runs green against the demo app', { skip: skipReason, timeout: 120000 }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'q-pilot-export-'))
   try {
-    for (const name of ['src', 'server.mjs', 'playwright.config.ts']) cpSync(join(demo, name), join(dir, name), { recursive: true })
+    for (const name of ['src', 'server.mjs']) cpSync(join(demo, name), join(dir, name), { recursive: true })
+    writeFileSync(join(dir, 'playwright.config.ts'), PLAYWRIGHT_CONFIG)
     symlinkSync(join(demo, 'node_modules'), join(dir, 'node_modules'))
     mkdirSync(join(dir, 'tests'))
     writeFileSync(join(dir, 'tests', 'checkout-coffee.spec.ts'), exportSpec({ ...flow, verify: [...flow.verify, { url: '^/checkout\\.html' }] }, trace, { baseURL }))
     const env = { ...process.env, E2E_PASSWORD: 'unused' }
-    delete env.CI // the demo config reuses a running server only outside CI
     const run = spawnSync(process.execPath, [playwrightCli, 'test', '--reporter=line', '--retries=0'], { cwd: dir, env, encoding: 'utf8' })
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`)
   } finally {

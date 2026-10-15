@@ -1,9 +1,0 @@
-{
-  "testDir": "tests",
-  "smokeTag": "@smoke",
-  "map": {
-    "src/checkout.html": ["tests/checkout.spec.ts"],
-    "src/index.html": ["tests/seed.spec.ts", "tests/checkout.spec.ts"]
-  },
-  "ignore": ["**/*.md"]
-}

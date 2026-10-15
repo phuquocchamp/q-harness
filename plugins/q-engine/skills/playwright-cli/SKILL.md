@@ -12,8 +12,8 @@ allowed-tools: Bash(playwright-cli:*) Bash(npx playwright-cli:*) Bash(npx --no-i
 
 Use this skill for ad-hoc browser work: exploring a page, reproducing a bug, checking a UI change
 by hand. To write, run, or heal a Playwright **test suite**, prefer the project's own test setup;
-if the `q-e2e` plugin is installed, use its `e2e` skill and agents instead of
-`references/playwright-tests.md` and `references/test-generation.md`.
+if the `q-pilot` plugin is installed, use its `flows` skill and `/q-pilot` commands for user-flow
+checks instead of `references/playwright-tests.md` and `references/test-generation.md`.
 
 ## Credentials
 

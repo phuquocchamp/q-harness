@@ -1,4 +1,4 @@
-// Secret redaction, ported from q-e2e hooks/lib/jev.ts. Fixture values are passed in as extra secrets.
+// Secret redaction, ported from the q-e2e plugin (which q-pilot replaced). Fixture values are passed in as extra secrets.
 export const REDACTED = '[redacted]'
 const MIN_SECRET = 4
 

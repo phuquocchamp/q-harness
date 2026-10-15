@@ -1,8 +1,7 @@
 node_modules/
 .DS_Store
 
-# q-e2e evidence store and Playwright output (traces may contain cookies and auth headers)
-.q-e2e/
+# Playwright output (traces may contain cookies and auth headers)
 playwright/.auth/
 test-results/
 playwright-report/
