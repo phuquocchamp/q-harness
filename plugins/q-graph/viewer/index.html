@@ -6,72 +6,68 @@
 <meta name="referrer" content="no-referrer">
 <title>q-graph</title>
 <link rel="stylesheet" href="reactflow-base.css" id="rf-css">
+<link rel="stylesheet" href="q-theme.css">
 <style>
-/* The q-graph live viewer. Colours match the terminal pane: main blue, subagent teal, teammate magenta;
-   an agent's uses: tool ochre, skill violet, MCP blue, rule green. */
-:root{
-  --bg:#f3f4f1; --paper:#fbfbf9; --sunk:#e9ebe6; --fg:#16202a; --muted:#5a6672; --line:#d3d8d2; --grid:#cfd5cc;
-  --main:#2f45b8; --sub:#0d8a7e; --team:#b2337f; --tool:#a86a0b; --skill:#6a4fc2; --mcp:#1f73ad; --rule:#4c7a24;
-  --ok:#23824f; --warn:#c27a00; --bad:#c0392b; --warn-soft:#fbefd6;
-  --body:"Instrument Sans","Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
-}
-@media (prefers-color-scheme: dark){:root{
-  --bg:#11161d; --paper:#1a2029; --sunk:#151a21; --fg:#e4e8ee; --muted:#98a2ae; --line:#2c343f; --grid:#2a313b;
-  --main:#8ea0ff; --sub:#4fd1c0; --team:#f07fc4; --tool:#e8b04a; --skill:#b49cff; --mcp:#6cb8f0; --rule:#9ccc6e;
-  --ok:#6fd49a; --warn:#ffc04d; --bad:#ff7b6b; --warn-soft:#382a0c; color-scheme:dark }}
+/* The q-graph live viewer. Tokens come from q-theme.css (generated from shared/ui). Kind colours (--q-k-*) mark
+   graph kinds only; UI chrome and "running" use --q-accent. */
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--body);display:flex;flex-direction:column}
-header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--paper)}
-header h1{font:700 16px var(--mono);margin:0}
-.live{font:600 12px var(--mono);color:var(--ok)}
-.live.off{color:var(--bad)}
-.counts{display:flex;gap:14px;font:12px var(--mono);color:var(--muted);margin-left:auto;flex-wrap:wrap}
-.counts b{color:var(--fg);font-weight:700}
+body{background:var(--q-bg);color:var(--q-fg);font:14px/1.5 var(--q-sans);display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 16px;border-bottom:1px solid var(--q-line);background:var(--q-surface)}
+header h1{font:700 16px var(--q-mono);margin:0}
+.live{font:600 12px var(--q-mono);color:var(--q-ok)}
+.live.off{color:var(--q-bad)}
+.counts{display:flex;gap:14px;font:12px var(--q-mono);color:var(--q-muted);margin-left:auto;flex-wrap:wrap}
+.counts b{color:var(--q-fg);font-weight:700}
 #app{flex:1;min-height:0;position:relative}
-.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font:13px var(--mono);text-align:center;padding:24px}
-.qn{background:var(--paper);border:1.6px solid var(--k);border-left-width:6px;border-radius:9px;padding:8px 12px;width:240px;color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--q-muted);font:13px var(--q-mono);text-align:center;padding:24px}
+.qn{background:var(--q-surface);border:1.6px solid var(--k);border-left-width:6px;border-radius:9px;padding:8px 12px;width:240px;color:var(--q-fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .qn .h{display:flex;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden}
 .qn .h b{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis}
-.qn .h span{font:10.5px var(--mono);color:var(--muted)}
-.qn .h i{font:normal 10.5px var(--mono);color:var(--muted);margin-left:auto}
-.qn .t{margin-top:1px;font:11.5px var(--body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.qn .s{display:flex;justify-content:space-between;gap:10px;margin-top:4px;font:600 11px var(--mono)}
-.qn .s em{font-style:normal;font-weight:400;color:var(--muted);flex:none;white-space:nowrap}
+.qn .h span{font:10.5px var(--q-mono);color:var(--q-muted)}
+.qn .h i{font:normal 10.5px var(--q-mono);color:var(--q-muted);margin-left:auto}
+.qn .t{margin-top:1px;font:11.5px var(--q-sans);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qn .s{display:flex;justify-content:space-between;gap:10px;margin-top:4px;font:600 11px var(--q-mono)}
+.qn .s em{font-style:normal;font-weight:400;color:var(--q-muted);flex:none;white-space:nowrap}
 .qn .s span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .qn.pending{opacity:.5}
-.qn.ask{background:var(--warn-soft);border-color:var(--warn)}
+.qn.ask{background:var(--q-warn-soft);border-color:var(--q-warn)}
 .qn.running{box-shadow:0 0 0 4px color-mix(in srgb,var(--k) 20%,transparent)}
 .qn.sel{outline:2px solid var(--k);outline-offset:3px}
-.qt{background:color-mix(in srgb,var(--c) 10%,var(--paper));border:1.4px solid var(--c);border-radius:7px;padding:3px 9px;width:184px;font:600 11.5px var(--mono);color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.qt small{font:400 10px var(--mono);opacity:.75;margin-right:6px;text-transform:uppercase;letter-spacing:.04em}
-.qt.hot{background:var(--c);color:var(--paper)}
-.qh{background:var(--sunk);border:1.4px dashed var(--muted);border-radius:9px;padding:8px 12px;width:300px;font:11.5px var(--mono);color:var(--fg)}
-.qh b{display:block;font:600 13px var(--body);margin-bottom:4px}
-.qh b span{font:400 10.5px var(--mono);color:var(--muted);margin-left:8px}
+.qt{background:color-mix(in srgb,var(--c) 10%,var(--q-surface));border:1.4px solid var(--c);border-radius:7px;padding:3px 9px;width:184px;font:600 11.5px var(--q-mono);color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qt small{font:400 10px var(--q-mono);opacity:.75;margin-right:6px;text-transform:uppercase;letter-spacing:.04em}
+.qt.hot{background:var(--c);color:var(--q-surface)}
+.qh{background:var(--q-sunken);border:1.4px dashed var(--q-muted);border-radius:9px;padding:8px 12px;width:300px;font:11.5px var(--q-mono);color:var(--q-fg)}
+.qh b{display:block;font:600 13px var(--q-sans);margin-bottom:4px}
+.qh b span{font:400 10.5px var(--q-mono);color:var(--q-muted);margin-left:8px}
 .qh div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qh i{font-style:normal;font-weight:700;color:var(--c)}
 .react-flow__handle{opacity:0;pointer-events:none}
 .react-flow__attribution{display:none}
-.react-flow__controls-button{background:var(--paper);border-bottom-color:var(--line)}
-.react-flow__controls-button svg{fill:var(--fg)}
-.react-flow__minimap{background:var(--paper);border:1px solid var(--line)}
+.react-flow__controls{box-shadow:var(--q-shadow-1);border:1px solid var(--q-line);border-radius:var(--q-r-md);overflow:hidden}
+.react-flow__controls-button{background:var(--q-surface);border-bottom-color:var(--q-line)}
+.react-flow__controls-button:hover{background:var(--q-sunken)}
+.react-flow__controls-button svg{fill:var(--q-fg)}
+.react-flow__minimap{background:var(--q-surface);border:1px solid var(--q-line)}
+.react-flow__minimap-mask{fill:color-mix(in srgb,var(--q-bg) 70%,transparent)}
+.react-flow__edge.selected .react-flow__edge-path,.react-flow__edge:focus-visible .react-flow__edge-path{stroke:var(--q-accent)}
+.react-flow__selection,.react-flow__nodesselection-rect{background:var(--q-accent-soft);border:1px dotted var(--q-accent-line)}
 .qt.sel{outline:2px solid var(--c);outline-offset:2px}
 /* The canvas and, while a node is selected, the detail sidebar on its right (a bottom sheet on narrow screens). */
 .row{display:flex;height:100%}
 .canvas{flex:1;min-width:0;min-height:0;position:relative}
-.side{width:var(--side-w,360px);flex:none;position:relative;border-left:1px solid var(--line);background:var(--paper);display:flex;min-width:0}
-.side .scroll{flex:1;min-width:0;overflow:auto;padding:12px 14px 24px;font:12px/1.5 var(--mono)}
+.side{width:var(--side-w,360px);flex:none;position:relative;border-left:1px solid var(--q-line);background:var(--q-surface);display:flex;min-width:0}
+.side .scroll{flex:1;min-width:0;overflow:auto;padding:12px 14px 24px;font:12px/1.5 var(--q-mono)}
 /* Drag the left edge to resize; double-click it (or the ⤢ button) to toggle wide. */
 .grip{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:5;touch-action:none}
 .grip::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:transparent;transition:background .15s}
-.grip:hover::after,.grip:focus-visible::after,.side.drag .grip::after{background:var(--main)}
+.grip:hover::after,.grip:focus-visible::after,.side.drag .grip::after{background:var(--q-accent)}
 .grip:focus-visible{outline:none}
 .side.drag{user-select:none}
 /* Narrow screens: the sidebar is a bottom sheet that starts as a peek (⤢ makes it taller), no minimap, a one-line scrolling header. */
 @media (max-width:760px){
   .row{flex-direction:column}
-  .side{width:auto;height:35vh;max-height:35vh;display:block;overflow:auto;border-left:0;border-top:1px solid var(--line)}
+  .side{width:auto;height:35vh;max-height:35vh;display:block;overflow:auto;border-left:0;border-top:1px solid var(--q-line)}
   .side.tall{height:70vh;max-height:70vh}
   .grip{display:none}
   .react-flow__minimap{display:none}
@@ -81,122 +77,122 @@ header h1{font:700 16px var(--mono);margin:0}
   .counts{margin-left:0}
 }
 .side .top{display:flex;align-items:flex-start;gap:8px}
-.side .top b{font:600 15px var(--body);flex:1;min-width:0;overflow-wrap:anywhere}
-.side .x{all:unset;cursor:pointer;color:var(--muted);font:16px/1 var(--mono);padding:2px 6px;border-radius:5px}
-.side .x:hover{background:var(--sunk);color:var(--fg)}
-.side .x:focus-visible{outline:2px solid var(--main)}
-.side h3{font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 6px}
-.chip{display:inline-block;font:600 10.5px var(--mono);color:var(--c);border:1px solid var(--c);border-radius:999px;padding:0 7px;margin-top:3px;background:color-mix(in srgb,var(--c) 10%,var(--paper));white-space:nowrap}
+.side .top b{font:600 15px var(--q-sans);flex:1;min-width:0;overflow-wrap:anywhere}
+.side .x{all:unset;cursor:pointer;color:var(--q-muted);font:16px/1 var(--q-mono);padding:2px 6px;border-radius:5px}
+.side .x:hover{background:var(--q-sunken);color:var(--q-fg)}
+.side .x:focus-visible{outline:2px solid var(--q-accent)}
+.side h3{font:600 10.5px var(--q-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--q-muted);margin:16px 0 6px}
+.chip{display:inline-block;font:600 10.5px var(--q-mono);color:var(--c);border:1px solid var(--c);border-radius:999px;padding:0 7px;margin-top:3px;background:color-mix(in srgb,var(--c) 10%,var(--q-surface));white-space:nowrap}
 .kv{display:grid;grid-template-columns:72px 1fr;gap:2px 8px;margin-top:10px}
-.kv>span{color:var(--muted)}
+.kv>span{color:var(--q-muted)}
 .kv>div{min-width:0;overflow-wrap:anywhere}
-.lnk{all:unset;cursor:pointer;color:var(--c,var(--fg));overflow-wrap:anywhere}
+.lnk{all:unset;cursor:pointer;color:var(--c,var(--q-fg));overflow-wrap:anywhere}
 .lnk:hover{text-decoration:underline}
-.lnk:focus-visible,.bar:focus-visible,.call .r:focus-visible{outline:2px solid var(--main);outline-offset:1px}
+.lnk:focus-visible,.bar:focus-visible,.call .r:focus-visible{outline:2px solid var(--q-accent);outline-offset:1px}
 .list{margin:0;padding:0;list-style:none}
 .list li{padding:1px 0;overflow-wrap:anywhere}
 .bar{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;cursor:pointer;padding:2px 4px;border-radius:5px}
-.bar:hover,.bar.on{background:var(--sunk)}
+.bar:hover,.bar.on{background:var(--q-sunken)}
 .bar .l{width:130px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c)}
-.bar .t{flex:1;height:7px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.bar .t{flex:1;height:7px;background:var(--q-sunken);border-radius:4px;overflow:hidden}
 .bar .t i{display:block;height:100%;background:var(--c);border-radius:4px}
-.bar em{font-style:normal;color:var(--muted);min-width:28px;text-align:right}
-.note{color:var(--muted);font-style:italic;margin:6px 0}
-pre.txt{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:280px;overflow:auto;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:11.5px/1.45 var(--mono)}
+.bar em{font-style:normal;color:var(--q-muted);min-width:28px;text-align:right}
+.note{color:var(--q-muted);font-style:italic;margin:6px 0}
+pre.txt{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:280px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:6px 8px;font:11.5px/1.45 var(--q-mono)}
 details.fold{margin-top:6px}
-details.fold summary{cursor:pointer;color:var(--muted);font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em}
+details.fold summary{cursor:pointer;color:var(--q-muted);font:600 10.5px var(--q-mono);text-transform:uppercase;letter-spacing:.06em}
 details.fold.sec{margin:16px 0 0}
 details.fold.sec[open]>summary{margin-bottom:6px}
 /* Markdown preview of prompts and results: sanitized HTML, the raw text one click away. */
 .mdwrap{position:relative;margin:4px 0}
-.mdwrap .mode{position:absolute;top:4px;right:6px;z-index:1;display:inline-flex;overflow:hidden;font:600 10px var(--mono);background:var(--paper);border:1px solid var(--line);border-radius:4px}
-.mdwrap .mode button{all:unset;cursor:pointer;color:var(--muted);padding:0 6px}
-.mdwrap .mode button+button{border-left:1px solid var(--line)}
-.mdwrap .mode button:hover{color:var(--fg)}
-.mdwrap .mode button[aria-pressed="true"]{background:var(--fg);color:var(--paper);cursor:default}
-.mdwrap .mode button:focus-visible{outline:2px solid var(--main);outline-offset:-2px}
+.mdwrap .mode{position:absolute;top:4px;right:6px;z-index:1;display:inline-flex;overflow:hidden;font:600 10px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px}
+.mdwrap .mode button{all:unset;cursor:pointer;color:var(--q-muted);padding:0 6px}
+.mdwrap .mode button+button{border-left:1px solid var(--q-line)}
+.mdwrap .mode button:hover{color:var(--q-fg)}
+.mdwrap .mode button[aria-pressed="true"]{background:var(--q-fg);color:var(--q-surface);cursor:default}
+.mdwrap .mode button:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
 .mdwrap pre.txt{margin:0;padding-right:76px}
-.md{max-height:420px;overflow:auto;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:6px 76px 6px 10px;font:13px/1.55 var(--body);overflow-wrap:anywhere}
+.md{max-height:420px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:6px 76px 6px 10px;font:13px/1.55 var(--q-sans);overflow-wrap:anywhere}
 .md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
-.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{font:600 13.5px/1.35 var(--body);margin:12px 0 4px;color:var(--fg);text-transform:none;letter-spacing:0}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{font:600 13.5px/1.35 var(--q-sans);margin:12px 0 4px;color:var(--q-fg);text-transform:none;letter-spacing:0}
 .md h1{font-size:16px}.md h2{font-size:15px}.md h3{font-size:14px}
 .md p,.md ul,.md ol,.md blockquote,.md table,.md pre{margin:6px 0}
 .md ul,.md ol{padding-left:20px}
 .md li{margin:1px 0}
-.md code{font:11.5px var(--mono);background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:0 4px}
-.md pre{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:6px 8px;overflow:auto;white-space:pre}
+.md code{font:11.5px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px;padding:0 4px}
+.md pre{background:var(--q-surface);border:1px solid var(--q-line);border-radius:5px;padding:6px 8px;overflow:auto;white-space:pre}
 .md pre code{border:0;padding:0;background:none}
-.md blockquote{border-left:3px solid var(--line);padding-left:10px;color:var(--muted)}
+.md blockquote{border-left:3px solid var(--q-line);padding-left:10px;color:var(--q-muted)}
 .md table{border-collapse:collapse;display:block;overflow-x:auto;font-size:12px}
-.md th,.md td{border:1px solid var(--line);padding:2px 6px;text-align:left}
-.md th{background:var(--paper)}
-.md a{color:var(--main)}
-.md hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.md th,.md td{border:1px solid var(--q-line);padding:2px 6px;text-align:left}
+.md th{background:var(--q-surface)}
+.md a{color:var(--q-accent)}
+.md hr{border:0;border-top:1px solid var(--q-line);margin:10px 0}
 .md img{max-width:100%}
-.side .x[aria-pressed="true"].pin{color:var(--main)}
-.call{border-top:1px solid var(--line)}
+.side .x[aria-pressed="true"].pin{color:var(--q-accent)}
+.call{border-top:1px solid var(--q-line)}
 .call .r{display:flex;gap:8px;align-items:baseline;padding:4px 2px;cursor:pointer}
-.call .r:hover{background:var(--sunk)}
-.call .r .tm{color:var(--muted);flex:none}
+.call .r:hover{background:var(--q-sunken)}
+.call .r .tm{color:var(--q-muted);flex:none}
 .call .r .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.call .r .n small{color:var(--muted);margin-left:6px;font-size:11px}
-.call .r .d{color:var(--muted);flex:none}
-.call .r .go{all:unset;cursor:pointer;flex:none;color:var(--c,var(--main));font-size:11px}
+.call .r .n small{color:var(--q-muted);margin-left:6px;font-size:11px}
+.call .r .d{color:var(--q-muted);flex:none}
+.call .r .go{all:unset;cursor:pointer;flex:none;color:var(--c,var(--q-accent));font-size:11px}
 .call .r .go:hover{text-decoration:underline}
-.call .r .go:focus-visible{outline:2px solid var(--main);outline-offset:1px}
-.spawned{margin:4px 0;color:var(--muted)}
+.call .r .go:focus-visible{outline:2px solid var(--q-accent);outline-offset:1px}
+.spawned{margin:4px 0;color:var(--q-muted)}
 .call .body{padding:0 2px 8px}
-.call .body h4{margin:6px 0 0;font:600 10px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.ok{color:var(--ok)} .bad{color:var(--bad)} .run{color:var(--warn)}
-.legend{display:flex;gap:12px;font:11px var(--mono);color:var(--muted);flex-wrap:wrap}
+.call .body h4{margin:6px 0 0;font:600 10px var(--q-mono);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em}
+.ok{color:var(--q-ok)} .bad{color:var(--q-bad)} .run{color:var(--q-accent)}
+.legend{display:flex;gap:12px;font:11px var(--q-mono);color:var(--q-muted);flex-wrap:wrap}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c)}
-.call.focus>.r{background:color-mix(in srgb,var(--main) 12%,transparent)}
+.call.focus>.r{background:color-mix(in srgb,var(--q-accent) 12%,transparent)}
 /* Graph | Timeline switch in the header. */
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-.seg button{all:unset;cursor:pointer;font:600 12px var(--mono);padding:3px 10px;color:var(--muted)}
-.seg button+button{border-left:1px solid var(--line)}
-.seg button[aria-pressed="true"]{background:var(--fg);color:var(--paper)}
-.seg button:focus-visible{outline:2px solid var(--main);outline-offset:-2px}
+.seg{display:inline-flex;border:1px solid var(--q-line);border-radius:7px;overflow:hidden}
+.seg button{all:unset;cursor:pointer;font:600 12px var(--q-mono);padding:3px 10px;color:var(--q-muted)}
+.seg button+button{border-left:1px solid var(--q-line)}
+.seg button[aria-pressed="true"]{background:var(--q-fg);color:var(--q-surface)}
+.seg button:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
 /* Timeline: a toolbar, then one scroller holding a sticky axis row and sticky lane labels. */
 .tl{display:flex;flex-direction:column;height:100%}
-.tl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--paper);font:12px var(--mono)}
-.tl-bar button{all:unset;cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:1px 9px;font:600 12px var(--mono);color:var(--fg);background:var(--paper)}
-.tl-bar button:hover{background:var(--sunk)}
-.tl-bar button[aria-pressed="true"]{background:color-mix(in srgb,var(--main) 14%,var(--paper));border-color:var(--main);color:var(--main)}
-.tl-bar button:focus-visible{outline:2px solid var(--main)}
-.tl-bar .info{color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 10px;border-bottom:1px solid var(--q-line);background:var(--q-surface);font:12px var(--q-mono)}
+.tl-bar button{all:unset;cursor:pointer;border:1px solid var(--q-line);border-radius:6px;padding:1px 9px;font:600 12px var(--q-mono);color:var(--q-fg);background:var(--q-surface)}
+.tl-bar button:hover{background:var(--q-sunken)}
+.tl-bar button[aria-pressed="true"]{background:color-mix(in srgb,var(--q-accent) 14%,var(--q-surface));border-color:var(--q-accent);color:var(--q-accent)}
+.tl-bar button:focus-visible{outline:2px solid var(--q-accent)}
+.tl-bar .info{color:var(--q-muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-scroll{flex:1;min-height:0;overflow:auto;position:relative}
-.tl-axis{position:sticky;top:0;z-index:4;display:flex;height:26px;background:var(--paper);border-bottom:1px solid var(--line)}
-.tl-corner{position:sticky;left:0;z-index:5;flex:none;background:var(--paper);border-right:1px solid var(--line);font:600 10.5px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px}
+.tl-axis{position:sticky;top:0;z-index:4;display:flex;height:26px;background:var(--q-surface);border-bottom:1px solid var(--q-line)}
+.tl-corner{position:sticky;left:0;z-index:5;flex:none;background:var(--q-surface);border-right:1px solid var(--q-line);font:600 10.5px var(--q-mono);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px}
 .tl-ticks{position:relative;flex:none;height:100%;overflow:hidden}
-.tl-tick{position:absolute;bottom:0;height:7px;border-left:1px solid var(--muted)}
-.tl-tick span{position:absolute;bottom:7px;left:3px;font:10.5px var(--mono);color:var(--muted);white-space:nowrap}
-.tl-brklab{position:absolute;top:0;bottom:0;display:grid;place-items:center;cursor:help;font:10px var(--mono);color:var(--muted);white-space:nowrap;overflow:visible}
+.tl-tick{position:absolute;bottom:0;height:7px;border-left:1px solid var(--q-muted)}
+.tl-tick span{position:absolute;bottom:7px;left:3px;font:10.5px var(--q-mono);color:var(--q-muted);white-space:nowrap}
+.tl-brklab{position:absolute;top:0;bottom:0;display:grid;place-items:center;cursor:help;font:10px var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:visible}
 .tl-body{display:flex;position:relative}
-.tl-labels{position:sticky;left:0;z-index:3;flex:none;background:var(--paper);border-right:1px solid var(--line)}
-.tl-lab{all:unset;box-sizing:border-box;display:block;width:100%;cursor:pointer;padding:3px 8px;border-bottom:1px solid var(--line);overflow:hidden}
-.tl-lab:hover{background:var(--sunk)}
-.tl-lab.on{background:color-mix(in srgb,var(--k) 14%,var(--paper));box-shadow:inset 3px 0 0 var(--k)}
-.tl-lab:focus-visible{outline:2px solid var(--main);outline-offset:-2px}
-.tl-lab b{display:block;font:600 12.5px/1.3 var(--body);color:var(--k);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl-lab small{display:block;font:10.5px/1.3 var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-labels{position:sticky;left:0;z-index:3;flex:none;background:var(--q-surface);border-right:1px solid var(--q-line)}
+.tl-lab{all:unset;box-sizing:border-box;display:block;width:100%;cursor:pointer;padding:3px 8px;border-bottom:1px solid var(--q-line);overflow:hidden}
+.tl-lab:hover{background:var(--q-sunken)}
+.tl-lab.on{background:color-mix(in srgb,var(--k) 14%,var(--q-surface));box-shadow:inset 3px 0 0 var(--k)}
+.tl-lab:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
+.tl-lab b{display:block;font:600 12.5px/1.3 var(--q-sans);color:var(--k);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-lab small{display:block;font:10.5px/1.3 var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-canvas{position:relative;z-index:0;flex:none;overflow:hidden}
-.tl-row{position:absolute;left:0;right:0;border-bottom:1px solid var(--line)}
+.tl-row{position:absolute;left:0;right:0;border-bottom:1px solid var(--q-line)}
 .tl-row.on{background:color-mix(in srgb,var(--k) 7%,transparent)}
 .tl-life{position:absolute;height:3px;border-radius:2px;background:var(--k);opacity:.55}
-.tl-brk{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--muted) 18%,transparent) 0 3px,transparent 3px 7px);border-left:1px dashed var(--line);border-right:1px dashed var(--line);z-index:1;pointer-events:none}
+.tl-brk{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--q-muted) 18%,transparent) 0 3px,transparent 3px 7px);border-left:1px dashed var(--q-line);border-right:1px dashed var(--q-line);z-index:1;pointer-events:none}
 .tb{position:absolute;height:12px;border-radius:3px;background:var(--c);cursor:pointer;z-index:2}
 .tb:hover{filter:brightness(1.15);z-index:3}
-.tb.err{box-shadow:0 0 0 1.5px var(--bad);background:color-mix(in srgb,var(--c) 55%,var(--paper))}
+.tb.err{box-shadow:0 0 0 1.5px var(--q-bad);background:color-mix(in srgb,var(--c) 55%,var(--q-surface))}
 .tb.run{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.35) 0 4px,transparent 4px 8px);background-size:11.3px 11.3px;animation:tlrun 1s linear infinite}
-.tb.hit{outline:1px solid var(--fg);outline-offset:1px}
-.tb.sel{outline:2.5px solid var(--main);outline-offset:2px;z-index:4}
+.tb.hit{outline:1px solid var(--q-fg);outline-offset:1px}
+.tb.sel{outline:2.5px solid var(--q-accent);outline-offset:2px;z-index:4}
 @keyframes tlrun{to{background-position:11.3px 0}}
 @media (prefers-reduced-motion: reduce){.tb.run{animation:none}}
-.tl-prompt{position:absolute;width:9px;height:9px;margin-left:-4.5px;transform:rotate(45deg);background:var(--paper);border:1.5px solid var(--main);z-index:3;cursor:help}
-.tl-now{position:absolute;top:0;bottom:0;width:0;border-left:1.5px solid var(--ok);z-index:3;pointer-events:none}
+.tl-prompt{position:absolute;width:9px;height:9px;margin-left:-4.5px;transform:rotate(45deg);background:var(--q-surface);border:1.5px solid var(--q-accent);z-index:3;cursor:help}
+.tl-now{position:absolute;top:0;bottom:0;width:0;border-left:1.5px solid var(--q-ok);z-index:3;pointer-events:none}
 .tl-links{position:absolute;left:0;top:0;pointer-events:none;z-index:1;overflow:visible}
-.tl-tip{position:fixed;z-index:20;pointer-events:none;max-width:420px;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:11.5px/1.45 var(--mono);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.tl-tip{position:fixed;z-index:20;pointer-events:none;max-width:420px;background:var(--q-surface);border:1px solid var(--q-line);border-radius:6px;padding:5px 8px;font:11.5px/1.45 var(--q-mono);box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .tl-tip b{font-weight:600}
 .tl-tip div{overflow-wrap:anywhere}
 </style>
@@ -206,7 +202,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   <h1>q-graph</h1>
   <span id="views"></span>
   <span class="live off" id="live">● connecting</span>
-  <span class="legend"><span><i style="--c:var(--main)"></i>main</span><span><i style="--c:var(--sub)"></i>subagent</span><span><i style="--c:var(--team)"></i>teammate</span><span><i style="--c:var(--tool)"></i>tool</span><span><i style="--c:var(--skill)"></i>skill</span><span><i style="--c:var(--mcp)"></i>mcp</span><span><i style="--c:var(--rule)"></i>rule</span></span>
+  <span class="legend"><span><i style="--c:var(--q-k-main)"></i>main</span><span><i style="--c:var(--q-k-sub)"></i>subagent</span><span><i style="--c:var(--q-k-team)"></i>teammate</span><span><i style="--c:var(--q-k-tool)"></i>tool</span><span><i style="--c:var(--q-k-skill)"></i>skill</span><span><i style="--c:var(--q-k-mcp)"></i>mcp</span><span><i style="--c:var(--q-k-rule)"></i>rule</span></span>
   <span class="counts" id="counts"></span>
 </header>
 <div id="app"><div class="empty">Waiting for the session's first snapshot…</div></div>
@@ -227,11 +223,11 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   const RF = window.ReactFlow
   const token = new URLSearchParams(location.search).get('k') || ''
 
-  const KIND = { main: '--main', subagent: '--sub', teammate: '--team' }
-  const kvar = k => 'var(' + (KIND[k] || '--muted') + ')'
+  const KIND = { main: '--q-k-main', subagent: '--q-k-sub', teammate: '--q-k-team' }
+  const kvar = k => 'var(' + (KIND[k] || '--q-muted') + ')'
   const ASK = new Set(['AskUserQuestion', 'ExitPlanMode'])
   const GLOW_MS = 1200
-  const STATUS = { pending: ['· starting', 'var(--muted)'], waiting: ['⏸ waiting', 'var(--muted)'], idle: ['○ idle', 'var(--muted)'], completed: ['✓ done', 'var(--ok)'], failed: ['✗ failed', 'var(--bad)'], killed: ['■ stopped', 'var(--muted)'], lost: ['? lost', 'var(--muted)'] }
+  const STATUS = { pending: ['· starting', 'var(--q-muted)'], waiting: ['⏸ waiting', 'var(--q-muted)'], idle: ['○ idle', 'var(--q-muted)'], completed: ['✓ done', 'var(--q-ok)'], failed: ['✗ failed', 'var(--q-bad)'], killed: ['■ stopped', 'var(--q-muted)'], lost: ['? lost', 'var(--q-muted)'] }
   const fmtTok = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n || 0)))
   const fmtTime = ms => { const s = Math.max(0, Math.floor(ms / 1000)); if (s < 60) return s + 's'; const m = Math.floor(s / 60); return m < 60 ? m + 'm' + String(s % 60).padStart(2, '0') : Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') }
   const shortModel = m => ((/\b(opus|sonnet|haiku|fable)\b/i.exec(m || '') || [])[1] || (m || '').replace(/^claude-/, '').replace(/-\d{8}$/, '')).toLowerCase()
@@ -239,7 +235,10 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   // Any ask tool still in flight, not just the latest call (an agent can run tools in parallel).
   const needsYou = a => a.kind !== 'main' && (Array.isArray(a.inFlight) ? a.inFlight.some(c => ASK.has(c.tool)) : !!(a.currentTool && ASK.has(a.currentTool)))
   // An agent's uses (lib/graph.ts useOf, agentUses): a tool, `skill:<name>`, `mcp:<server>`, `rule:<path>`.
-  const USE_VAR = { tool: 'var(--tool)', skill: 'var(--skill)', mcp: 'var(--mcp)', rule: 'var(--rule)' }
+  const USE_VAR = { tool: 'var(--q-k-tool)', skill: 'var(--q-k-skill)', mcp: 'var(--q-k-mcp)', rule: 'var(--q-k-rule)' }
+  const USE_TOKEN = { tool: '--q-k-tool', skill: '--q-k-skill', mcp: '--q-k-mcp', rule: '--q-k-rule' }
+  // Canvas colours cannot use var(); read the live token (the page re-renders when the colour scheme flips).
+  const cssVar = name => (name ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '')
   const useOf = key => {
     const i = key.indexOf(':'), p = i > 0 ? key.slice(0, i) : ''
     if (p === 'skill' || p === 'mcp') return { kind: p, label: key.slice(i + 1) }
@@ -255,11 +254,11 @@ details.fold.sec[open]>summary{margin-bottom:6px}
     const base = p => p.split(/[\\/]/).pop()
     const hooks = Object.entries(hz.hooks || {})
     return [
-      ['rules', 'var(--rule)', hz.rules.length + list(hz.rules.map(base))],
-      ['hooks', 'var(--warn)', hooks.reduce((n, e) => n + e[1], 0) + list(hooks.map(e => e[0] + ' ' + e[1]))],
-      ['skills', 'var(--skill)', String(hz.skills)],
-      ['mcp', 'var(--mcp)', hz.mcpServers.length + list(hz.mcpServers)],
-      ['agents', 'var(--sub)', String(hz.agents)],
+      ['rules', 'var(--q-k-rule)', hz.rules.length + list(hz.rules.map(base))],
+      ['hooks', 'var(--q-warn)', hooks.reduce((n, e) => n + e[1], 0) + list(hooks.map(e => e[0] + ' ' + e[1]))],
+      ['skills', 'var(--q-k-skill)', String(hz.skills)],
+      ['mcp', 'var(--q-k-mcp)', hz.mcpServers.length + list(hz.mcpServers)],
+      ['agents', 'var(--q-k-sub)', String(hz.agents)],
     ]
   }
 
@@ -312,8 +311,8 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   function Agent({ data, selected }) {
     const a = data.a, now = data.now
     const ask = needsYou(a)
-    const st = ask ? ['⚠ needs you', 'var(--warn)'] : a.status === 'running' ? ['● ' + (a.currentTool || 'running'), kvar(a.kind)]
-      : a.status === 'idle' && data.waiting ? ['⏸ ' + waitingText(data.waiting), 'var(--muted)'] : STATUS[a.status] || ['', '']
+    const st = ask ? ['⚠ needs you', 'var(--q-warn)'] : a.status === 'running' ? ['● ' + (a.currentTool || 'running'), kvar(a.kind)]
+      : a.status === 'idle' && data.waiting ? ['⏸ ' + waitingText(data.waiting), 'var(--q-muted)'] : STATUS[a.status] || ['', '']
     const cls = 'qn ' + a.status + (ask ? ' ask' : '') + (selected ? ' sel' : '')
     const task = firstLine(a.description, 90)
     return h('div', { className: cls, style: { '--k': kvar(a.kind) }, role: 'group', 'aria-label': a.kind + ' ' + a.label + ', ' + (ask ? 'needs you' : a.status === 'idle' && data.waiting ? waitingText(data.waiting) : a.status), title: [a.label + ' · ' + (shortModel(a.model) || a.kind), a.description].filter(Boolean).join('\n') },
@@ -340,7 +339,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
     // Tree edges are orthogonal; message edges (dashed) stay curved so they read as a different relation.
     const [path] = d.dashed ? RF.getBezierPath(p) : RF.getSmoothStepPath({ ...p, borderRadius: 8 })
     return h(React.Fragment, null,
-      h(RF.BaseEdge, { path, style: { stroke: d.active ? d.color : 'var(--line)', strokeWidth: d.active ? 2.4 : 1.4, strokeDasharray: d.dashed ? '5 4' : undefined, opacity: d.faint && !d.active ? 0.6 : 1 } }),
+      h(RF.BaseEdge, { path, style: { stroke: d.active ? d.color : 'var(--q-line)', strokeWidth: d.active ? 2.4 : 1.4, strokeDasharray: d.dashed ? '5 4' : undefined, opacity: d.faint && !d.active ? 0.6 : 1 } }),
       d.active ? h('circle', { r: 5, style: { fill: d.color } }, h('animateMotion', { dur: '0.9s', repeatCount: 'indefinite', path })) : null)
   }
   const nodeTypes = { agent: Agent, use: Use, harness: HarnessCard }
@@ -366,7 +365,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
     for (const m of g.messages || []) {
       if (!pos.has(m.from) || !pos.has(m.to)) continue
       const isTree = g.agents[m.to]?.parentId === m.from || g.agents[m.from]?.parentId === m.to
-      if (!isTree) edges.push({ id: 'msg:' + m.from + '>' + m.to, source: m.from, sourceHandle: 'r', target: m.to, type: 'flow', data: { dashed: true, color: 'var(--team)' } })
+      if (!isTree) edges.push({ id: 'msg:' + m.from + '>' + m.to, source: m.from, sourceHandle: 'r', target: m.to, type: 'flow', data: { dashed: true, color: 'var(--q-k-team)' } })
     }
     return { nodes, edges }
   }
@@ -627,10 +626,10 @@ details.fold.sec[open]>summary{margin-bottom:6px}
     const hooks = Object.entries(hz.hooks || {})
     const list = (xs, render) => (xs.length ? h('ul', { className: 'list' }, xs.map((x, i) => h('li', { key: i }, render ? render(x) : x))) : h('div', { className: 'note' }, 'none'))
     return h(React.Fragment, null,
-      h(Head, { title: 'harness', chip: 'configured · loaded', color: 'var(--muted)', onClose }),
-      h('h3', { style: { color: 'var(--rule)' } }, 'rules · ' + hz.rules.length), list(hz.rules, p => h('span', { title: p }, shortPath(hz, p))),
-      h('h3', { style: { color: 'var(--warn)' } }, 'hooks · ' + hooks.reduce((n, e) => n + e[1], 0)), list(hooks, e => e[0] + ' × ' + e[1]),
-      h('h3', { style: { color: 'var(--mcp)' } }, 'mcp servers · ' + hz.mcpServers.length), list(hz.mcpServers),
+      h(Head, { title: 'harness', chip: 'configured · loaded', color: 'var(--q-muted)', onClose }),
+      h('h3', { style: { color: 'var(--q-k-rule)' } }, 'rules · ' + hz.rules.length), list(hz.rules, p => h('span', { title: p }, shortPath(hz, p))),
+      h('h3', { style: { color: 'var(--q-warn)' } }, 'hooks · ' + hooks.reduce((n, e) => n + e[1], 0)), list(hooks, e => e[0] + ' × ' + e[1]),
+      h('h3', { style: { color: 'var(--q-k-mcp)' } }, 'mcp servers · ' + hz.mcpServers.length), list(hz.mcpServers),
       h(KV, { rows: [['skills', String(hz.skills)], ['agents', String(hz.agents)]] }))
   }
 
@@ -656,7 +655,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
           h('span', { className: 't' }, h('i', { style: { width: Math.max(4, (u.calls / max) * 100) + '%' } })),
           h('em', null, '×' + u.calls)))) : null,
       kids.length ? h(React.Fragment, null, h('h3', null, 'agents · ' + kids.length),
-        h('ul', { className: 'list' }, kids.map(id => { const k = g.agents[id]; return h('li', { key: id }, h(AgentLink, { g, id, onSelect }), h('span', { style: { color: 'var(--muted)' } }, '  ' + (k.status || ''))) }))) : null,
+        h('ul', { className: 'list' }, kids.map(id => { const k = g.agents[id]; return h('li', { key: id }, h(AgentLink, { g, id, onSelect }), h('span', { style: { color: 'var(--q-muted)' } }, '  ' + (k.status || ''))) }))) : null,
       h(Fetched, { st }, d => h(React.Fragment, null,
         d.agent && d.agent.prompt ? h('details', { className: 'fold' }, h('summary', null, 'prompt'), h(Md, { text: d.agent.prompt })) : null,
         d.agent && d.agent.result ? h('details', { className: 'fold' }, h('summary', null, 'result'), h(Md, { text: d.agent.result })) : null,
@@ -1097,7 +1096,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
       const lines = [{ t: callTitle(c, model.byId), c: callColor(c, model.byId) }]
       if (c.hint) lines.push({ t: c.hint })
       lines.push({ t: clock(new Date(c.s).toISOString()) + ' · ' + (running ? 'running ' + fmtDur(end - c.s) : c.e == null ? 'no result' : fmtDur(end - c.s)) })
-      if (c.isError) lines.push({ t: '✗ error', c: 'var(--bad)' })
+      if (c.isError) lines.push({ t: '✗ error', c: 'var(--q-bad)' })
       tipApi.current({ x: e.clientX, y: e.clientY, lines })
     }
     const onClick = e => {
@@ -1158,6 +1157,12 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   function App() {
     const [snap, setSnap] = React.useState(null)
     const [now, setNow] = React.useState(Date.now())
+    const [, setScheme] = React.useState(0)
+    React.useEffect(() => {
+      const mq = matchMedia('(prefers-color-scheme: dark)'), bump = () => setScheme(n => n + 1)
+      mq.addEventListener('change', bump)
+      return () => mq.removeEventListener('change', bump)
+    }, [])
     const [sel, setSelOnly] = React.useState(null)
     // focusCall: the call a timeline click asked the sidebar to open; `n` makes a repeat click scroll again.
     const [focus, setFocus] = React.useState(null)
@@ -1284,11 +1289,11 @@ details.fold.sec[open]>summary{margin-bottom:6px}
           onPaneClick: () => setSel(null),
           proOptions: { hideAttribution: true },
         },
-          h(RF.Background, { gap: 22, size: 1.3, color: getComputedStyle(document.documentElement).getPropertyValue('--grid').trim() }),
+          h(RF.Background, { gap: 22, size: 1.3, color: cssVar('--q-grid') }),
           h(RF.Controls, { showInteractive: false },
             // Tidy: drop every manual drag so all cards go back to the tree layout.
             h(RF.ControlButton, { title: 'Tidy layout: put moved cards back in the tree', 'aria-label': 'Tidy layout', disabled: !movedAny, onClick: tidy }, '⟲')),
-          h(RF.MiniMap, { pannable: true, zoomable: true, nodeColor: n => (n.type === 'use' ? { tool: '#a86a0b', skill: '#6a4fc2', mcp: '#1f73ad', rule: '#4c7a24' }[n.data.u?.kind] || '#888' : { main: '#2f45b8', subagent: '#0d8a7e', teammate: '#b2337f' }[n.data.a?.kind] || '#888') }))),
+          h(RF.MiniMap, { pannable: true, zoomable: true, nodeColor: n => cssVar(n.type === 'use' ? USE_TOKEN[n.data.u?.kind] : KIND[n.data.a?.kind]) || cssVar('--q-muted') }))),
       shown ? h(Sidebar, { snap, sel: shown, now, focus, onSelect: setSel, onClose: close, width: sideW, onResize: resize, pinned, togglePin }) : null))
   }
   const EMPTY_LANES = new Map()

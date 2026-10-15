@@ -61,6 +61,7 @@ The mod cannot run a server (no Node in a mod), so `/q-graph web` starts `viewer
 - A failed snapshot write is retried on the next tick, and a missing transcript is looked up again every 5 seconds.
 - The page loads React and React Flow from cdnjs and jsDelivr, so the browser needs internet access; the session data never leaves the machine. Each script tag has an SRI `integrity` hash, so bumping a library version means recomputing it.
 - An open tab reloads itself when `viewer/index.html` changes on disk (the server watches the file and sends a `reload` event), so a page update shows without a manual refresh. A viewer process keeps the `server.mjs` it started with: after updating the plugin, run `/q-graph web stop` and `/q-graph web` once to pick up new server routes (the Timeline says so when its route is missing).
+- Colours and fonts come from `viewer/q-theme.css`, a generated copy of the repo's shared design tokens (`--q-*`; edit `shared/ui/q-theme.css` and run `node scripts/sync-ui.mjs`). Light and dark follow the browser. Kind colours mark graph kinds only; links, focus and selection use the accent, and a running agent's status is the accent. Fonts are the system stacks, nothing is downloaded. The terminal pane uses the host theme's `success`, `warning` and `error` for status and one mid-tone hex set for kinds, so it reads on light and dark terminals.
 - The link works in a terminal. Remote surfaces (the desktop and mobile apps) only open `https:` links.
 
 ### Timeline

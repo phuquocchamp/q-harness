@@ -98,6 +98,14 @@ test('401 without or with a wrong token, 200 with the token', async () => {
   assert.equal((await get('/')).status, 200)
 })
 
+test('the theme sheet is served as CSS without a token, and only to a valid Host', async () => {
+  const res = await get('/q-theme.css', { token: null })
+  assert.equal(res.status, 200)
+  assert.match(res.headers['content-type'], /^text\/css/)
+  assert.match(res.body, /--q-bg:/)
+  assert.equal((await get('/q-theme.css', { host: 'evil.example', token: null })).status, 403)
+})
+
 test('403 for a Host other than 127.0.0.1:<port> or localhost:<port>', async () => {
   assert.equal((await get('/snapshot.json', { host: 'evil.example' })).status, 403)
   assert.equal((await get('/snapshot.json', { host: `evil.example:${info.port}` })).status, 403)

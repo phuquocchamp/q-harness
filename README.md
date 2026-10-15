@@ -145,7 +145,9 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 ├── .claude-plugin/
 │   └── marketplace.json          # The marketplace: lists every plugin and its folder
 ├── .claude/                      # Claude Code settings and rules for working on this repo
-├── .github/workflows/ci.yml      # validate, then plugin test for every mod, then the q-graph viewer tests
+├── .github/workflows/ci.yml      # validate, plugin test for every mod, viewer and runner tests, shared UI drift check
+├── shared/ui/q-theme.css         # Design tokens (source of truth); plugins ship generated copies
+├── scripts/sync-ui.mjs           # Copies the tokens into each plugin (--check fails on drift)
 ├── plugins/                      # One folder per plugin; only these folders are shipped
 │   ├── q-panel/                  # Plugin with a mod
 │   │   ├── .claude-plugin/plugin.json
@@ -171,6 +173,10 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 
 Files at the repository root (`README.md`, `docs/`, `TODOS.md`, `.claude/`) are never installed. Everything a user receives must be inside the plugin's folder. A plugin can also ship `skills/`, `agents/`, `commands/` and `.mcp.json`; see [Adding a plugin](docs/guides/adding-a-plugin.md).
 
+## Design system
+
+Plugins that serve a UI (the q-graph viewer, the q-pilot inspector) share one token sheet, `shared/ui/q-theme.css`: cool neutrals, one accent, light and dark (`prefers-color-scheme`, or `data-theme` on `<html>`). Every token starts with `--q-`. Because each plugin installs on its own, the sheet is copied into the plugin by `node scripts/sync-ui.mjs`; the copies are generated (do not edit them) and CI runs `node scripts/sync-ui.mjs --check` to fail on drift. Rules: kind colours (`--q-k-*`) mark graph kinds only (main, subagent, teammate, tool, skill, mcp, rule); UI chrome and "running" use `--q-accent`; success, warning and error use `--q-ok`, `--q-warn`, `--q-bad`. Terminal UI uses the host's theme keys instead. Details in [Design system](docs/guides/design-system.md).
+
 ## Docs
 
 | Guide | Covers |
@@ -179,6 +185,7 @@ Files at the repository root (`README.md`, `docs/`, `TODOS.md`, `.claude/`) are 
 | [Developing a mod](docs/guides/developing-a-mod.md) | The files a mod needs, loading, type-checking, testing, debugging |
 | [Marketplace and release](docs/guides/marketplace.md) | Installing from the local folder or GitHub, publishing, versioning and tagging |
 | [Command cheat sheet](docs/guides/commands.md) | Every command, grouped: create, run, check, test, marketplace, install, release |
+| [Design system](docs/guides/design-system.md) | The shared `--q-*` tokens, colour rules, the sync script, terminal theme keys |
 | [Claude Code tools](docs/guides/claude-code-tools.md) | Built-in and MCP tools, skills, when to use each, rules of tool use, permissions |
 
 ## License

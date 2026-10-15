@@ -55,6 +55,7 @@ const PAGE = ['index.html', 'text/html; charset=utf-8']
 /** Files that hold no session data: the page's relative links load them without the token. */
 const ASSETS = {
   '/reactflow-base.css': ['reactflow-base.css', 'text/css; charset=utf-8'],
+  '/q-theme.css': ['q-theme.css', 'text/css; charset=utf-8'],
 }
 
 const serve = (res, [name, type]) => res.writeHead(200, { 'content-type': type }).end(readFileSync(join(here, name)))
