@@ -1,6 +1,6 @@
 # Design system
 
-Plugins with a web UI (the q-graph viewer, later the q-pilot inspector) share one token sheet so they look alike in light and dark. The source of truth is [`shared/ui/q-theme.css`](../../shared/ui/q-theme.css).
+Plugins with a web UI (the q-graph viewer and the q-pilot inspector) share one token sheet so they look alike in light and dark. The source of truth is [`shared/ui/q-theme.css`](../../shared/ui/q-theme.css).
 
 ## Sharing the sheet
 
@@ -12,7 +12,7 @@ node scripts/sync-ui.mjs --check   # exit 1 and list copies that drifted (CI run
 node --test scripts/*.test.mjs     # tests for the script
 ```
 
-Targets are listed in `TARGETS` in the script. Today: `plugins/q-graph/viewer/q-theme.css`. Next: `plugins/q-pilot/runner/inspector/q-theme.css`. A plugin's server must serve the file without a token, like its other static assets, and its page links it before its own `<style>`.
+Targets are listed in `TARGETS` in the script. Today: `plugins/q-graph/viewer/q-theme.css` and `plugins/q-pilot/runner/inspector/q-theme.css`. A plugin's server must serve the file without a token, like its other static assets, and its page links it before its own `<style>`.
 
 ## Theme
 

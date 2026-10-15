@@ -14,7 +14,7 @@ import { elementIndex } from './snapshot.mjs'
 import { redact } from './redact.mjs'
 
 export const DEFAULT_PORT = 8767
-const STATIC = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] }
+const STATIC = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/q-theme.css': ['q-theme.css', 'text/css'] }
 const ACTIONS = new Set(['pause', 'run', 'choose', 'execute', 'stop', 'close', 'trace'])
 /** Allowed once the run has ended (the dashboard stays up for review). */
 const AFTER_END = new Set(['close', 'trace'])

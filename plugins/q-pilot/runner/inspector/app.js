@@ -9,6 +9,7 @@ let hover = null
 let review = null
 const tok = encodeURIComponent(token)
 
+const EYE = '<svg class="eye" viewBox="0 0 16 16" aria-hidden="true"><path class="stroke" d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" /><circle class="stroke" cx="8" cy="8" r="1.8" /></svg>'
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const pct = v => (typeof v === 'number' ? `${(v * 100).toFixed(v > 0 && v < 0.01 ? 1 : 0)}%` : '—')
 const clamp01 = v => Math.max(0, Math.min(1, Number(v) || 0))
@@ -186,16 +187,22 @@ function renderVision() {
 }
 
 // ---- Title and tab icon follow the run ----
-const TONE = { idle: '#6b7180', run: '#2563eb', paused: '#b45309', held: '#7c3aed', ok: '#15803d', warn: '#b45309', bad: '#c42b2b' }
+const TONE = { idle: 'muted', run: 'accent', paused: 'warn', held: 'held', ok: 'ok', warn: 'warn', bad: 'bad' }
 let lastIcon = ''
+let lastTab = null
 function renderTab(label, tone) {
+  lastTab = [label, tone]
   document.title = `${state?.name ? `${state.name} · ` : ''}${label} · q-pilot`
-  const color = TONE[tone] ?? TONE.idle
+  const color = getComputedStyle(document.documentElement).getPropertyValue(`--q-${TONE[tone] ?? TONE.idle}`).trim()
   if (color === lastIcon) return
   lastIcon = color
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='1' width='14' height='14' rx='3.5' fill='${color}'/><path d='M5.2 3.8 11.6 8.3 8.6 9.1 7.3 12Z' fill='white'/><circle cx='4.4' cy='11.6' r='.9' fill='white' opacity='.75'/></svg>`
   $('favicon').href = `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  lastIcon = ''
+  if (lastTab) renderTab(...lastTab)
+})
 $('overlays').addEventListener('change', () => ($('boxes').hidden = !$('overlays').checked))
 
 // Keyboard: Space run/pause, N choose, E execute, Esc stop. Only fires a control whose button is enabled.
@@ -357,7 +364,7 @@ function renderDecision(d, hot) {
   const v = d?.vision
   const chip = $('vision-chip')
   chip.hidden = !v?.used
-  if (v?.used) chip.textContent = `👁 ${v.model ?? 'image'}${v.before?.operation != null ? ` · p ${pct(v.before.operation)} → ${pct(d.operations?.[d.operation])}` : v.mode === 'always' ? ' · every step' : ''}`
+  if (v?.used) chip.innerHTML = `${EYE} ${esc(`${v.model ?? 'image'}${v.before?.operation != null ? ` · p ${pct(v.before.operation)} → ${pct(d.operations?.[d.operation])}` : v.mode === 'always' ? ' · every step' : ''}`)}`
   chip.title = v?.used ? 'This decision saw the screenshot' : ''
   const choice = $('choice')
   choice.textContent = d ? d.label : s.status === 'paused' ? 'Paused before asking Jev' : s.status === 'ended' ? 'No pending decision' : 'Waiting for a decision'
@@ -393,7 +400,7 @@ function renderTrail() {
   $('history').innerHTML = h
     .map((r, k) => {
       const eff = r.end ? ['end', r.action === 'DONE' ? 'Jev says done' : 'Jev gives up'] : r.pageChanged === null ? ['wait', 'settling…'] : r.pageChanged ? ['yes', 'page changed'] : ['no', 'no change']
-      return `<tr class="${k === h.length - 1 ? 'latest' : ''}${review && r.frame === review.i ? ' viewing' : ''}" data-frame="${esc(r.frame ?? '')}"><td class="n">${String(r.step).padStart(2, '0')}</td><td class="act">${r.by === 'claude' ? '<span class="effect">Claude</span> ' : r.by === 'box' ? '<span class="effect end">Box</span> ' : ''}${(state.frames ?? []).some(f => f.i === r.frame && f.vision) ? '👁 ' : ''}${esc(r.action)}</td><td class="fx">${r.fixture ? esc(r.fixture) : ''}</td><td><div class="pcell">${bar(r.p)}<span class="num">${pct(r.p)}</span></div></td><td class="num">${r.latencyMs != null ? `${esc(r.latencyMs)} ms` : '—'}</td><td><span class="effect ${eff[0]}">${eff[1]}</span></td></tr>`
+      return `<tr class="${k === h.length - 1 ? 'latest' : ''}${review && r.frame === review.i ? ' viewing' : ''}" data-frame="${esc(r.frame ?? '')}"><td class="n">${String(r.step).padStart(2, '0')}</td><td class="act">${r.by === 'claude' ? '<span class="effect">Claude</span> ' : r.by === 'box' ? '<span class="effect end">Box</span> ' : ''}${(state.frames ?? []).some(f => f.i === r.frame && f.vision) ? `${EYE} ` : ''}${esc(r.action)}</td><td class="fx">${r.fixture ? esc(r.fixture) : ''}</td><td><div class="pcell">${bar(r.p)}<span class="num">${pct(r.p)}</span></div></td><td class="num">${r.latencyMs != null ? `${esc(r.latencyMs)} ms` : '—'}</td><td><span class="effect ${eff[0]}">${eff[1]}</span></td></tr>`
     })
     .join('')
   $('history-empty').hidden = h.length > 0
