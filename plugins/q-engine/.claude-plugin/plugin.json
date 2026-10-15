@@ -1,0 +1,10 @@
+{
+  "name": "q-engine",
+  "version": "0.2.0",
+  "author": { "name": "phuquocchamp" },
+  "description": "A software engineering team as subagents (product manager, product owner, architect, engineer, database, debugger, reviewer, verifier) that hand work to each other through files, with /q-engine:feature and /q-engine:reproduce-bug workflows and coding-guideline, commit and Playwright CLI skills.",
+  "homepage": "https://github.com/phuquocchamp/q-harness/tree/main/plugins/q-engine",
+  "repository": "https://github.com/phuquocchamp/q-harness",
+  "license": "MIT",
+  "keywords": ["subagents", "software-engineering", "code-review", "verification", "product-management", "playwright"]
+}
