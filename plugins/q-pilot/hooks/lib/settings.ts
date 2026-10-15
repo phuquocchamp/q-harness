@@ -1,5 +1,6 @@
-// q-pilot's settings, set with `/q-pilot config <key> <value>` and kept in the plugin store across sessions.
-// Pure, so everything is easy to test. Only the Jev API key stays a plugin option (it is a secret).
+// q-pilot's settings, layered like Claude Code's: cli > env > local file > project file > user (the plugin store) > default.
+// Set with `/q-pilot config set <key> <value> [--scope user|project|local]`. Pure, so everything is easy to test.
+// Only the Jev API key stays a plugin option (it is a secret, and never goes in a settings file).
 
 export type Helper = 'haiku' | 'sonnet' | 'opus' | 'session'
 
@@ -39,23 +40,24 @@ export const DEFAULT_SETTINGS: PilotSettings = {
 }
 
 type Key = keyof PilotSettings
+/** `personal`: runs a command or opens a connection, so a repo file must not set it (only user, env and cli may). */
 type Spec =
-  | { kind: 'enum'; values: readonly string[]; help: string; advanced?: true }
-  | { kind: 'bool'; help: string; advanced?: true }
-  | { kind: 'string'; help: string; advanced?: true }
-  | { kind: 'number'; min: number; max: number; help: string; advanced?: true }
+  | { kind: 'enum'; values: readonly string[]; help: string; advanced?: true; personal?: true }
+  | { kind: 'bool'; help: string; advanced?: true; personal?: true }
+  | { kind: 'string'; help: string; advanced?: true; personal?: true }
+  | { kind: 'number'; min: number; max: number; help: string; advanced?: true; personal?: true }
 
 export const SPECS: Record<Key, Spec> = {
   helper: { kind: 'enum', values: ['haiku', 'sonnet', 'opus', 'session'], help: 'Claude model that answers when Jev (and its vision) is stuck; session: your chat answers' },
-  vision: { kind: 'enum', values: ['off', 'gated', 'always'], help: 'Jev sees the screenshot: never, when unsure, every step' },
+  vision: { kind: 'enum', values: ['off', 'gated', 'always'], help: 'Jev sees the screenshot: never, when unsure, every step (tasks and tests; not stop-gate replay)' },
   visionModel: { kind: 'enum', values: ['jev-1.13.0', 'jev-1.14.0'], help: 'Jev model that answers with the screenshot' },
   box: { kind: 'bool', help: 'Box rescue: Jev 1.14 finds the control on the screenshot when stuck' },
   inspector: { kind: 'enum', values: ['on', 'pause', 'off'], help: 'live inspector in your browser for each task (pause: hold before step 1)' },
   dashboard: { kind: 'bool', help: 'show runs in the Playwright Dashboard (playwright-cli show); pause in the inspector before taking control' },
   mode: { kind: 'enum', values: ['off', 'affected', 'all'], help: 'stop gate: which saved flows run when a turn ends' },
-  cdpUrl: { kind: 'string', help: 'run in your own Chrome (e.g. http://127.0.0.1:9222); off: launch Chromium' },
-  node: { kind: 'string', help: 'Node 18+ command that runs the runner' },
-  trust: { kind: 'enum', values: ['shadow', 'on'], help: 'on: accept drift the turn diff explains', advanced: true },
+  cdpUrl: { kind: 'string', help: 'run in your own Chrome (e.g. http://127.0.0.1:9222); off: launch Chromium', personal: true },
+  node: { kind: 'string', help: 'Node 18+ command that runs the runner', personal: true },
+  trust: { kind: 'enum', values: ['shadow', 'on'], help: 'on: accept drift the turn diff explains', advanced: true, personal: true },
   followUp: { kind: 'enum', values: ['auto', 'suggest', 'off'], help: 'red gate without the classic Stop hook', advanced: true },
   maxStopSeconds: { kind: 'number', min: 10, max: 600, help: 'stop gate budget', advanced: true },
   maxTestSeconds: { kind: 'number', min: 20, max: 600, help: 'pilot_test budget', advanced: true },
@@ -74,38 +76,100 @@ function fit(key: Key, raw: unknown): PilotSettings[Key] | undefined {
   return raw !== '' && raw !== null && Number.isFinite(n) && n >= spec.min && n <= spec.max ? n : undefined
 }
 
-/** Takes the known, valid keys of a stored value (or legacy plugin options); everything else is dropped. */
+/** Takes the known, valid keys of a stored value; everything else is dropped. */
 export const pickSettings = (saved: unknown): Partial<PilotSettings> => {
   const s = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>
   const out: Partial<PilotSettings> = {}
   for (const k of KEYS) {
-    // The legacy plugin option for Box rescue was called visionBox.
-    const raw = k === 'box' && s.box === undefined ? s.visionBox : s[k]
-    const v = raw === undefined || raw === '' ? undefined : fit(k, raw)
+    const v = s[k] === undefined ? undefined : fit(k, s[k])
     if (v !== undefined) (out as Record<string, unknown>)[k] = v
   }
   return out
 }
 
-/** Only the values that differ from the defaults (a host fills declared plugin options with their defaults). */
-export const withoutDefaults = (s: Partial<PilotSettings>): Partial<PilotSettings> =>
-  Object.fromEntries(Object.entries(s).filter(([k, v]) => DEFAULT_SETTINGS[k as keyof PilotSettings] !== v)) as Partial<PilotSettings>
-
-/** Defaults, then the legacy plugin options, then what `/q-pilot config` stored. */
-export const effective = (legacy: Partial<PilotSettings>, stored: Partial<PilotSettings>): PilotSettings => ({ ...DEFAULT_SETTINGS, ...legacy, ...stored })
-
 /** The key a person typed, case-insensitive (`visionmodel` is visionModel). */
 export const keyOf = (typed: string): Key | undefined => KEYS.find(k => k.toLowerCase() === typed.toLowerCase())
 
+// ---- scopes ----------------------------------------------------------------------------------------
+
+/** Highest first. `user` is the plugin store; `local` and `project` are `.q-pilot/settings.local.json` and `settings.json`. */
+export const SCOPES = ['cli', 'env', 'local', 'project', 'user'] as const
+export type Scope = (typeof SCOPES)[number]
+/** The scopes `/q-pilot config set` writes to (env and cli are never stored). */
+export const WRITE_SCOPES = ['user', 'project', 'local'] as const
+export type WriteScope = (typeof WRITE_SCOPES)[number]
+/** What a repo file may not set: it is committed (or force-committed) by someone else. */
+const FILE_SCOPES: readonly string[] = ['project', 'local']
+
+/** One scope's raw settings object, as read (not yet checked). */
+export type Layer = Record<string, unknown>
+export type Layers = Partial<Record<Scope, unknown>>
+
+export type Source = { scope: Scope | 'default'; overridden: { scope: Scope; value: unknown }[] }
+export type Resolved = { values: PilotSettings; sources: Record<Key, Source>; warnings: string[] }
+
+/** The environment variables that are a scope of their own: only the ones the runner already reads. */
+export const ENV_VARS: Partial<Record<Key, string>> = { cdpUrl: 'Q_PILOT_CDP_URL' }
+
+/** The env layer from the variables' values: an empty one is unset. */
+export const envLayer = (env: Record<string, string | undefined>): Layer => {
+  const out: Layer = {}
+  for (const [k, name] of Object.entries(ENV_VARS)) {
+    const raw = env[name]?.trim()
+    if (raw) out[k] = raw
+  }
+  return out
+}
+
+const SECRET_KEY = /api.?key|token|secret|passw(or)?d|credential|auth/i
+const SECRET_VALUE = /\b(sk-[\w-]{10,}|gh[pousr]_\w{20,}|xox[abp]-[\w-]+|AKIA\w{12,}|eyJ[\w-]{20,}\.)/
+const looksSecret = (key: string, value: unknown) => SECRET_KEY.test(key) || (typeof value === 'string' && SECRET_VALUE.test(value))
+
+/** One scope's valid values, and a warning for everything dropped (unknown key, secret, personal key in a repo file, bad value). */
+function checkLayer(scope: Scope, raw: unknown): { values: Partial<PilotSettings>; warnings: string[] } {
+  const values: Record<string, unknown> = {}
+  const warnings: string[] = []
+  if (raw === undefined || raw === null) return { values, warnings }
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { values, warnings: [`${scope}: settings must be a JSON object; ignored`] }
+  for (const [key, value] of Object.entries(raw)) {
+    const k = keyOf(key)
+    if (looksSecret(key, value)) warnings.push(`${scope}: "${key}" looks like a secret; ignored (secrets never go in settings; the Jev key is the plugin option)`)
+    else if (!k) warnings.push(`${scope}: unknown setting "${key}"; ignored`)
+    else if (SPECS[k].personal && FILE_SCOPES.includes(scope)) warnings.push(`${scope}: "${k}" is personal (it runs a command or opens a connection) and is only read from user, env or cli; ignored`)
+    else {
+      const v = fit(k, value)
+      if (v === undefined) warnings.push(`${scope}: ${k} must be ${valuesOf(k)}; ignored`)
+      else values[k] = v
+    }
+  }
+  return { values, warnings }
+}
+
+/** Defaults, then every scope's checked values, lowest first; each setting remembers where it came from and what it overrides. */
+export function resolveSettings(layers: Layers): Resolved {
+  const checked = SCOPES.map(scope => ({ scope, ...checkLayer(scope, layers[scope]) }))
+  const values = { ...DEFAULT_SETTINGS }
+  const sources = {} as Record<Key, Source>
+  for (const k of KEYS) {
+    const hits = checked.filter(c => k in c.values).map(c => ({ scope: c.scope, value: (c.values as Record<string, unknown>)[k] }))
+    const [win, ...rest] = hits
+    if (win) (values as Record<string, unknown>)[k] = win.value
+    sources[k] = { scope: win?.scope ?? 'default', overridden: rest }
+  }
+  return { values, sources, warnings: checked.flatMap(c => c.warnings) }
+}
+
 /**
- * Parses `/q-pilot config <key> <value>` into the next stored settings, or an error. `default` removes the key
- * (back to its default); `off` or `none` clears a text setting. Values are case-sensitive except enum and on/off.
+ * Parses `/q-pilot config set <key> <value>` into the next settings of one scope's layer, or an error. `default` removes
+ * the key; `off` or `none` clears a text setting. Values are case-sensitive except enum and on/off. A personal key
+ * is refused in a repo file. Keys the layer already holds are kept as they are.
  */
-export function applyConfig(stored: Partial<PilotSettings>, typedKey: string, value: string): Partial<PilotSettings> | string {
+export function applyConfig(layer: Layer, typedKey: string, value: string, scope: WriteScope = 'user'): Layer | string {
   const key = keyOf(typedKey)
   if (!key) return `Unknown setting "${typedKey}". Settings: ${KEYS.join(', ')}.`
   const spec = SPECS[key]
-  const next = { ...stored }
+  if (spec.personal && scope !== 'user') return personalRefusal(key, scope)
+  const next = { ...layer }
   if (value === '') return `${key} needs a value: ${valuesOf(key)}.`
   if (value.toLowerCase() === 'default') {
     delete next[key]
@@ -115,9 +179,21 @@ export function applyConfig(stored: Partial<PilotSettings>, typedKey: string, va
   const raw = spec.kind === 'string' ? (['off', 'none'].includes(value.toLowerCase()) ? '' : value) : spec.kind === 'number' ? value : value.toLowerCase()
   const v = fit(key, raw)
   if (v === undefined) return `${key} must be ${valuesOf(key)}.`
-  ;(next as Record<string, unknown>)[key] = v
+  if (looksSecret(key, v)) return `${key} looks like a secret; secrets never go in settings.`
+  next[key] = v
   return next
 }
+
+/** `/q-pilot config unset <key>`: the key leaves the layer. */
+export function unsetConfig(layer: Layer, typedKey: string): Layer | string {
+  const key = keyOf(typedKey)
+  if (!key) return `Unknown setting "${typedKey}". Settings: ${KEYS.join(', ')}.`
+  const next = { ...layer }
+  delete next[key]
+  return next
+}
+
+const personalRefusal = (key: Key, scope: WriteScope) => `${key} is personal (it runs a command or opens a connection), so it is not read from the ${scope} file: a repo could set it for you. Use --scope user.`
 
 const valuesOf = (key: Key) => {
   const spec = SPECS[key]
@@ -129,13 +205,34 @@ const valuesOf = (key: Key) => {
 
 const shown = (v: unknown) => (typeof v === 'boolean' ? (v ? 'on' : 'off') : v === '' ? 'off' : String(v))
 
-/** `/q-pilot config`: every setting, its value, and whether it was set or is the default. */
-export function showSettings(s: PilotSettings, stored: Partial<PilotSettings>): string {
-  const row = (k: Key) => `  ${k.padEnd(15)} ${shown(s[k]).padEnd(12)} ${k in stored ? '*' : ' '} ${SPECS[k].help} (${valuesOf(k)})`
+const overrides = (s: Source) => (s.overridden.length ? s.overridden.map(o => `${o.scope}=${shown(o.value)}`).join(', ') : '-')
+
+/** `/q-pilot config`: every setting with its value, the scope it came from, what it overrides, and the warnings. */
+export function showSettings(r: Resolved): string {
+  const row = (k: Key) => `  ${(SPECS[k].personal ? `${k}*` : k).padEnd(16)} ${shown(r.values[k]).padEnd(12)} ${r.sources[k].scope.padEnd(8)} ${overrides(r.sources[k]).padEnd(22)} ${SPECS[k].help} (${valuesOf(k)})`
+  const head = `  ${'key'.padEnd(16)} ${'value'.padEnd(12)} ${'source'.padEnd(8)} ${'overrides'.padEnd(22)} help`
   return [
-    'q-pilot settings (* set by you; /q-pilot config <key> <value>, <key> default, or reset):',
+    'q-pilot settings, highest scope first: cli > env (Q_PILOT_CDP_URL) > local > project > user > default',
+    head,
     ...KEYS.filter(k => !SPECS[k].advanced).map(row),
     '  advanced:',
     ...KEYS.filter(k => SPECS[k].advanced).map(row),
+    '  * personal: read only from user, env and cli, never from the project or local file',
+    ...(r.warnings.length ? ['warnings:', ...r.warnings.map(w => `  ! ${w}`)] : []),
+    'Change: /q-pilot config set <key> <value> [--scope user|project|local] · unset <key> [--scope …] · explain <key> · reset [--scope …]',
   ].join('\n')
+}
+
+/** `/q-pilot config explain <key>`: every scope's value and which one wins. */
+export function explainSetting(typedKey: string, r: Resolved): string {
+  const key = keyOf(typedKey)
+  if (!key) return `Unknown setting "${typedKey}". Settings: ${KEYS.join(', ')}.`
+  const src = r.sources[key]
+  const held = new Map<string, unknown>([[src.scope, r.values[key]], ...src.overridden.map(o => [o.scope, o.value] as [string, unknown])])
+  const rows = [...SCOPES, 'default' as const].map(scope => {
+    const value = scope === 'default' ? DEFAULT_SETTINGS[key] : held.get(scope)
+    const text = scope === 'default' || held.has(scope) ? shown(value) : '-'
+    return `  ${scope.padEnd(8)} ${text.padEnd(14)} ${scope === src.scope ? '<- wins' : ''}`.trimEnd()
+  })
+  return [`${key}: ${shown(r.values[key])} (${src.scope})`, `  ${SPECS[key].help} (${valuesOf(key)})`, ...(SPECS[key].personal ? ['  personal: only user, env and cli are read'] : []), ...rows, ...(ENV_VARS[key] ? [`  env variable: ${ENV_VARS[key]}`] : [])].join('\n')
 }

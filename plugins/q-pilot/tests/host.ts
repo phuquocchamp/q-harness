@@ -97,6 +97,8 @@ export const fakeHost = (on: On) => {
     suggestShown: true,
     fillFilled: true,
     store,
+    /** A per-project store value (its key is the name plus a hash of the root). */
+    stored: (name: string) => [...store].find(([k]) => new RegExp(`^${name}:[0-9a-f]{8}$`).test(k))?.[1],
     files,
     toasts,
     notes,
@@ -110,6 +112,8 @@ export const fakeHost = (on: On) => {
     /** Whether runner/pilot.mjs exists in the plugin. */
     runnerExists: true,
     diff: '',
+    /** The project root `$.session.root()` answers. */
+    root: ROOT,
     clock: mock.clock(on, { now: 1_000 }),
   }
   const isDir = (path: string) => [...files.keys()].some(k => k.startsWith(`${path}/`))
@@ -119,7 +123,7 @@ export const fakeHost = (on: On) => {
     store.set(e.key, e.value)
     return { value: undefined }
   })
-  on('session.root', () => ({ value: ROOT }))
+  on('session.root', () => ({ value: host.root }))
   on('session.cwd', () => ({ value: ROOT }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))

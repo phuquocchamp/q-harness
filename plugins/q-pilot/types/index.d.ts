@@ -86,7 +86,7 @@ declare module 'claude-code' {
       lastTask: PilotExplore | null
       /** The last outcome of every flow that ran, by flow id. */
       lastByFlow: Record<string, PilotLast>
-      /** What `/q-pilot config` set (only the changed keys); restored from `$.store` at session start. */
+      /** The user scope of `/q-pilot config` (only the changed keys); re-read from `$.store` on every use, this is the fallback. */
       // Values of hooks/lib/settings.ts PilotSettings; the contract cannot import it.
       settings: Record<string, string | number | boolean>
       /** The main loop's running turn, from `turn.start`; null before the first. */

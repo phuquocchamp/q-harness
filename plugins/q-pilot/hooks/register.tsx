@@ -17,7 +17,7 @@ import type { FlowDef, PilotConfig, RunnerResult, Trust } from './lib/contract'
 import { DEFAULT_FLOWS_DIR, isUiRelevant, selectFlows } from './lib/impact'
 import { validateHelp, validateSpec, validateTask } from './lib/spec'
 import { HELPER_SYSTEM, helperTakes, newHelperState, parseHelperReply, type HelperState } from './lib/helper'
-import { applyConfig, effective, pickSettings, showSettings, withoutDefaults, type Helper, type PilotSettings } from './lib/settings'
+import { WRITE_SCOPES, applyConfig, envLayer, explainSetting, keyOf, pickSettings, resolveSettings, showSettings, unsetConfig, type Helper, type Layer, type PilotSettings, type Resolved, type WriteScope } from './lib/settings'
 import { actionFor, blockText, flowBlock, flowLine, isBad, isTouched, parseResult, stderrTail, stopBudget, summarize } from './lib/report'
 
 const edits = atom({ plugin: 'q-pilot', key: 'edits' } as const, [] as string[])
@@ -28,7 +28,7 @@ const lastExplore = atom({ plugin: 'q-pilot', key: 'lastExplore' } as const, nul
 /** The last task-mode run (pilot_run): kept apart from lastRun, so a blocked task never turns the gate's band red. */
 const lastTask = atom({ plugin: 'q-pilot', key: 'lastTask' } as const, null as PilotExplore | null)
 const lastByFlow = atom({ plugin: 'q-pilot', key: 'lastByFlow' } as const, {} as Record<string, PilotLast>)
-/** What `/q-pilot config` set (only the keys the person changed); kept in the store under SETTINGS_KEY. */
+/** The user scope of the settings (only the keys the person changed); kept in the store under SETTINGS_KEY, re-read at every use. */
 const storedSettings = atom({ plugin: 'q-pilot', key: 'settings' } as const, {} as Partial<PilotSettings>)
 const currentTurn = atom({ plugin: 'q-pilot', key: 'currentTurn' } as const, null as string | null)
 const stopSeen = atom({ plugin: 'q-pilot', key: 'stopSeen' } as const, null as PilotStopSeen | null)
@@ -47,6 +47,7 @@ const HELP_RE = /^mcp__[\w@.-]*q-pilot[\w@.-]*__pilot_help$/
 const RUN_ID = /^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$/
 const CONFIG_FILE = 'q-pilot.config.json'
 const SETTINGS_KEY = 'settings'
+const SETTINGS_FILES = { project: '.q-pilot/settings.json', local: '.q-pilot/settings.local.json' } as const
 const RUNNER = 'runner/pilot.mjs'
 const MAX_BLOCKS = 2
 const MAX_FOLLOW_UPS = 2
@@ -73,9 +74,11 @@ const USAGE = [
   '  status           last run per flow',
   '  export <id>      write a Playwright spec from a flow and its trace',
   '  init             write q-pilot.config.json and flows/example.flow.json when missing',
-  '  config           show the settings (helper model, Jev vision, Box, inspector, gate)',
-  '  config <key> <value>  set one (e.g. config helper sonnet, config vision always, config box on)',
-  '  config <key> default | config reset  back to the default',
+  '  config           show the settings: value, where it came from (default|user|project|local|env), what it overrides',
+  '  config set <key> <value> [--scope user|project|local]  set one (default scope user; e.g. config set vision always --scope project)',
+  '  config unset <key> [--scope …]   drop it from that scope · config reset [--scope …]  drop them all',
+  '  config explain <key>             every scope\'s value and which one wins',
+  '  config <key> <value>             short form of set at user scope',
 ].join('\n')
 
 const EXAMPLE_CONFIG = { baseURL: 'http://localhost:3000', flowsDir: DEFAULT_FLOWS_DIR, ignore: ['**/*.md'] }
@@ -162,12 +165,15 @@ type Opts = {
   jevKey: string
   /** CDP endpoint of a running Chrome to attach to instead of launching Chromium (Q_PILOT_CDP_URL). */
   cdpUrl: string
+  /** The setting comes from a scope above the default: the runner gets Q_PILOT_CDP_URL, an empty one included (off beats the shell's). */
+  cdpUrlSet: boolean
 }
 
 const words = (v: unknown) => String(v ?? '').split(/\s+/).filter(Boolean)
 
 /** The run options from the effective settings; the Jev key is the one plugin option left. */
-const optsOf = (s: PilotSettings, jevKey: string): Opts => {
+const optsOf = (r: Resolved, jevKey: string): Opts => {
+  const s = r.values
   const node = words(s.node)
   return {
     mode: s.mode,
@@ -185,8 +191,12 @@ const optsOf = (s: PilotSettings, jevKey: string): Opts => {
     node: node.length > 0 ? node : ['node'],
     jevKey,
     cdpUrl: s.cdpUrl.trim(),
+    cdpUrlSet: r.sources.cdpUrl.scope !== 'default',
   }
 }
+
+/** The runner's vision flags: its own default is off, so every run that drives Jev gets the resolved settings. */
+const visionArgs = (o: Opts) => ['--vision', o.vision, '--vision-model', o.visionModel, ...(o.visionBox ? ['--box'] : [])]
 
 const cap = (text: string, n: number) => (text.length > n ? `${text.slice(0, n)}\n…(truncated)` : text)
 const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -211,15 +221,16 @@ async function clearEdits($: EngineInterface, handled?: readonly string[]) {
   await update($, edits, list => (handled ? list.filter(p => !handled.includes(p)) : []))
 }
 
-/** `q-pilot.config.json` at the project root, or undefined when absent or unreadable: the gate stays off. */
-async function loadConfig($: EngineInterface): Promise<PilotConfig | undefined> {
+/** `q-pilot.config.json` at the project root: the config, undefined when absent (the gate stays off), or why it cannot be used. */
+async function loadConfig($: EngineInterface): Promise<{ cfg: PilotConfig } | { error: string } | undefined> {
   try {
     const path = `${await $.session.root()}/${CONFIG_FILE}`
     if (!(await $.fs.exists(path))) return undefined
     const parsed = JSON.parse(await $.fs.read(path)) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as PilotConfig) : undefined
-  } catch {
-    return undefined
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { error: `${CONFIG_FILE} must be a JSON object` }
+    return { cfg: parsed as PilotConfig }
+  } catch (err) {
+    return { error: `${CONFIG_FILE} could not be read: ${errMsg(err)}` }
   }
 }
 
@@ -293,7 +304,7 @@ async function runRunner($: EngineInterface, o: Opts, args: string[], timeoutMs:
   // Network access and the Playwright folder come from the shell (Q_PILOT_ALLOW_REMOTE=0, Q_PILOT_PLAYWRIGHT) when set.
   const env: Record<string, string> = {
     ...(key ? { TYPESAFE_API_KEY: key } : {}),
-    ...(o.cdpUrl ? { Q_PILOT_CDP_URL: o.cdpUrl } : {}),
+    ...(o.cdpUrlSet ? { Q_PILOT_CDP_URL: o.cdpUrl } : {}),
   }
   let r
   try {
@@ -317,11 +328,28 @@ async function recordRun($: EngineInterface, o: Opts, run: PilotRun) {
   $.ui.invalidate('ui.render')
 }
 
+const hashOf = (text: string) => {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+/** The last run, the last run per flow and the last test or task are the project's, so their store keys carry a hash of the root. */
+async function setProjectValue($: EngineInterface, name: string, value: unknown) {
+  await $.store.set(`${name}:${hashOf(await $.session.root())}`, value)
+}
+
+/** The project's value; the old global key is read as a fallback until the next write. */
+async function getProjectValue($: EngineInterface, name: string): Promise<unknown> {
+  const own = await $.store.get(`${name}:${hashOf(await $.session.root())}`)
+  return own !== undefined && own !== null ? own : $.store.get(name)
+}
+
 async function setLast($: EngineInterface, flows: readonly PilotFlow[], runId: string, at: number) {
   await update($, lastByFlow, cur => ({ ...cur, ...Object.fromEntries(flows.map(f => [f.id, { outcome: f.outcome, runId, at, ...(f.accepted ? { accepted: true } : {}), ...(f.jevCalls === undefined ? {} : { jevCalls: f.jevCalls }) }])) }))
   try {
-    await $.store.set('lastRun', await read($, lastRun))
-    await $.store.set('lastByFlow', await read($, lastByFlow))
+    await setProjectValue($, 'lastRun', await read($, lastRun))
+    await setProjectValue($, 'lastByFlow', await read($, lastByFlow))
   } catch {
     // The evidence stays in state for this session.
   }
@@ -333,8 +361,8 @@ async function markAccepted($: EngineInterface, o: Opts, id: string) {
   await update($, lastByFlow, cur => (cur[id] ? { ...cur, [id]: { ...cur[id]!, accepted: true } } : cur))
   const run = await read($, lastRun)
   try {
-    await $.store.set('lastRun', run)
-    await $.store.set('lastByFlow', await read($, lastByFlow))
+    await setProjectValue($, 'lastRun', run)
+    await setProjectValue($, 'lastByFlow', await read($, lastByFlow))
   } catch {
     // Best effort.
   }
@@ -363,10 +391,10 @@ const redChecks = (f: PilotFlow & { checks?: { check: unknown; ok: boolean; actu
 /** `lastExplore` is any run; `lastPassingExplore` only one with a proposal, so a later failure never loses what `save last` needs. */
 async function setExplore($: EngineInterface, e: PilotExplore, passing: boolean) {
   await update($, lastExplore, () => e)
-  await $.store.set('lastExplore', e).catch(() => undefined)
+  await setProjectValue($, 'lastExplore', e).catch(() => undefined)
   if (!passing) return
   await update($, lastPassingExplore, () => e)
-  await $.store.set('lastPassingExplore', e).catch(() => undefined)
+  await setProjectValue($, 'lastPassingExplore', e).catch(() => undefined)
 }
 
 const MAX_SPEC_BYTES = 32 * 1024
@@ -406,7 +434,7 @@ async function pilotTest($: EngineInterface, o: Opts, input: Record<string, unkn
 
 async function runTest($: EngineInterface, o: Opts, spec: Record<string, unknown>, specJson: string): Promise<string> {
   const { budgetMs, timeoutMs } = stopBudget(o.maxTestMs)
-  const out = await runRunner($, o, ['explore', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...(o.dashboard ? ['--dashboard'] : [])], timeoutMs)
+  const out = await runRunner($, o, ['explore', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...visionArgs(o), ...(o.dashboard ? ['--dashboard'] : [])], timeoutMs)
   if ('unavailable' in out) return `pilot_test: ${out.unavailable}. Nothing was run; tell the user.`
   if ('error' in out) return `pilot_test: ${out.error}`
   const f = out.result.flows?.[0]
@@ -478,7 +506,7 @@ async function startTask($: EngineInterface, o: Opts, args: string[], name: stri
   const key = await jevKeyOf($, o)
   const env: Record<string, string> = {
     ...(key ? { TYPESAFE_API_KEY: key } : {}),
-    ...(o.cdpUrl ? { Q_PILOT_CDP_URL: o.cdpUrl } : {}),
+    ...(o.cdpUrlSet ? { Q_PILOT_CDP_URL: o.cdpUrl } : {}),
   }
   // The previous task's inspector is closed: one dashboard, one browser at a time.
   if (lingering) {
@@ -663,7 +691,7 @@ async function taskResultText($: EngineInterface, o: Opts, name: string, ev: Ext
   const red = redChecks(flowOut)
   const task: PilotExplore = { runId: result.runId ?? '', name, outcome: f.outcome, at: await $.clock.now(), jevCalls: f.jevCalls ?? 0, red, screenshot: f.screenshot ?? null }
   await update($, lastTask, () => task)
-  await $.store.set('lastTask', task).catch(() => undefined)
+  await setProjectValue($, 'lastTask', task).catch(() => undefined)
   if (f.proposal) await setExplore($, task, true)
   $.ui.status(`pilot task ${name}: ${f.outcome}`)
   const extra = f as { warnings?: unknown[]; doneBy?: string; helpRequests?: number }
@@ -758,7 +786,7 @@ async function pilotRun($: EngineInterface, o: Opts, input: Record<string, unkno
     // session's client (--ask-via-mod); the helper model (else the session's) is shown as the one that answers help requests.
     const sessionModel = inspect.length ? (o.helper !== 'session' ? `${o.helper}, then this session` : await $.session.model().catch(() => '')) : ''
     const extra = inspect.length ? ['--linger', '--ask-via-mod', ...(sessionModel ? ['--session-model', sessionModel] : [])] : []
-    const vision = ['--vision', o.vision, '--vision-model', o.visionModel, ...(o.visionBox ? ['--box'] : []), ...(o.dashboard ? ['--dashboard'] : [])]
+    const vision = [...visionArgs(o), ...(o.dashboard ? ['--dashboard'] : [])]
     const started = await startTask($, o, ['task', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...inspect, '--help', ...extra, ...vision], name)
     if ('unavailable' in started) return `pilot_run: ${started.unavailable}. Nothing was run; tell the user.`
     live = started
@@ -891,9 +919,14 @@ async function gate($: EngineInterface, o: Opts, call: GateCall): Promise<GateRe
   const mode = await effectiveMode($, o)
   if (mode === 'off') return void (await clearEdits($))
   const changed = await read($, edits)
-  const cfg = await loadConfig($)
+  const loaded = await loadConfig($)
   // Not a q-pilot project (or not set up yet): nothing to gate.
-  if (!cfg) return void (await clearEdits($, changed))
+  if (!loaded) return void (await clearEdits($, changed))
+  if ('error' in loaded) {
+    if (changed.length > 0) $.ui.toast(`q-pilot: ${loaded.error}; the stop gate is off until it is fixed`, { timeoutMs: 8000 })
+    return void (await clearEdits($, changed))
+  }
+  const cfg = loaded.cfg
   if (!changed.some(p => isUiRelevant(p, cfg))) return void (await clearEdits($, changed))
   if (!call.fallback && (await read($, blocks)) >= MAX_BLOCKS) {
     $.ui.toast(`q-pilot: still red after ${MAX_BLOCKS} blocks; letting the turn end`, { timeoutMs: 8000 })
@@ -1081,8 +1114,10 @@ async function describeStatus($: EngineInterface, o: Opts): Promise<string> {
 const idError = (usage: string, id: string) => (FLOW_ID.test(id) ? undefined : { text: `Usage: ${usage}`, exitCode: 2 })
 
 async function commandRun($: EngineInterface, o: Opts, target: string): Promise<{ text: string; exitCode?: number }> {
-  const cfg = await loadConfig($)
-  if (!cfg) return { text: 'q-pilot: no q-pilot.config.json at the project root, so there is nothing to run. Run /q-pilot init.', exitCode: 1 }
+  const loaded = await loadConfig($)
+  if (!loaded) return { text: 'q-pilot: no q-pilot.config.json at the project root, so there is nothing to run. Run /q-pilot init.', exitCode: 1 }
+  if ('error' in loaded) return { text: `q-pilot: ${loaded.error}. Fix it, then run again.`, exitCode: 1 }
+  const cfg = loaded.cfg
   let args: string[]
   if (target === 'all') args = ['run', '--all']
   else if (target) {
@@ -1182,38 +1217,141 @@ async function commandInit($: EngineInterface): Promise<{ text: string; exitCode
       lines.push(`  ✗ ${rel}: ${errMsg(err)}`)
     }
   }
-  lines.push('Set baseURL, then write a flow: a goal, fixtures, and a verify block (you write verify; Jev never does).', 'Add `.q-pilot/runs/` to .gitignore; commit `.q-pilot/traces/`.')
+  lines.push('Set baseURL, then write a flow: a goal, fixtures, and a verify block (you write verify; Jev never does).', 'Add `.q-pilot/runs/` and `.q-pilot/settings.local.json` to .gitignore; commit `.q-pilot/traces/` and `.q-pilot/settings.json`.')
   return { text: ['q-pilot init:', ...lines].join('\n'), ...(failed ? { exitCode: 1 } : {}) }
 }
 
-/** The run options now: defaults, then the old plugin options, then /q-pilot config. */
-async function optsFor($: EngineInterface, legacy: Partial<PilotSettings>, jevKey: string): Promise<Opts> {
-  return optsOf(effective(legacy, await read($, storedSettings)), jevKey)
+const settingsPath = async ($: EngineInterface, scope: 'project' | 'local') => `${await $.session.root()}/${SETTINGS_FILES[scope]}`
+
+/** The user scope: the plugin store (shared by every session), else what this session holds. */
+async function userLayer($: EngineInterface): Promise<unknown> {
+  const saved = await $.store.get(SETTINGS_KEY).catch(() => undefined)
+  return saved && typeof saved === 'object' ? saved : await read($, storedSettings)
 }
 
-/** `/q-pilot config`: shows the settings; `<key> <value>` sets one, `<key> default` drops it, `reset` drops all. */
-async function commandConfig($: EngineInterface, legacy: Partial<PilotSettings>, rest: string[]): Promise<{ text: string; exitCode?: number }> {
-  const stored = await read($, storedSettings)
-  if (rest.length === 0) return { text: showSettings(effective(legacy, stored), stored) }
-  let next: Partial<PilotSettings> | string
-  if (rest.length === 1 && rest[0]!.toLowerCase() === 'reset') next = {}
+/** A settings file's parsed content; a missing file is no layer, one that does not parse is a warning. */
+type SettingsFile = { layer?: unknown; warning?: string }
+async function readSettingsFile($: EngineInterface, scope: 'project' | 'local'): Promise<SettingsFile> {
+  try {
+    const path = await settingsPath($, scope)
+    if (!(await $.fs.exists(path))) return {}
+    return { layer: JSON.parse(await $.fs.read(path)) }
+  } catch (err) {
+    return { warning: `${scope}: ${SETTINGS_FILES[scope]} could not be read (${errMsg(err)}); ignored` }
+  }
+}
+
+/**
+ * The settings now, from every scope: the files and the store are read on each call, so edits and other sessions show at once.
+ * `files: false` skips the two repo files (the band's render only needs `trust`, which they cannot set).
+ */
+async function settingsNow($: EngineInterface, files = true): Promise<Resolved> {
+  const cdp = await $.env.get('Q_PILOT_CDP_URL').catch(() => undefined)
+  const none: SettingsFile = {}
+  const project = files ? await readSettingsFile($, 'project') : none
+  const local = files ? await readSettingsFile($, 'local') : none
+  const r = resolveSettings({ env: envLayer({ Q_PILOT_CDP_URL: cdp }), local: local.layer, project: project.layer, user: await userLayer($) })
+  return { ...r, warnings: [...[project.warning, local.warning].filter((w): w is string => !!w), ...r.warnings] }
+}
+
+/** The run options now. */
+async function optsFor($: EngineInterface, jevKey: string, files = true): Promise<Opts> {
+  return optsOf(await settingsNow($, files), jevKey)
+}
+
+/** The scope's raw settings object, to change and write back; a file that is not a JSON object is left alone. */
+async function readWritable($: EngineInterface, scope: WriteScope): Promise<{ layer: Layer } | { error: string }> {
+  if (scope === 'user') return { layer: { ...((await userLayer($)) as Layer) } }
+  const rel = SETTINGS_FILES[scope]
+  const path = await settingsPath($, scope)
+  if (!(await $.fs.exists(path))) return { layer: {} }
+  try {
+    const parsed = JSON.parse(await $.fs.read(path)) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return { layer: parsed as Layer }
+    return { error: `${rel} is not a JSON object; fix or delete it first.` }
+  } catch (err) {
+    return { error: `${rel} is not valid JSON (${errMsg(err)}); fix or delete it first.` }
+  }
+}
+
+/** Adds the personal file to the project's .gitignore unless something there already covers it. */
+async function ignoreLocalFile($: EngineInterface): Promise<string | undefined> {
+  const path = `${await $.session.root()}/.gitignore`
+  const current = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
+  const covered = new Set(['.q-pilot', '.q-pilot/', '/.q-pilot', '/.q-pilot/', SETTINGS_FILES.local, `/${SETTINGS_FILES.local}`])
+  if (current.split('\n').some(l => covered.has(l.trim()))) return undefined
+  await $.fs.write(path, `${current}${current === '' || current.endsWith('\n') ? '' : '\n'}# q-pilot personal settings\n${SETTINGS_FILES.local}\n`)
+  return `added ${SETTINGS_FILES.local} to .gitignore`
+}
+
+async function writeLayer($: EngineInterface, scope: WriteScope, layer: Layer): Promise<string | undefined> {
+  if (scope === 'user') {
+    const saved = pickSettings(layer)
+    await update($, storedSettings, () => saved)
+    await $.store.set(SETTINGS_KEY, saved).catch(() => undefined)
+    return undefined
+  }
+  await $.fs.write(await settingsPath($, scope), `${JSON.stringify(layer, null, 2)}\n`)
+  return scope === 'local' ? await ignoreLocalFile($).catch(() => undefined) : undefined
+}
+
+const shownValue = (v: unknown) => (typeof v === 'boolean' ? (v ? 'on' : 'off') : v === '' ? 'off' : String(v))
+
+/** `--scope <name>` out of the arguments (default user): the other arguments, the scope, or why it is wrong. */
+function takeScope(args: string[]): { rest: string[]; scope: WriteScope } | { error: string } {
+  const at = args.indexOf('--scope')
+  if (at < 0) return { rest: args, scope: 'user' }
+  const scope = args[at + 1]
+  if (!WRITE_SCOPES.includes(scope as WriteScope)) return { error: `--scope must be ${WRITE_SCOPES.join(', ')}.` }
+  return { rest: [...args.slice(0, at), ...args.slice(at + 2)], scope: scope as WriteScope }
+}
+
+/**
+ * `/q-pilot config`: shows every setting with its source. `set <key> <value>` (or just `<key> <value>`) and `unset <key>`
+ * write one scope (user by default, or --scope project|local); `explain <key>` lists every scope; `reset` empties a scope.
+ */
+async function commandConfig($: EngineInterface, rest: string[]): Promise<{ text: string; exitCode?: number }> {
+  const sub = rest[0]?.toLowerCase()
+  if (!sub) return { text: showSettings(await settingsNow($)) }
+  if (sub === 'explain') {
+    if (!rest[1]) return { text: 'Usage: /q-pilot config explain <key>', exitCode: 2 }
+    const text = explainSetting(rest[1], await settingsNow($))
+    return { text, exitCode: keyOf(rest[1]) ? 0 : 2 }
+  }
+  const taken = takeScope(rest)
+  if ('error' in taken) return { text: taken.error, exitCode: 2 }
+  const { scope } = taken
+  const args = sub === 'set' || sub === 'unset' ? taken.rest.slice(1) : taken.rest
+  const loaded = await readWritable($, scope)
+  if ('error' in loaded) return { text: `q-pilot: ${loaded.error}`, exitCode: 1 }
+  let next: Layer | string
+  if (sub === 'reset') next = {}
+  else if (sub === 'unset') next = args[0] ? unsetConfig(loaded.layer, args[0]) : 'Usage: /q-pilot config unset <key> [--scope user|project|local]'
   // A text value may hold spaces (a node command with arguments); the others take one word.
-  else next = applyConfig(stored, rest[0]!, rest.slice(1).join(' '))
+  else next = args[0] ? applyConfig(loaded.layer, args[0], args.slice(1).join(' '), scope) : 'Usage: /q-pilot config set <key> <value> [--scope user|project|local]'
   if (typeof next === 'string') return { text: next, exitCode: 2 }
-  const saved = next
-  await update($, storedSettings, () => saved)
-  await $.store.set(SETTINGS_KEY, saved).catch(() => undefined)
-  if (rest.length === 1) return { text: `q-pilot settings reset to the defaults.\n${showSettings(effective(legacy, {}), {})}` }
-  const s = effective(legacy, saved)
-  const key = Object.keys(s).find(k => k.toLowerCase() === rest[0]!.toLowerCase()) as keyof PilotSettings
-  return { text: `q-pilot ${key} ${typeof s[key] === 'boolean' ? (s[key] ? 'on' : 'off') : s[key] === '' ? 'off' : String(s[key])}.` }
+  let ignored: string | undefined
+  try {
+    ignored = await writeLayer($, scope, next)
+  } catch (err) {
+    return { text: `q-pilot: could not write the ${scope} settings: ${errMsg(err)}`, exitCode: 1 }
+  }
+  const r = await settingsNow($)
+  const where = scope === 'user' ? '' : ` (${scope}: ${SETTINGS_FILES[scope]})`
+  const extra = ignored ? `\n${ignored}.` : ''
+  if (sub === 'reset') return { text: `q-pilot ${scope} settings reset.${extra}\n${showSettings(r)}` }
+  const key = keyOf(args[0]!)!
+  const src = r.sources[key]
+  const text = `q-pilot ${key} ${shownValue(r.values[key])}${where}.`
+  // The value is stored, but a higher scope still decides.
+  if (key in next && src.scope !== scope) return { text: `${text}\nNote: ${src.scope} overrides it, so ${key} stays ${shownValue(r.values[key])} (${src.scope}).${extra}` }
+  if (sub === 'unset') return { text: `q-pilot ${key} unset in ${scope}; now ${shownValue(r.values[key])} (${src.scope}).${extra}` }
+  return { text: `${text}${extra}` }
 }
 
 // ---- register --------------------------------------------------------------------------------------
 
 export const register: Register = (on, options) => {
-  /** Values of the plugin options q-pilot had before /q-pilot config, while the host still delivers them. */
-  const legacy = withoutDefaults(pickSettings(options))
   const jevKey = String(options.jevApiKey ?? '')
   /** A fallback run in flight: a second one, or a /q-pilot command, must not share the runner. */
   let busy = false
@@ -1221,32 +1359,32 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await update($, interactive, () => e.isInteractive !== false).catch(() => undefined)
     try {
-      // Settings: the stored ones, else (first start after the upgrade) the old plugin options and /q-pilot mode, kept once.
+      // Settings: the stored ones, else (first start after the upgrade) a /q-pilot mode set before settings existed, kept once.
       const savedSettings = await $.store.get(SETTINGS_KEY)
       if (savedSettings && typeof savedSettings === 'object') await update($, storedSettings, () => pickSettings(savedSettings))
       else {
         const oldMode = await $.store.get('mode')
-        const seeded = { ...legacy, ...pickSettings({ mode: oldMode }) }
+        const seeded = pickSettings({ mode: oldMode })
         await update($, storedSettings, () => seeded)
         await $.store.set(SETTINGS_KEY, seeded)
       }
     } catch {
       // Defaults stand when the store cannot be read.
     }
-    const o = await optsFor($, legacy, jevKey)
+    const o = await optsFor($, jevKey)
     try {
-      const saved = await $.store.get('lastRun')
+      const saved = await getProjectValue($, 'lastRun')
       if (saved && typeof saved === 'object') {
         await update($, lastRun, () => saved as PilotRun)
         $.ui.status(`pilot ${summarize((saved as PilotRun).flows, o.trust)}`)
       }
-      const passing = await $.store.get('lastPassingExplore')
+      const passing = await getProjectValue($, 'lastPassingExplore')
       if (passing && typeof passing === 'object') await update($, lastPassingExplore, () => passing as PilotExplore)
-      const tasked = await $.store.get('lastTask')
+      const tasked = await getProjectValue($, 'lastTask')
       if (tasked && typeof tasked === 'object') await update($, lastTask, () => tasked as PilotExplore)
-      const explored = await $.store.get('lastExplore')
+      const explored = await getProjectValue($, 'lastExplore')
       if (explored && typeof explored === 'object') await update($, lastExplore, () => explored as PilotExplore)
-      const last = await $.store.get('lastByFlow')
+      const last = await getProjectValue($, 'lastByFlow')
       if (last && typeof last === 'object') await update($, lastByFlow, () => last as Record<string, PilotLast>)
     } catch {
       // Defaults stand when the store cannot be read.
@@ -1254,7 +1392,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'q-pilot',
       description: 'Test a UI change from a prompt, and run, record and accept saved user flows',
-      argumentHint: 'task "<prompt>" | test "<prompt>" | save [<runId>|last] [<name>] | run [all|<id>] | record <id> | accept [<id>] | status | export <id> | init | config [<key> <value>|reset]',
+      argumentHint: 'task "<prompt>" | test "<prompt>" | save [<runId>|last] [<name>] | run [all|<id>] | record <id> | accept [<id>] | status | export <id> | init | config [set|unset|explain|reset] [<key> [<value>]] [--scope user|project|local]',
     })
     await $.tool.register({
       name: TOOL,
@@ -1285,19 +1423,19 @@ export const register: Register = (on, options) => {
   // ---- the model's evidence tool -------------------------------------------------------------------
 
   // The host takes a string or a content array as a tool result, never an object.
-  on('tool.call', { tool: TOOL_RE }, async $ => ({ result: JSON.stringify(await statusJson($, await optsFor($, legacy, jevKey))) })).catch(() => ({
+  on('tool.call', { tool: TOOL_RE }, async $ => ({ result: JSON.stringify(await statusJson($, await optsFor($, jevKey))) })).catch(() => ({
     result: JSON.stringify({ error: 'q-pilot could not read its evidence store' }),
   }))
 
-  on('tool.call', { tool: TEST_RE }, async ($, e) => ({ result: await pilotTest($, await optsFor($, legacy, jevKey), e as Record<string, unknown>, { busy: () => busy, set: v => void (busy = v) }) })).catch(() => ({
+  on('tool.call', { tool: TEST_RE }, async ($, e) => ({ result: await pilotTest($, await optsFor($, jevKey), e as Record<string, unknown>, { busy: () => busy, set: v => void (busy = v) }) })).catch(() => ({
     result: 'pilot_test failed before it could run; tell the user.',
   }))
 
-  on('tool.call', { tool: RUN_RE }, async ($, e) => ({ result: await pilotRun($, await optsFor($, legacy, jevKey), e as Record<string, unknown>, { busy: () => busy, set: v => void (busy = v) }) })).catch(() => ({
+  on('tool.call', { tool: RUN_RE }, async ($, e) => ({ result: await pilotRun($, await optsFor($, jevKey), e as Record<string, unknown>, { busy: () => busy, set: v => void (busy = v) }) })).catch(() => ({
     result: 'pilot_run failed before it could run; tell the user.',
   }))
 
-  on('tool.call', { tool: HELP_RE }, async ($, e) => ({ result: await pilotHelp($, await optsFor($, legacy, jevKey), e as Record<string, unknown>) })).catch(() => ({
+  on('tool.call', { tool: HELP_RE }, async ($, e) => ({ result: await pilotHelp($, await optsFor($, jevKey), e as Record<string, unknown>) })).catch(() => ({
     result: 'pilot_help failed before it could send the answer; tell the user.',
   }))
 
@@ -1329,7 +1467,7 @@ export const register: Register = (on, options) => {
     if (busy) return r
     busy = true
     try {
-      const o = await optsFor($, legacy, jevKey)
+      const o = await optsFor($, jevKey)
       const g = await gate($, o, { stopHookActive: e.stop_hook_active === true })
       return g?.block ? { ...r, block: followUpText(g.block, g.run, e.last_assistant_message ?? '', o.trust) } : r
     } finally {
@@ -1365,7 +1503,7 @@ export const register: Register = (on, options) => {
     const handled = !!seen && (seen.turnId ? seen.turnId === e.turnId : now - seen.at <= e.durationMs + 1000)
     if (handled || busy) return r
     busy = true
-    const job = optsFor($, legacy, jevKey)
+    const job = optsFor($, jevKey)
       .then(o => fallbackGate($, o, e.answer))
       .catch(err => $.ui.toast(`q-pilot: the fallback gate failed: ${errMsg(err)}`, { timeoutMs: 8000 }))
       .finally(() => {
@@ -1383,7 +1521,7 @@ export const register: Register = (on, options) => {
     const args = e.args.trim()
     const [sub = 'status', ...rest] = args.split(/\s+/).filter(Boolean)
     const busyText = { text: 'q-pilot: a gate run is in progress; try again when it ends.', exitCode: 1 }
-    const o = await optsFor($, legacy, jevKey)
+    const o = await optsFor($, jevKey)
     switch (sub) {
       case 'run':
         if (busy) return busyText
@@ -1407,11 +1545,11 @@ export const register: Register = (on, options) => {
       case 'init':
         return commandInit($)
       case 'config':
-        return commandConfig($, legacy, rest)
+        return commandConfig($, rest)
       case 'mode':
         // Kept as a short form of /q-pilot config mode <value>.
         if (!rest[0]) return { text: `mode is ${o.mode}. Usage: /q-pilot config mode off|affected|all` }
-        return commandConfig($, legacy, ['mode', rest[0]])
+        return commandConfig($, ['mode', rest[0]])
       case 'help':
         return { text: USAGE }
       default:
@@ -1424,7 +1562,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const run = await read($, lastRun)
-    const o = await optsFor($, legacy, jevKey)
+    const o = await optsFor($, jevKey, false)
     const bad = run?.flows.filter(f => isBad(f, o.trust)) ?? []
     if (!run || bad.length === 0) return next(e)
     const driftOnly = bad.every(f => f.outcome === 'drift')

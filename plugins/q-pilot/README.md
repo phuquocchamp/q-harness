@@ -8,7 +8,7 @@
 
 A passing test can be saved as a flow plus a recorded trace. Saved flows replay with no model call, heal a drifted step with one Jev request, and run as a stop gate when a turn changes UI files.
 
-**Version** 0.8.0 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
+**Version** 0.9.0 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
 
 ## What it ships
 
@@ -41,7 +41,7 @@ So one global install serves every project, also repos with no `package.json`:
 npm install -g playwright && npx playwright install chromium
 ```
 
-When none is found, the run fails with one error that lists every folder it looked in. Each result says which one it used (`"playwright": { "from": "project" | "env" | "global", "version" }`). Prompt mode needs no config file: the spec carries its `baseURL`. Saved flows use `q-pilot.config.json` (`/q-pilot init` writes it, together with `flows/example.flow.json`, and never overwrites an existing file). Add `.q-pilot/runs/` to `.gitignore`.
+When none is found, the run fails with one error that lists every folder it looked in. Each result says which one it used (`"playwright": { "from": "project" | "env" | "global", "version" }`). Prompt mode needs no config file: the spec carries its `baseURL`. Saved flows use `q-pilot.config.json` (`/q-pilot init` writes it, together with `flows/example.flow.json`, and never overwrites an existing file). Add `.q-pilot/runs/` and `.q-pilot/settings.local.json` to `.gitignore`; commit `.q-pilot/traces/` and `.q-pilot/settings.json`.
 
 Jev needs a TypeSafe API key. Set it once for every project: the `jevApiKey` option in `/plugin` (stored as a sensitive value), or `TYPESAFE_API_KEY` exported in your shell profile. The option wins when both are set. Never put the key in `q-pilot.config.json`: that file is committed. Without a key, prompt mode ends as `blocked`, and replay of saved traces still works.
 
@@ -172,7 +172,7 @@ With the `inspector` setting `on` (the default), each `pilot_run` serves a dashb
 - **review**: click any row of the trail (or use ← →) to see that step again as it was recorded: the screenshot with its numbered targets, the elements and Jev's probabilities. **L** goes back to the live page. Help requests are marked on their step;
 - **Ask Claude**: a question about the step on screen ("Why stuck?", "Next action?", "Goal met?" or your own), answered by the model you pick: Haiku 5.5 (default, fastest), Sonnet 5.5 or Opus 5.5. Every answer is labelled with the model that gave it and how long it took. The panel also names the model that answers Jev's help requests (your Claude Code session's). When `pilot_run` started the run, questions go through the session's own client (page text and elements, about 1 to 3 s with Haiku); a runner started from a shell uses the `claude` CLI, which also reads the step's screenshot (about 6 s). Page text is sent as untrusted data; `$env:` secrets are redacted from questions and answers.
 
-**After the run** the inspector stays open for review (`--linger`, on with every `pilot_run`): `pilot_run` answers as soon as the result is in, and the dashboard keeps its tab. The result banner offers **Open Playwright trace** (Playwright's own trace viewer, in its own window), **Download trace.zip** and **Download decisions.json**; the trace is kept whatever the outcome while the inspector is open. **Close inspector** ends the server (the tab is yours: close it yourself); the inspector also ends 30 s after its last tab is closed, after 30 minutes, or when the next task starts. The tab's title and icon follow the run (blue running, amber paused, violet waiting on you or Claude, green passed, red failed).
+**After the run** the inspector stays open for review (`--linger`, on with every `pilot_run`): `pilot_run` answers as soon as the result is in, and the dashboard keeps its tab. The result banner offers **Open Playwright trace** (Playwright's own trace viewer, in its own window), **Download trace.zip** and **Download decisions.json**; the trace is kept whatever the outcome while the inspector is open. **Close inspector** ends the server (the tab is yours: close it yourself); the inspector also ends 30 s after its last tab is closed, after 30 minutes, or when the next task starts. The tab's title and icon follow the run (blue running, amber paused, violet waiting on you or Claude, green passed, red failed). The inspector uses the shared q-harness theme (`shared/ui/q-theme.css`, light and dark by `prefers-color-scheme`), so its colours follow the system setting.
 
 | Control | What it does |
 |---------|--------------|
@@ -407,7 +407,7 @@ The band above the prompt shows `pilot ✗ 1 of 3 flows: checkout app-bug` while
 | `/q-pilot status` | Last outcome per flow |
 | `/q-pilot export <id>` | Write a Playwright spec (default `tests/q-pilot/<id>.spec.ts`) |
 | `/q-pilot init` | Write a starter `q-pilot.config.json` and `flows/example.flow.json`, never overwriting |
-| `/q-pilot config [<key> <value>\|reset]` | Show or change the settings, see [Settings](#settings) |
+| `/q-pilot config [set\|unset\|explain\|reset] [<key> [<value>]] [--scope user\|project\|local]` | Show, change or explain the settings and where each value comes from, see [Settings](#settings) |
 | `/q-pilot mode off\|affected\|all` | Short form of `/q-pilot config mode` |
 
 The runner takes the same commands directly: `node runner/pilot.mjs <task|explore|save|run|record|accept|export|list> --root <projectDir>`. `task` and `explore` take the spec as `--spec-json '<json>'`; `task` also takes `--inspect` or `--inspect-pause`, `--inspect-port N`, `--linger` (keep the inspector up after the result), `--vision off|gated|always`, `--vision-model jev-1.13.0|jev-1.14.0`, `--box`, `--ask-via-mod` and `--session-model <id>` (set by the mod), and `--help` (help requests through the run folder, see [When Jev is stuck](#when-jev-is-stuck-help-requests)). It prints one line of result JSON last on stdout, and progress on stderr.
@@ -416,35 +416,66 @@ The runner takes the same commands directly: `node runner/pilot.mjs <task|explor
 
 One plugin option is left, set in `/plugin`: **`jevApiKey`**, the TypeSafe Jev API key (sensitive). When it is empty, `TYPESAFE_API_KEY` is used. When both are missing, Jev is unavailable.
 
-Everything else is set with `/q-pilot config`, the same way q-graph does it. The settings are kept in the plugin store and apply to every project:
+Everything else is set with `/q-pilot config`, in layers like Claude Code's settings. Each value comes from the highest scope that sets it, and `/q-pilot config` shows which one:
+
+| Scope | Where | Who it is for |
+|-------|-------|---------------|
+| `cli` | Flags of one runner run | One run. The resolver supports it; the mod does not pass any yet |
+| `env` | `Q_PILOT_CDP_URL` (the one variable the runner already reads) | Your shell |
+| `local` | `<project>/.q-pilot/settings.local.json` | You, in this project. Not committed: `/q-pilot config set … --scope local` adds it to `.gitignore` |
+| `project` | `<project>/.q-pilot/settings.json` | The team. Commit it |
+| `user` | The plugin store | You, in every project (what `/q-pilot config set` writes by default) |
+| default | Built in | |
+
+`cli` beats `env`, then `local`, `project`, `user` and the default. Every setting is a single value, so the highest scope wins as a whole; nothing is merged. The files are read again on every command and tool call, so an edit, or a change from another session, applies at once.
 
 ```text
-/q-pilot config                     show every setting (* marks the ones you set)
-/q-pilot config helper sonnet       set one
-/q-pilot config vision always
-/q-pilot config box on
-/q-pilot config helper default      back to its default
-/q-pilot config reset               all back to the defaults
+/q-pilot config                              every setting: value, source, what it overrides, warnings
+/q-pilot config set helper sonnet            set one in the user scope
+/q-pilot config set vision always --scope project    the team's default, in .q-pilot/settings.json
+/q-pilot config set box on --scope local     only you, only here
+/q-pilot config unset vision --scope project drop it from that scope
+/q-pilot config explain vision               every scope's value and which one wins
+/q-pilot config helper sonnet                short form of set, user scope
+/q-pilot config helper default               same as unset in the user scope
+/q-pilot config reset [--scope local]        empty a scope (user by default)
 ```
+
+An example `.q-pilot/settings.json`, committed for the team:
+
+```json
+{
+  "vision": "gated",
+  "visionModel": "jev-1.14.0",
+  "box": true,
+  "mode": "affected"
+}
+```
+
+**Personal settings.** `node` (a command that is run), `cdpUrl` (the Chrome the run attaches to) and `trust` (accepts drift without a person) are read only from `user`, `env` and `cli`, and are marked `*` in `/q-pilot config`. A repo file, even a `settings.local.json` someone force-committed, cannot set them: they are ignored with a warning, and `config set node … --scope project` is refused. Settings files never hold secrets: `jevApiKey` stays the plugin option, and an unknown key, or anything that looks like a key or token, is dropped with a warning. A value that does not fit its setting, or a file that is not valid JSON, is dropped with a warning naming the scope and the key; the rest of the settings still apply.
+
+**One scope setting hides another.** `Q_PILOT_CDP_URL` in your shell beats `cdpUrl` in `user`, so `/q-pilot config` shows `cdpUrl … env`; unset the variable to use the stored value. A `cdpUrl` that is set in any scope (`off` included) is passed to the runner as `Q_PILOT_CDP_URL`, empty for `off`.
+
+`.q-pilot/runs/` and `.q-pilot/settings.local.json` are the only things there that stay out of git; `.q-pilot/traces/` and `.q-pilot/settings.json` are committed.
 
 | Setting | Default | What it does |
 |---------|---------|--------------|
 | `helper` | `haiku` | The Claude model that answers Jev's help requests first: `haiku`, `sonnet` or `opus`. `session`: your chat answers every one. See [The helper model](#the-helper-model). |
-| `vision` | `gated` | Jev vision for tasks: `off`, `gated` (asks again with the screenshot when unsure), `always` |
+| `vision` | `gated` | Jev vision for tasks and tests: `off`, `gated` (asks again with the screenshot when unsure), `always`. The stop gate's replay uses no model, so it takes none. |
 | `visionModel` | `jev-1.13.0` | The Jev model that answers with the screenshot (`jev-1.14.0` is the preview) |
 | `box` | `off` | `on`: Box rescue with Jev 1.14 before a stuck run goes to the helper |
 | `inspector` | `on` | `on`: a live dashboard opens in your browser with every task. `pause`: the same, held before the first step. `off`: none. |
 | `dashboard` | `off` | `on`: runs show up in the Playwright Dashboard (`playwright-cli show`), where you can watch and take over the launched browser. Pause in the inspector (`inspector pause`) before you take control. Needs a Playwright with `browser.bind`; ignored otherwise and with `cdpUrl`. |
 | `mode` | `affected` | Stop gate: `off`, `affected` (flows the turn's edits affect), or `all`. `/q-pilot mode <value>` is a short form. |
-| `cdpUrl` | off | Run the browser under test in your own running Chrome, e.g. `http://127.0.0.1:9222`. See [Use your own Chrome](#use-your-own-chrome) |
-| `node` | `node` | Command that runs the runner, e.g. `/opt/homebrew/bin/node` |
-| `trust` (advanced) | `shadow` | `shadow` or `on`, see [The gate](#the-gate) |
+| `cdpUrl` (personal) | off | Run the browser under test in your own running Chrome, e.g. `http://127.0.0.1:9222`. See [Use your own Chrome](#use-your-own-chrome) |
+| `node` (personal) | `node` | Command that runs the runner, e.g. `/opt/homebrew/bin/node` |
+| `trust` (advanced, personal) | `shadow` | `shadow` or `on`, see [The gate](#the-gate) |
 | `followUp` (advanced) | `auto` | What the fallback gate does on red: `auto`, `suggest` or `off` |
 | `maxStopSeconds` (advanced) | `60` | Time budget for the gate (10 to 600) |
 | `maxTestSeconds` (advanced) | `120` | Time limit for one `pilot_test` run (20 to 600) |
 | `maxTaskSeconds` (advanced) | `300` | Time limit for one `pilot_run` task, paused time included (30 to 600). Time spent waiting for an answer to a help request is not counted. |
 
-**Upgrading from 0.7.** The options `network`, `inspectorPort` and `playwrightPath` are gone. Network access is open unless `Q_PILOT_ALLOW_REMOTE=0` is set in your shell; the inspector takes port 8767, or a free one when it is taken; Playwright is found as described in [Install](#install), and `Q_PILOT_PLAYWRIGHT` still names a folder. On the first start after the upgrade, values you had set in the old options are copied into `/q-pilot config`, together with a `/q-pilot mode` you had set. Run `/q-pilot config` once to check them, in particular `node`.
+**Upgrading from 0.7.** The options `network`, `inspectorPort` and `playwrightPath` are gone. Network access is open unless `Q_PILOT_ALLOW_REMOTE=0` is set in your shell; the inspector takes port 8767, or a free one when it is taken; Playwright is found as described in [Install](#install), and `Q_PILOT_PLAYWRIGHT` still names a folder. A `/q-pilot mode` you had set is copied into `/q-pilot config` on the first start; the old options are not read any more, so set them again with `/q-pilot config` (in particular `node`).
 
 **Browser window.** Chromium opens in a visible window by default, so you can watch Jev click and type. That includes the stop gate, which opens a window at the end of a turn that changed UI files. Set `Q_PILOT_HEADLESS=1` in your environment to run without a window. It is headless anyway in CI (`CI` set) and on Linux without a display.
 

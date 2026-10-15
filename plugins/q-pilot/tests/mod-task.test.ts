@@ -28,8 +28,9 @@ test('pilot_run runs the task command with the inspector, and says a check-less 
   expect(argv).toEqual(['node', expect.stringMatching(/\/runner\/pilot\.mjs$/), 'task', '--root', ROOT, '--spec-json', JSON.stringify(TASK), '--budget-ms', '240000', '--inspect', '--help', '--linger', '--ask-via-mod', '--session-model', 'haiku, then this session', '--vision', 'gated', '--vision-model', 'jev-1.13.0'])
 })
 
-test('inspector pause holds before the first step; with helper session the session model is named; the URL line is toasted', { options: { inspector: 'pause', maxTaskSeconds: 60, helper: 'session' } }, async ($, on) => {
+test('inspector pause holds before the first step; with helper session the session model is named; the URL line is toasted', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { inspector: 'pause', maxTaskSeconds: 60, helper: 'session' })
   host.runner.task = [{ ...say([DONE], 'task'), stderr: '[q-pilot] inspector http://127.0.0.1:8768/\n' }]
   await start($)
   await call($, TASK)
@@ -37,8 +38,9 @@ test('inspector pause holds before the first step; with helper session the sessi
   expect(host.toasts).toContain('q-pilot: live inspector http://127.0.0.1:8768/ (opens in your browser)')
 })
 
-test('inspector off passes no inspect flag and shows no toast', { options: { inspector: 'off' } }, async ($, on) => {
+test('inspector off passes no inspect flag and shows no toast', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { inspector: 'off' })
   host.runner.task = [say([DONE], 'task')]
   await start($)
   await call($, TASK)
@@ -113,8 +115,9 @@ const HELP_REQ = {
 }
 const RUN = '20261015-122547-253c'
 
-test('pilot_run hands a stuck run to Claude: needs_help with the page, pilot_help answers, the run ends with the result', { options: { helper: 'session' } }, async ($, on) => {
+test('pilot_run hands a stuck run to Claude: needs_help with the page, pilot_help answers, the run ends with the result', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { helper: 'session' })
   host.runner.task = [{ ...say([flow('flights', 'done', { jevCalls: 9, doneBy: 'claude', helpRequests: 2, warnings: ['unverified'] } as never)], 'task'), helps: [{ n: 1, reason: 'loop', request: HELP_REQ }, { n: 2, reason: 'confirm_done', request: {} }] }]
   await start($)
   const first = (await call($, TASK)).result as string
@@ -178,16 +181,18 @@ test('the dashboard setting reaches the runner as --dashboard, and is absent by 
   expect(calls(host.runs, 'task')[0]).not.toContain('--dashboard')
 })
 
-test('dashboard on adds --dashboard to the task args', { options: { dashboard: 'on', inspector: 'off' } }, async ($, on) => {
+test('dashboard on adds --dashboard to the task args', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { dashboard: true, inspector: 'off' })
   host.runner.task = [say([DONE], 'task')]
   await start($)
   await call($, TASK)
   expect(calls(host.runs, 'task')[0]).toContain('--dashboard')
 })
 
-test('vision options reach the runner: always on 1.14 with Box rescue', { options: { vision: 'always', visionModel: 'jev-1.14.0', visionBox: 'on', inspector: 'off' } }, async ($, on) => {
+test('vision options reach the runner: always on 1.14 with Box rescue', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { vision: 'always', visionModel: 'jev-1.14.0', box: true, inspector: 'off' })
   host.runner.task = [say([DONE], 'task')]
   await start($)
   await call($, TASK)
@@ -209,8 +214,9 @@ test('the helper model answers a stuck run first; the session gets confirm_done 
   expect(last).toMatch(/2 help request\(s\) to Claude \(1 answered by the haiku helper\)/)
 })
 
-test('the helper steps aside: free text, stop, or a bot wall go to the session; helper sonnet is used when set', { options: { helper: 'sonnet' } }, async ($, on) => {
+test('the helper steps aside: free text, stop, or a bot wall go to the session; helper sonnet is used when set', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { helper: 'sonnet' })
   host.modelReplies = ['{"actions":[{"op":"fill","index":19,"text":"book now"}],"then":"resume"}']
   host.runner.task = [{ ...say([DONE], 'task'), helps: [{ n: 1, reason: 'stuck', request: HELP_REQ }, { n: 2, reason: 'human_needed', request: {} }] }]
   await start($)

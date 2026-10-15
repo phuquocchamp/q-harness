@@ -8,11 +8,14 @@ Done in 0.6 (from the autopsy of 22 real-site runs, 1 real pass): help requests 
 
 Done in 0.6.1: the inspector stays open after the run for review (click a step, ← →), offers the Playwright trace and decisions, and has "Ask Claude" with a model picker (Haiku 5.5 default); its title and icon follow the run.
 
+Done in 0.9.0: layered settings (cli > env > local > project > user > default) with `/q-pilot config set|unset|explain --scope`; `node`, `cdpUrl` and `trust` only from user, env and cli; vision settings reach `pilot_test` as well as `pilot_run`; the last run, last run per flow and last test or task are kept per project; a `q-pilot.config.json` that does not parse is reported.
+
 Done in 0.8.0: settings moved to `/q-pilot config` (one plugin option left, the Jev key); a helper model (Haiku by default) answers help requests before the session; the inspector opens in the default browser.
 Done in 0.7.0: Jev vision (preview): gated or every-step screenshots, the vision model, and Box rescue (Jev 1.14), all switchable in the inspector during a run; off for runs with secrets.
 
 What is still left out.
 
+- **Settings sources in the inspector.** The inspector shows the vision settings but not which scope they came from, and nothing in the mod fills the `cli` scope yet (the resolver supports it). Env covers only `Q_PILOT_CDP_URL`. The stop gate's replay and `record` pass no vision flags (replay uses no model; a healed step runs with the runner's own default, vision off).
 - **Haiku fallback.** Without Jev, prompt mode ends as `blocked`, a missed step in a saved flow ends as `blocked`, and an untraced flow as `untraced`. A guarded Haiku pick for those cases was in the first design report and is not built.
 - **YAML flows.** Flows are JSON. A YAML reader (and a converter) could come later.
 - **Scope disambiguation beyond landmarks.** Look-alike elements are told apart only by the name of the nearest form, dialog, landmark or list. Anything finer (row text, position) is a miss today.

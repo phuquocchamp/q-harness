@@ -77,8 +77,9 @@ test('at most 2 follow-ups per user prompt; the person\'s own prompt resets the 
   expect(host.submitted.filter(s => !(s.origin as { kind: string }).kind.match(/composer/)).length).toBe(3)
 })
 
-test('followUp suggest proposes in the prompt box and submits nothing', { options: { followUp: 'suggest' } }, async ($, on) => {
+test('followUp suggest proposes in the prompt box and submits nothing', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { followUp: 'suggest' })
   seedProject(host.files)
   host.runner.run = [say([APP_BUG])]
   await start($)

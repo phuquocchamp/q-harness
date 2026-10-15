@@ -25,7 +25,7 @@ const isStrArr = v => Array.isArray(v) && v.every(s => typeof s === 'string')
 
 /**
  * Network access is open by default: any baseURL, and a run may follow links to other origins. The user's own
- * environment can close it (Q_PILOT_ALLOW_REMOTE=0, set by the `network: local` plugin option); a repo file cannot.
+ * environment can close it (Q_PILOT_ALLOW_REMOTE=0 in the shell); a repo file cannot.
  */
 export const remoteAllowed = env => env.Q_PILOT_ALLOW_REMOTE !== '0'
 
@@ -34,7 +34,7 @@ export function assertLoopback(url, what, env) {
   if (remoteAllowed(env)) return
   let host
   try { host = new URL(url).hostname } catch { throw new ConfigError(`${what} is not a valid URL`) }
-  if (!LOOPBACK.has(host)) throw new ConfigError(`${what} must be loopback (localhost, 127.0.0.1, [::1]) while remote access is off (Q_PILOT_ALLOW_REMOTE=0 or the network: local option)`)
+  if (!LOOPBACK.has(host)) throw new ConfigError(`${what} must be loopback (localhost, 127.0.0.1, [::1]) while remote access is off (Q_PILOT_ALLOW_REMOTE=0 is set in the shell)`)
 }
 
 export function loadConfig(root, env = process.env) {

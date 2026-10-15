@@ -34,7 +34,7 @@ test('a green run lets the turn end; the runner argv is the one in DESIGN', asyn
   expect((await stop($)).block).toBeUndefined()
   expect(host.runs).toEqual([['node', expect.stringMatching(/\/runner\/pilot\.mjs$/), 'run', '--root', ROOT, '--flows', 'checkout', '--budget-ms', '48000']])
   expect(host.statuses.at(-1)).toBe('pilot ✓ 1/1 flows')
-  expect((host.store.get('lastByFlow') as Record<string, { outcome: string }>).checkout!.outcome).toBe('pass')
+  expect((host.stored('lastByFlow') as Record<string, { outcome: string }>).checkout!.outcome).toBe('pass')
 })
 
 test('uncovered UI files select the smoke flows; mixed changes select both', async ($, on) => {
@@ -51,8 +51,9 @@ test('uncovered UI files select the smoke flows; mixed changes select both', asy
   expect(calls(host.runs, 'run')[1]!.at(-3)).toBe('checkout,home')
 })
 
-test('mode all runs every flow', { options: { mode: 'all' } }, async ($, on) => {
+test('mode all runs every flow', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { mode: 'all' })
   seedProject(host.files)
   host.runner.run = [say([flow('checkout', 'pass'), flow('home', 'pass')])]
   await start($)
@@ -61,8 +62,9 @@ test('mode all runs every flow', { options: { mode: 'all' } }, async ($, on) => 
   expect(calls(host.runs, 'run')[0]!.at(-3)).toBe('checkout,home')
 })
 
-test('mode off never runs', { options: { mode: 'off' } }, async ($, on) => {
+test('mode off never runs', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { mode: 'off' })
   seedProject(host.files)
   await start($)
   await edit($, CHECKOUT)
@@ -85,8 +87,9 @@ const TABLE: [string, boolean, boolean][] = [
 ]
 for (const [outcome, shadow, on_] of TABLE) {
   for (const trust of ['shadow', 'on'] as const) {
-    test(`outcome ${outcome}, trust ${trust}: ${(trust === 'shadow' ? shadow : on_) ? 'blocks' : 'allows'}`, { options: { trust } }, async ($, on) => {
+    test(`outcome ${outcome}, trust ${trust}: ${(trust === 'shadow' ? shadow : on_) ? 'blocks' : 'allows'}`, async ($, on) => {
       const host = fakeHost(on)
+      host.store.set('settings', { trust })
       seedProject(host.files)
       host.runner.run = [say([flow('checkout', outcome, outcome === 'drift' ? DRIFT : { error: 'reason' })])]
       await start($)
@@ -127,8 +130,9 @@ test('shadow drift blocks with old → new and how to accept, and writes no trac
   expect([...host.files.keys()].filter(k => k.startsWith(`${ROOT}/.q-pilot`))).toEqual([])
 })
 
-test('trust on: a drift whose element name is in the turn diff is accepted automatically', { options: { trust: 'on' } }, async ($, on) => {
+test('trust on: a drift whose element name is in the turn diff is accepted automatically', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { trust: 'on' })
   seedProject(host.files)
   host.runner.run = [say([DRIFT])]
   host.runner.accept = [say([flow('checkout', 'pass')], 'accept')]
@@ -141,8 +145,9 @@ test('trust on: a drift whose element name is in the turn diff is accepted autom
   expect(host.appended.join('\n')).toMatch(/checkout drifted .* accepted/)
 })
 
-test('trust on: a drift the diff does not mention blocks and is not accepted', { options: { trust: 'on' } }, async ($, on) => {
+test('trust on: a drift the diff does not mention blocks and is not accepted', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { trust: 'on' })
   seedProject(host.files)
   host.runner.run = [say([DRIFT])]
   host.diff = '+<h1>Welcome</h1>'
@@ -153,8 +158,9 @@ test('trust on: a drift the diff does not mention blocks and is not accepted', {
   expect(calls(host.runs, 'accept')).toEqual([])
 })
 
-test('trust on: a failed auto-accept blocks with the reason', { options: { trust: 'on' } }, async ($, on) => {
+test('trust on: a failed auto-accept blocks with the reason', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { trust: 'on' })
   seedProject(host.files)
   host.runner.run = [say([DRIFT])]
   host.runner.accept = [{ exitCode: 1, stderr: 'disk full' }]
@@ -164,8 +170,9 @@ test('trust on: a failed auto-accept blocks with the reason', { options: { trust
   expect((await stop($)).block).toMatch(/Auto-accept failed: .*disk full/s)
 })
 
-test('trust on: env only notifies; untraced asks for a recording', { options: { trust: 'on' } }, async ($, on) => {
+test('trust on: env only notifies; untraced asks for a recording', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { trust: 'on' })
   seedProject(host.files)
   host.runner.run = [say([flow('checkout', 'env', { error: 'landed on /login' }), flow('home', 'untraced')])]
   await start($)
@@ -239,8 +246,9 @@ test('a missing runner or node only toasts and allows', async ($, on) => {
   expect(host.toasts.at(-1)).toMatch(/node was not found/)
 })
 
-test('the node option and maxStopSeconds shape the argv', { options: { node: '/opt/homebrew/bin/node', maxStopSeconds: 20 } }, async ($, on) => {
+test('the node option and maxStopSeconds shape the argv', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { node: '/opt/homebrew/bin/node', maxStopSeconds: 20 })
   seedProject(host.files)
   host.runner.run = [say([flow('checkout', 'pass')])]
   await start($)
@@ -315,8 +323,9 @@ test('the band counts flaky in shadow, not with trust on', async ($, on) => {
   expect(host.statuses.at(-1)).toBe('pilot ✗ 1 of 1 flows: checkout flaky')
 })
 
-test('trust on: flaky is allowed and the status line stays green', { options: { trust: 'on' } }, async ($, on) => {
+test('trust on: flaky is allowed and the status line stays green', async ($, on) => {
   const host = fakeHost(on)
+  host.store.set('settings', { trust: 'on' })
   seedProject(host.files)
   host.runner.run = [say([flow('checkout', 'flaky')])]
   await start($)

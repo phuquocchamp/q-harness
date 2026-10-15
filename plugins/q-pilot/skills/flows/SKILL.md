@@ -82,6 +82,8 @@ q-pilot.config.json          baseURL, flowsDir (default flows), optional server,
 flows/<id>.flow.json         one flow per file; id equals the file name stem, [a-z0-9-]+
 .q-pilot/traces/<id>.json    the recorded path (committed)
 .q-pilot/runs/<runId>/       result.json, screenshots, proposed traces (git-ignored)
+.q-pilot/settings.json       team settings for /q-pilot config (committed; never personal keys or secrets)
+.q-pilot/settings.local.json your settings for this project (git-ignored)
 ```
 
 ## Writing a good flow
