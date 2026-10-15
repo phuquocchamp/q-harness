@@ -1,0 +1,14 @@
+{
+  "id": "checkout-coffee",
+  "start": "/",
+  "goal": "Buy one bag of coffee beans and place the order using the email from the fixtures. Stop when the order is confirmed.",
+  "fixtures": { "email": "buyer@example.test" },
+  "verify": [
+    { "url": "/checkout\\.html\\?item=coffee$" },
+    { "testid": "total", "text": "€12.00" },
+    { "role": "status", "text": "Order confirmed" }
+  ],
+  "covers": ["src/checkout.html", "src/index.html"],
+  "tags": ["smoke"],
+  "budget": { "steps": 20, "seconds": 20 }
+}
