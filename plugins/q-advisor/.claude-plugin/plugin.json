@@ -1,0 +1,31 @@
+{
+  "name": "q-advisor",
+  "version": "0.1.0",
+  "author": { "name": "phuquocchamp" },
+  "license": "MIT",
+  "description": "Context advice at turn boundaries: focuses Claude Code's own autocompact on the plan, decisions and changed files, and suggests compacting, clearing for a new task or switching model, with Jev (Haiku fallback) making the judgement calls. Starts in shadow mode.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "jevApiKey": {
+      "type": "string",
+      "title": "TypeSafe Jev API key",
+      "description": "Optional. Sent only in the Authorization header to api.typesafe.ai. Empty: TYPESAFE_API_KEY from the environment, else Haiku decides.",
+      "sensitive": true,
+      "required": false
+    },
+    "mode": {
+      "type": "string",
+      "title": "Advice mode",
+      "description": "shadow: log every verdict, show no advice. on: show advice at turn boundaries. off: do nothing. /q-advisor on|shadow|off overrides it.",
+      "options": ["shadow", "on", "off"],
+      "default": "shadow"
+    },
+    "focusCompact": {
+      "type": "string",
+      "title": "Focused autocompact",
+      "description": "on: when Claude Code compacts on its own, add focus instructions (plan, decisions, changed files, open questions). off: leave autocompact untouched.",
+      "options": ["on", "off"],
+      "default": "on"
+    }
+  }
+}

@@ -2,9 +2,9 @@
 
 > Part of [q-harness](../../README.md), a collection of Claude Code plugins by [**phuquocchamp**](https://github.com/phuquocchamp)
 
-**Is this still the right model, the right session, and enough room in the context?** q-advisor watches the session and, at the moment it matters, suggests one thing: switch model, compact with a focus, start fresh, or set up a long task the right way. A decision model (TypeSafe's **Jev**, the "System 1" of the harness, with Haiku as the fallback when there is no Jev key) makes the quick judgement calls; the numbers come from the session itself.
+**Is this still the right model, the right session, and enough room in the context?** q-advisor watches the session and, at the moment it matters, suggests one thing: compact with a focus, start fresh for a new task, or switch model. It also focuses Claude Code's own autocompact on the plan, the decisions and the changed files. The numbers come from rules over the session; the judgement calls come from TypeSafe's **Jev** (the "System 1" of the harness), with Haiku as the fallback when there is no Jev key.
 
-**Status** Design (not built yet) · **Version** 0.0.0 · **Author** phuquocchamp
+**Status** Built, starts in shadow mode (it logs every verdict and shows no advice until you switch it on) · **Version** 0.1.0 · **Author** phuquocchamp
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/supervision-loop-dark.png">
@@ -23,32 +23,74 @@ Three things quietly go wrong in long sessions:
 
 Claude Code shows the raw numbers (`/context`, `/cost`, the status line) but leaves the decision to you, at a time you are not looking. q-advisor makes the decision visible at the right moment and leaves the action one key away.
 
-## Principles
+## What it ships
 
-- **Suggest, never act.** Every piece of advice is a Tab-to-accept suggestion in the prompt box or a button. q-advisor never switches the model, compacts or clears on its own.
-- **One piece of advice at a time, at a turn boundary.** Nothing appears while Claude is working.
-- **Show the reason with the numbers.** `context 78% · 3 turns since the plan` beats "you should compact".
-- **Cheap.** Rules over numbers first; Jev is asked only when a rule cannot decide, never for short prompts, and with a time limit. The advisor must cost far less than what it saves.
-- **Learns to be quiet.** Advice you dismiss again and again is shown less often.
+| Component | What it is |
+|-----------|------------|
+| **Mod** (`hooks/register.tsx`, helpers in `hooks/lib/`) | The advice engine, the focused autocompact, the band above the prompt, `/q-advisor` and the shadow log |
+
+## Install
+
+```text
+/plugin install q-advisor --marketplace phuquocchamp/q-harness
+```
+
+## Settings
+
+Set them in `/plugin` (or under `pluginConfigs["q-advisor"].options` in your user settings).
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `jevApiKey` | empty | TypeSafe Jev API key. Stored as sensitive and sent only in the `Authorization` header to `api.typesafe.ai`. When empty, `TYPESAFE_API_KEY` from the environment is used; when that is unset too, Haiku makes the calls. |
+| `mode` | `shadow` | `shadow`: log every verdict, show no advice. `on`: show advice at turn boundaries. `off`: do nothing. `/q-advisor on\|shadow\|off` overrides it (saved). |
+| `focusCompact` | `on` | `on`: when Claude Code compacts on its own, add focus instructions. `off`: leave autocompact untouched. |
+
+More keys are set with `/q-advisor config <key> <value>`:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `compactAt` | `60` | Context % from which "compact now" is advised, if the task is finished |
+| `urgentAt` | `80` | Context % from which "compact before autocompact" is advised |
+| `focusAt` | `70` | Context % from which the focus text is prepared in advance |
+| `newTaskAt` | `30` | Context % below which a new task is not worth a `/clear` |
+| `freshAfter` | `3` | Compactions after which a fresh session is advised |
+| `rateLimitAt` | `80` | Rate-limit % from which the cheaper model is advised |
+| `quietTurns` | `3` | Minimum turns between two pieces of advice |
+| `minPromptChars` | `25` | Shorter prompts are never sent to Jev |
+| `jev` | `on` | `off`: nothing leaves the machine; rules only |
+| `jevModel` | `jev-latest` | The Jev model name |
+| `thresholds.relation` `.size` `.finished` `.keep` | `0.9` `0.7` `0.7` `0.5` | Probability a verdict must reach before it may drive advice (from live probes) |
+
+`/q-advisor config <key> reset` restores one key. `/q-advisor config` lists every value and where it came from.
+
+## How it decides
+
+Rules decide the numbers; Jev makes the judgements; Haiku writes the text. Jev cannot generate text.
+
+| Who | Decides |
+|-----|---------|
+| **Rules** (`$.session.usage`) | Context %, rate limits, compaction count, turns |
+| **Jev** (`api.typesafe.ai/v1/systemone`) | `relation` (continuation, new task or side question), `size` (trivial, routine or deep), `finished` (is the task done), and a keep-score for each candidate item of the focus |
+| **Haiku** (`$.model.complete`, standalone, no history) | The focus text for compact and the handoff note for `/clear` |
+
+When Jev is off or fails, Haiku classifies instead. Its answers carry p 0.5, so they are logged but never drive advice. Background work runs through `$.clock.after(0)`, so a prompt is never delayed.
 
 ## Features
 
-Priority: **P0** first version, **P1** next, **P2** later.
+| Feature | What it does |
+|---------|--------------|
+| **Focused autocompact** | When Claude Code compacts on its own (trigger `auto`, main conversation only), the stored focus is added as instructions. It never vetoes the compaction and only uses a focus prepared earlier. |
+| **`/q-advisor compact`** | A one-step focused compact through `$.session.compact`. Works even where the hook does not run (see [Limits](#limits)). |
+| **Compact advice** | `compact-now` at `compactAt` when the task is finished; `compact-urgent` at `urgentAt` mid-task |
+| **New task** | Jev says the prompt is a new task: suggests `/clear` and writes a handoff note first. Needs at least 2 turns. The note is injected after `/clear` through `classic.SessionStart`, or as context on the first prompt after `/clear` when that hook does not run. |
+| **Side-question guard** | A side question is not treated as a new task, so it never triggers `/clear` advice |
+| **Fresh session** | After `freshAfter` compactions, suggests a fresh session with a handoff note |
+| **Rate limit and model fit** | Jev sorts the prompt by size; a mismatch two steps away (deep task on Haiku, trivial task on Opus) suggests `/model`. Cache-aware: it says so instead of switching when the cache is warm and the context large. Above `rateLimitAt` it suggests the cheaper model for routine work. |
+| **Missed compaction** | A context drop of more than 50% that q-advisor did not see coming is counted as a compaction |
+| **Band above the prompt** | The advice with its reason and numbers, an action button and Dismiss. The command is also offered as a Tab suggestion. |
+| **Shadow log** | Every verdict (source, label, p, latency) and every piece of advice is stored; `/q-advisor stats` summarises it |
 
-### P0: Context advice
-
-| Signal | Advice |
-|--------|--------|
-| Context ≥ 60% and the current task is finished (the last turn ended with no tool errors and no open todo) | `Compact now while it's cheap: /compact keep the plan, changed files and open questions` |
-| Context ≥ 80% mid-task | `Compact before autocompact does it for you`, with focus instructions Jev writes from the current goal, the files changed and the last decisions |
-| Jev says the new prompt is a **different task** from the last few turns | `New task: /clear (or a new session) gives Claude a clean context` |
-| Several compactions already in this session | `This session has compacted 3×; a fresh session with a short handoff note is cleaner`, with a button that writes the handoff note |
-
-The **focused compact** is the key feature: instead of the engine's generic summary, the `/compact` instructions name what to keep (the plan, the decisions, the files and their state, the open questions), so the session survives the compaction.
-
-### P0: Model fit
-
-Jev sorts each prompt into a task size, then compares it with the current model:
+The model-fit table:
 
 | Task size | Examples | Fits |
 |-----------|----------|------|
@@ -56,86 +98,40 @@ Jev sorts each prompt into a task size, then compares it with the current model:
 | routine | a feature in known code, tests, a bug with a clear stack trace | Sonnet |
 | deep | architecture, an unclear bug, a large refactor, security review, a plan | Opus |
 
-- A mismatch two steps away (deep task on Haiku, trivial task on Opus) shows `/model sonnet` as a Tab suggestion, with the reason.
-- **Cache-aware:** switching model throws away the warm prompt cache, and re-caching a large context costs money. q-advisor suggests a switch when the cache is already cold (idle longer than the cache TTL) or the context is small, and says so when it is not: `Switch would re-cache 140k tokens; finish this task first`.
-- **Rate-limit aware:** when the five-hour window is above 80%, suggest the cheaper model for routine work.
-
-### P1: Long-task setup (big plan, loop, goal)
-
-When Jev reads a prompt as a long task, q-advisor suggests how to run it before Claude starts:
-
-| Kind | Advice |
-|------|--------|
-| **Big plan** (many steps, many files) | Plan mode first; compact with the plan as the focus once it is approved; one session per phase |
-| **Loop** (poll, babysit, retry until green) | `/loop` with a sensible interval instead of a long blocking turn; compact between iterations |
-| **Goal** (open-ended: "make the tests pass", "improve performance") | Write down the done-criteria first; checkpoints (commit, compact) after each milestone |
-| **Parallel work** (independent parts) | Subagents or worktrees, so the main context stays small |
-
-### P1: Session report
-
-`/q-advisor` prints where the session stands and what q-advisor would do now:
-
-```text
-q-advisor  ·  claude-opus-5-5  ·  42 turns  ·  $3.18
-context    78%  ████████████████░░░░  156k / 200k   compacted 1×
-cache      warm (last turn 2m ago, TTL 5m)
-limits     five-hour 46%  ·  seven-day 12%
-task       routine (Jev)  →  sonnet fits
-advice     compact now: the task finished 1 turn ago
-```
-
-### P2: Learn from your answers
-
-Count, per kind of advice, how often it was accepted or dismissed (`$.store`, across sessions). Advice dismissed five times in a row needs a stronger signal before it shows again. `/q-advisor stats` shows the counts.
-
-## Commands (planned)
+## Commands
 
 | Command | What it does |
 |---------|--------------|
 | `/q-advisor` | The session report and the advice for now |
-| `/q-advisor on\|off` | Turn the advice on or off (saved) |
-| `/q-advisor mute <kind>` | Stop one kind of advice: `context`, `model`, `task`, `limits` |
-| `/q-advisor stats` | Accepted and dismissed counts per kind |
-| `/q-advisor config` | Show the settings |
-| `/q-advisor config <key> <value>` | `compactAt` (default `60`), `urgentAt` (`80`), `jev` (on/off), `jevModel` (default `haiku`), `quietTurns` (minimum turns between two pieces of advice, default `3`) |
+| `/q-advisor on\|shadow\|off` | Set the mode (saved) |
+| `/q-advisor stats` | Verdict and advice counts from the log |
+| `/q-advisor focus` | Show the stored focus text |
+| `/q-advisor compact` | Compact now, keeping the focus |
+| `/q-advisor mute <kind>` / `unmute <kind>` | Stop or resume one kind: `compact-now`, `compact-urgent`, `new-task`, `fresh-session`, `model-fit`, `rate-limit` |
+| `/q-advisor config [key value]` | Show the settings, or change one |
+| `/q-advisor reset` | Delete the overrides, the log and the stored handoff |
+| `/q-advisor help` | List the commands |
 
-## How it would be built
+## How it works
 
-| Need | Claude Code mod API |
+| Hook | What q-advisor does |
 |------|---------------------|
-| Context %, rate limits, cost | `$.session.usage()` |
-| Current model, turn count | `$.session.model()`, `$.session.turns()` |
-| Jev's judgement (task size, same or new task, long-task kind) | `$.model.classify(text, labels, { model: 'haiku' })` |
-| Focus instructions and handoff note | `$.model.complete({ model: 'haiku', … })` over `$.session.messages()` |
-| When to advise | `prompt.submit` (classify the prompt, without blocking it), `turn.complete` (decide), `session.compact` (count compactions) |
-| Show advice | `$.prompt.suggest` (Tab to take), a button in a row above the prompt, `$.ui.toast` for urgent advice |
-| Act on a click | `$.session.compact({ instructions })`, `$.command.run` for `/model` and `/clear` (queued until the session is idle) |
-| Remember answers and settings | `$.store` |
+| `session.start` | Loads settings and prepares state |
+| `prompt.submit` | Asks Jev about the new prompt in the background (relation, size); on the first prompt after `/clear`, adds the handoff note as context when `classic.SessionStart` did not |
+| `turn.complete` | Reads the numbers, asks whether the task finished, decides the advice and prepares the focus |
+| `session.compact` | Adds the stored focus to an automatic compaction; counts compactions |
+| `classic.SessionStart` (`clear`) | Injects the handoff note into the fresh session |
+| `command.run` | The `/q-advisor` command |
+| `ui.render` (AbovePrompt) | The band: advice, action button, Dismiss |
 
 ## Limits
 
-- A mod cannot switch the model or clear the session on its own; q-advisor can only suggest the command or run it after a click, once the turn is over.
+- **Managed Claude Code.** Where an organization manages Claude Code (remote managed settings, for example Claude Team), `session.compact` and `classic.SessionStart` do not run for plugins you install yourself; `claude plugin validate` warns about it, and a real `/compact` was confirmed not to reach the hook. Focused autocompact is then off, and the handoff uses the `prompt.submit` fallback. Use `/q-advisor compact` instead.
+- **Data sent to Jev:** redacted summaries of recent work, the last reply, the todo state, the tool-error count, the new prompt and the candidate items. With `jev off`, nothing leaves the machine. Haiku calls go through Claude Code itself.
+- **Not verified:** whether the focus measurably changes the engine's summary.
+- A mod cannot switch the model or clear the session on its own; q-advisor suggests the command or runs it after a click, once the turn is over.
 - Jev's labels are guesses. A wrong "new task" or "deep task" is cheap to dismiss, which is why everything is a suggestion.
-- Each Jev call costs a little. It is skipped for short prompts and slash commands, and can be turned off (`jev off`): q-advisor then uses the number rules only.
-- Cache warmth is estimated from the idle time and the cache TTL; the engine does not report it directly.
-
-## Feedback on the original idea
-
-The idea in [TODOS.md](../../TODOS.md) (model choice, when to start a new session, when to compact, how to run big plans, loops and goals) is sound; a few changes make it useful in practice:
-
-1. **Make the advice actionable.** "Consider compacting" is noise; a ready `/compact` with focus instructions is a tool. Every piece of advice ships its command.
-2. **Advise at turn boundaries only.** Advice during a turn interrupts, and nothing can be acted on then anyway.
-3. **Don't let the advisor cost more than it saves.** A Haiku call on every prompt adds latency and tokens; rules decide most cases, Jev only the unclear ones, in the background.
-4. **Count the cost of a model switch.** Changing model throws away the prompt cache, so "Opus is overkill" is only good advice when the cache is cold or the context is small.
-5. **Rate limits are part of the decision.** Near the five-hour limit, the right model is often the cheaper one.
-
-## Install
-
-Not published yet. When it is:
-
-```text
-/plugin install q-advisor --marketplace phuquocchamp/q-harness
-```
+- Cache warmth is estimated from the idle time; the engine does not report it directly.
 
 ## Develop
 
@@ -144,3 +140,5 @@ claude --plugin-dir ./plugins/q-advisor       # load from disk; saving a file re
 claude plugin validate ./plugins/q-advisor
 claude plugin test ./plugins/q-advisor
 ```
+
+Tests run against a fake host: 104 tests in 10 files. Live-tested in two real sessions with real Jev: the report, `on`, `config`, `stats`, `focus`, the band with live verdicts (p 0.79 to 0.98, 284 to 387 ms) and `/q-advisor compact`.
