@@ -22,7 +22,8 @@ export async function observe(page) {
   if (!snap) return { url: page.url(), title: '', text: '', actions: [] }
   for (const a of snap.actions) {
     if (a.kind === 'select') a.name = collapse(a.label.slice(0, a.label.length - a.option.length - 3))
-    else if (a.node !== undefined) a.name = collapse(a.label)
+    // An "Open <field>" click keeps the field's own name: the element is the field, the label says what the click does.
+    else if (a.node !== undefined) a.name = collapse(a.open ? a.label.slice(5) : a.label)
     if (a.scope !== undefined) a.scope = collapse(a.scope)
   }
   return snap

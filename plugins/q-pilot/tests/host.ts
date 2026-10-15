@@ -7,7 +7,10 @@ import type { On } from 'claude-code'
 
 export const ROOT = '/repo'
 
-type Proc = { exitCode?: number; stdout?: string; stderr?: string; throws?: string }
+/** A help request the fake runner raises (task mode) before it prints its result: written to `file`, then announced. */
+type Help = { n: number; reason: string; request: Record<string, unknown> }
+/** linger: after the result the fake runner stays up (an inspector open for review), raises `asks`, and ends only when the mod closes it. */
+type Proc = { exitCode?: number; stdout?: string; stderr?: string; throws?: string; helps?: Help[]; linger?: boolean; asks?: { model: string; prompt: string }[] }
 
 /** One flow of a runner result; every field of the contract that the mod reads has a default. */
 export type FakeFlow = {
@@ -16,6 +19,9 @@ export type FakeFlow = {
   recorded?: boolean
   jevCalls?: number
   jevMs?: number[]
+  checks?: { check: unknown; ok: boolean; actual: unknown }[]
+  warnings?: string[]
+  flowProposal?: string
   steps?: unknown[]
   diverged?: unknown[]
   verifyFails?: unknown[]
@@ -68,13 +74,26 @@ export const fakeHost = (on: On) => {
   const runs: string[][] = []
   const envs: (Record<string, string> | undefined)[] = []
   const submitted: { text: string; origin: unknown }[] = []
+  /** Answers the mod wrote to the fake runner's help requests, in order. */
+  const answers: unknown[] = []
+  /** Inspector questions the mod answered (the request to $.model.complete and the answer file it wrote). */
+  const completes: { model: string; prompt: string; system?: string }[] = []
+  const asked: unknown[] = []
+  /** How many lingering fake runners the mod closed. */
+  const closed = { n: 0 }
   const suggested: string[] = []
   const filled: string[] = []
   const host = {
     submitted,
+    answers,
+    completes,
+    asked,
+    closed,
     suggested,
     filled,
     submitDrop: undefined as string | undefined,
+    /** Canned $.model.complete replies, used in order (the helper model's answers); empty: a plain-text default. */
+    modelReplies: [] as string[],
     suggestShown: true,
     fillFilled: true,
     store,
@@ -102,6 +121,7 @@ export const fakeHost = (on: On) => {
   })
   on('session.root', () => ({ value: ROOT }))
   on('session.cwd', () => ({ value: ROOT }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.append', (_$, e, next) => {
     for (const b of e.message.content) if (b.type === 'text') appended.push(String(b.text))
@@ -148,6 +168,55 @@ export const fakeHost = (on: On) => {
       return answer(next)
     }
     throw new Error(`unexpected process: ${argv.join(' ')}`)
+  })
+
+  // The task runner is spawned (it outlives a tool call while it waits for help). Same canned answers as process.run.
+  on('process.spawn', async function* (_$, e) {
+    const argv = [...e.argv]
+    runs.push(argv)
+    envs.push(e.env)
+    const script = argv.findIndex(a => a.endsWith('runner/pilot.mjs'))
+    if (script < 0) throw new Error(`unexpected spawn: ${argv.join(' ')}`)
+    const queue = host.runner[argv[script + 1]!]
+    const next = queue && queue.length > 1 ? queue.shift()! : queue?.[0]
+    if (!next) throw new Error(`no runner answer set for ${argv[script + 1]}`)
+    if (next.throws) throw new Error(next.throws)
+    const runDir = `${ROOT}/.q-pilot/runs/r1`
+    for (const h of next.helps ?? []) {
+      const file = `${runDir}/help-${h.n}.json`
+      files.set(file, JSON.stringify({ n: h.n, of: 6, steps: 3, wait_ms: 240000, fixtures: [], elements: [], text: '', recent_actions: [], screenshot: null, url: 'https://x/', title: 'X', ...h.request }))
+      yield { stream: 'stderr' as const, text: `[q-pilot] task\n[q-pilot] help ${JSON.stringify({ n: h.n, file, runId: '20261015-122547-253c', runDir, reason: h.reason })}\n` }
+      const answer = file.replace(/\.json$/, '.answer.json')
+      while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
+      answers.push(JSON.parse(files.get(answer)!))
+    }
+    if (next.stderr) yield { stream: 'stderr' as const, text: next.stderr }
+    if (next.stdout) yield { stream: 'stdout' as const, text: next.stdout }
+    if (next.linger) {
+      try {
+        for (const [k, a] of (next.asks ?? []).entries()) {
+          const file = `${runDir}/ask-${k + 1}.json`
+          files.set(file, JSON.stringify({ n: k + 1, system: 'sys', ...a }))
+          yield { stream: 'stderr' as const, text: `[q-pilot] ask ${JSON.stringify({ n: k + 1, file })}\n` }
+          const answer = file.replace(/\.json$/, '.answer.json')
+          while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
+          asked.push(JSON.parse(files.get(answer)!))
+        }
+        // Progress lines while it serves the inspector: a generator only takes return() at a yield.
+        for (;;) {
+          await new Promise(r => setTimeout(r, 5))
+          yield { stream: 'stderr' as const, text: '[q-pilot] inspector open\n' }
+        }
+      } finally {
+        closed.n++
+      }
+    }
+    return { value: { code: next.exitCode ?? 0, signal: null } }
+  })
+
+  on('model.complete', (_$, e) => {
+    completes.push({ model: e.model, prompt: String(e.prompt), system: e.system === undefined ? undefined : String(e.system) })
+    return { value: { isAnswered: true as const, text: host.modelReplies.shift() ?? `Click [31] (${e.model}).`, usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
   })
 
   on('turn.complete', (_$, e) => ({ text: e.answer }))

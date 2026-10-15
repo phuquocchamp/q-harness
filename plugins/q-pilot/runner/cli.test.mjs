@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { main } from './pilot.mjs'
+import { headless, main } from './pilot.mjs'
 import { BUG, DRIFT, DRIFT_AND_BUG, ENV, freePort, makeApp, stubJev } from './testkit.mjs'
 
 const FIXTURE = 'buyer@example.test'
@@ -41,6 +41,9 @@ test('green replay passes with 0 Jev calls, starts the server and stops it', () 
       assert.equal(f.recorded, false)
       assert.deepEqual(f.steps.map(s => s.by), ['replay', 'replay', 'replay'])
       assert.equal(f.proposal, null)
+      assert.equal(f.trace, null, 'a clean pass keeps no Playwright trace')
+      assert.deepEqual(f.pageErrors, [])
+      assert.deepEqual(r.playwright, { from: 'project', version: r.playwright.version })
       assert.ok(existsSync(join(r.runDir, 'result.json')))
       assert.equal(await fetch(`http://127.0.0.1:${port}/`).then(() => true, () => false), false, 'server was stopped')
       assert.equal(stub.requests.length, 0)
@@ -54,6 +57,7 @@ test('the €120 copy is an app-bug with the failed check, the actual value and 
     assert.deepEqual(f.verifyFails, [{ check: { testid: 'total', text: '€12.00' }, actual: '€120.00' }])
     assert.equal(f.jevCalls, 0)
     assert.ok(existsSync(f.screenshot))
+    assert.ok(f.trace.endsWith('checkout-coffee.trace.zip') && existsSync(f.trace), 'a red run keeps its Playwright trace')
   }))
 
 test('a failure that goes away on the fresh re-run is flaky', () =>
@@ -121,6 +125,28 @@ test('more than 2 missed steps is blocked', () =>
       assert.equal(f.outcome, 'blocked')
       assert.match(f.error, /more than 2 steps missed/)
       assert.equal(f.jevCalls, 2)
+    } finally { stub.restore() }
+  }))
+
+test('a heal below the probability threshold is blocked and names Jev\'s pick', () =>
+  withApp(DRIFT, async ({ root }) => {
+    // CLICK at 0.4 (the argmax) and a certain target: p = 0.4 < 0.5.
+    const stub = stubJev(({ questions }) => {
+      const ops = Object.keys(questions.operation.criteria)
+      const answers = { operation: { type: 'choice', choice: 'CLICK', confidence: 0.4, probabilities: Object.fromEntries(ops.map(o => [o, o === 'CLICK' ? 0.4 : 0.6 / (ops.length - 1)])) } }
+      for (const [name, q] of Object.entries(questions)) {
+        if (name === 'operation' || name === 'fixture') continue
+        const ids = Object.keys(q.criteria)
+        const pick = ids.find(k => q.criteria[k].element.includes('] Pay now')) ?? ids[0]
+        answers[name] = { type: 'choice', choice: pick, confidence: 1, probabilities: Object.fromEntries(ids.map(i => [i, i === pick ? 1 : 0])) }
+      }
+      return { raw: answers }
+    })
+    try {
+      const f = flowOf(await run(root))
+      assert.equal(f.outcome, 'blocked')
+      assert.match(f.error, /step 3 missed .*Place order.*Pay now.* has p 0\.40 < 0\.5/)
+      assert.equal(f.diverged.length, 0)
     } finally { stub.restore() }
   }))
 
@@ -203,8 +229,10 @@ test('no trace and no Jev is untraced and nothing runs', () =>
     assert.equal(f.durationMs < 1000, true)
   }))
 
-test('fixture values never reach a trace, a proposal or a Jev request (record and run)', () =>
+test('secret ($env) fixture values never reach a trace, a proposal or a Jev request (record and run)', () =>
   withApp({}, async ({ root }) => {
+    const flowPath = join(root, 'flows', 'checkout-coffee.flow.json')
+    writeFileSync(flowPath, JSON.stringify({ ...JSON.parse(readFileSync(flowPath, 'utf8')), fixtures: { email: '$env:E2E_EMAIL' } }))
     rmSync(traceFile(root))
     const stub = stubJev(({ state }) => answersOf(state))
     try {
@@ -277,3 +305,12 @@ test('export writes a spec through export.mjs', () =>
     assert.equal(r.ok, true, JSON.stringify(r))
     assert.match(readFileSync(r.out, 'utf8'), /checkout-coffee/)
   }))
+
+test('the browser is headed by default, headless on Q_PILOT_HEADLESS=1, in CI or on Linux without a display', () => {
+  assert.equal(headless({}, 'darwin'), false)
+  assert.equal(headless({ Q_PILOT_HEADLESS: '1' }, 'darwin'), true)
+  assert.equal(headless({ Q_PILOT_HEADLESS: '0' }, 'darwin'), false)
+  assert.equal(headless({ CI: 'true' }, 'darwin'), true)
+  assert.equal(headless({}, 'linux'), true)
+  assert.equal(headless({ DISPLAY: ':0' }, 'linux'), false)
+})

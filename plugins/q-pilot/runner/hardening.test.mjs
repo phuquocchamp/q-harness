@@ -80,7 +80,7 @@ test('a replay with an empty verify is needs-verify, never pass', () =>
 
 test('fixture values are redacted from verifyFails (check and actual) in the result', () =>
   withApp({}, async ({ root }) => {
-    patch(root, 'flows/checkout-coffee.flow.json', f => ({ ...f, verify: [{ label: 'Email', value: 'nope' }, { role: 'status', text: FIXTURE }] }))
+    patch(root, 'flows/checkout-coffee.flow.json', f => ({ ...f, fixtures: { email: '$env:E2E_EMAIL' }, verify: [{ label: 'Email', value: 'nope' }, { role: 'status', text: FIXTURE }] }))
     const r = await run(root, '--no-jev')
     const f = flowOf(r)
     assert.equal(f.outcome, 'app-bug')
@@ -89,7 +89,7 @@ test('fixture values are redacted from verifyFails (check and actual) in the res
     assert.equal(f.verifyFails[0].actual, '[redacted]')
   }))
 
-test('Jev sees no fixture value in element names or recent actions; traces keep real names', () =>
+test('a secret echoed by the page is [redacted] for Jev and in the trace, and replay still matches it', () =>
   withApp({ 'checkout.html': [['Place order', `Pay ${FIXTURE}`]] }, async ({ root }) => {
     const stub = stubJev(({ state }) => {
       if (state.page.text.includes('Order confirmed')) return { op: 'DONE' }
@@ -98,21 +98,37 @@ test('Jev sees no fixture value in element names or recent actions; traces keep 
       return { op: 'CLICK', label: 'Buy coffee beans' }
     })
     try {
-      patch(root, 'flows/checkout-coffee.flow.json', f => f)
+      patch(root, 'flows/checkout-coffee.flow.json', f => ({ ...f, fixtures: { email: '$env:E2E_EMAIL' } }))
       const rec = flowOf(await main(['record', '--root', root, '--flow', 'checkout-coffee'], ENV))
       assert.equal(rec.outcome, 'pass')
       for (const q of stub.requests) assert.equal(q.raw.includes(FIXTURE), false)
-      assert.equal(readJson(root, '.q-pilot/traces/checkout-coffee.json').steps[2].name, `Pay ${FIXTURE}`)
-      // The real name matches on replay.
+      assert.equal(readJson(root, '.q-pilot/traces/checkout-coffee.json').steps[2].name, 'Pay [redacted]')
+      // Live candidates are redacted the same way before matching.
       assert.equal(flowOf(await run(root, '--no-jev')).outcome, 'pass')
     } finally { stub.restore() }
   }))
 
-test('buildTrace keeps names and drops fixture values from urls', () => {
-  const t = buildTrace('f', [{ op: 'click', role: 'link', name: 'Mail buyer@example.test', scope: '', url: '/x?e=buyer@example.test', by: 'jev' }], 1, [FIXTURE])
-  assert.equal(t.steps[0].name, 'Mail buyer@example.test')
-  assert.equal(t.steps[0].url, '/x?e=[redacted]')
-  assert.equal('by' in t.steps[0], false)
+test('a literal echoed by the page may appear in a trace name, and replay matches it', () =>
+  withApp({ 'checkout.html': [['Place order', `Pay ${FIXTURE}`]] }, async ({ root }) => {
+    const stub = stubJev(({ state }) => {
+      if (state.page.text.includes('Order confirmed')) return { op: 'DONE' }
+      const email = state.elements.find(e => e.label === 'Email')
+      if (email) return email.value === '' ? { op: 'TYPE_TEXT', label: 'Email', fixture: 'email' } : { op: 'CLICK', label: `Pay ${FIXTURE}` }
+      return { op: 'CLICK', label: 'Buy coffee beans' }
+    })
+    try {
+      const rec = flowOf(await main(['record', '--root', root, '--flow', 'checkout-coffee'], ENV))
+      assert.equal(rec.outcome, 'pass')
+      assert.equal(readJson(root, '.q-pilot/traces/checkout-coffee.json').steps[2].name, `Pay ${FIXTURE}`)
+      assert.equal(flowOf(await run(root, '--no-jev')).outcome, 'pass')
+    } finally { stub.restore() }
+  }))
+
+test('buildTrace redacts secrets from name, scope, option and url; literals stay', () => {
+  const step = { op: 'select', role: 'combobox', name: 'Mail buyer@example.test', scope: 'For buyer@example.test', option: 'buyer@example.test', url: '/x?e=buyer@example.test', by: 'jev', p: 0.9 }
+  const t = buildTrace('f', [step], 1, [FIXTURE])
+  assert.deepEqual(t.steps[0], { op: 'select', role: 'combobox', name: 'Mail [redacted]', scope: 'For [redacted]', option: '[redacted]', url: '/x?e=[redacted]' })
+  assert.equal(buildTrace('f', [step], 1, []).steps[0].name, 'Mail buyer@example.test')
 })
 
 test('ids are validated: accept, run ids, run --flows and export --out', () =>
@@ -145,12 +161,12 @@ test('accept uses only the latest run that contains the flow; no stale fallback'
     assert.equal(readJson(root, '.q-pilot/traces/checkout-coffee.json').steps[2].name, 'Place order')
   }))
 
-test('a remote baseURL is an error naming the rule', () =>
+test('with remote access off, a remote baseURL is an error naming the rule', () =>
   withApp({}, async ({ root }) => {
     patch(root, 'q-pilot.config.json', c => ({ ...c, baseURL: 'https://staging.example.com' }))
-    const r = await run(root)
+    const r = await main(['run', '--root', root, '--flows', 'checkout-coffee'], { ...ENV, Q_PILOT_ALLOW_REMOTE: '0' })
     assert.equal(r.ok, false)
-    assert.match(r.error, /loopback.*Q_PILOT_ALLOW_REMOTE/)
+    assert.match(r.error, /loopback.*Q_PILOT_ALLOW_REMOTE=0/)
   }))
 
 test('a flow with a disallowed $env: name is an error for that flow', () =>
@@ -159,4 +175,25 @@ test('a flow with a disallowed $env: name is an error for that flow', () =>
     const f = flowOf(await run(root, '--no-jev'))
     assert.equal(f.outcome, 'error')
     assert.match(f.error, /E2E_ or Q_PILOT_/)
+  }))
+
+test('leaving the base origin after an action is allowed by default, blocked with Q_PILOT_ALLOW_REMOTE=0', () =>
+  withApp({}, async ({ root, port }) => {
+    // 127.0.0.1 is a different origin from the localhost baseURL.
+    const index = join(root, 'src', 'index.html')
+    writeFileSync(index, readFileSync(index, 'utf8').replace('/checkout.html?item=coffee', `http://127.0.0.1:${port}/checkout.html?item=coffee`))
+    const f = flowOf(await main(['run', '--root', root, '--flows', 'checkout-coffee', '--no-jev'], { ...ENV, Q_PILOT_ALLOW_REMOTE: '0' }))
+    assert.equal(f.outcome, 'blocked')
+    assert.equal(f.error, `left the allowed origin: http://127.0.0.1:${port}`)
+    const allowed = flowOf(await run(root, '--no-jev'))
+    assert.equal(allowed.outcome, 'pass')
+  }))
+
+test('the repo server command never receives the Jev key', () =>
+  withApp({}, async ({ root }) => {
+    const server = join(root, 'server.mjs')
+    writeFileSync(server, "import { writeFileSync } from 'node:fs'\nwriteFileSync('env.json', JSON.stringify({ key: process.env.TYPESAFE_API_KEY ?? null, path: Boolean(process.env.PATH) }))\n" + readFileSync(server, 'utf8'))
+    const child = spawn(process.execPath, [PILOT, 'run', '--root', root, '--all', '--no-jev'], { env: { ...process.env, TYPESAFE_API_KEY: 'sk-secret' }, stdio: 'ignore' })
+    await new Promise(res => child.on('exit', res))
+    assert.deepEqual(JSON.parse(readFileSync(join(root, 'env.json'), 'utf8')), { key: null, path: true })
   }))

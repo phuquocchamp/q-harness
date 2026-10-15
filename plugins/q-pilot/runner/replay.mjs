@@ -1,11 +1,13 @@
 // Replay a trace with no model; when a step does not match, Jev re-picks that one step (heal).
 import { observe, collapse } from './snapshot.mjs'
-import { perform, toStep, describe, onLogin } from './act.mjs'
+import { perform, toStep, describe, onLogin, canPressEnter, focusedNode } from './act.mjs'
 import { chooseAction, JevError } from './jev.mjs'
 import { shot } from './shot.mjs'
-import { redact } from './redact.mjs'
+import { redact, redactValue } from './redact.mjs'
 
 export const MAX_HEALS = 2
+/** A heal below this probability is not trusted: the flow ends blocked and names Jev's pick for the reviewer. */
+export const MIN_HEAL_P = 0.5
 
 /**
  * Finds the observed action for a trace step: same op kind, role and name; several candidates are narrowed by scope.
@@ -24,14 +26,20 @@ export function match(actions, step) {
   return { action: null, candidates: candidates.length }
 }
 
+/** A recorded `press` is only valid right after a fill of the same field: the focused element must match that step's role and name. */
+export function pressMatches(prev, snap, focused) {
+  if (prev?.op !== 'fill' || focused == null) return false
+  const field = snap.actions.find(a => a.kind === 'fill' && a.node === focused)
+  return Boolean(field) && field.role === prev.role && field.name === collapse(prev.name)
+}
+
 const blocked = (error, steps, diverged) => ({ end: 'blocked', error, steps, diverged })
 
 /**
  * Replays `trace.steps` on `page`. Returns { end: 'done' | 'blocked' | 'env', error, steps, diverged }.
  * `steps` are the steps as run (healed ones replaced) with `by`; `diverged` lists old -> new for healed steps.
  */
-export async function replay(page, { flow, trace, fixtures, jev, loginPath, deadline, shotFile, maxHeals = MAX_HEALS }) {
-  const secrets = Object.values(fixtures)
+export async function replay(page, { flow, trace, fixtures, secrets = [], jev, loginPath, deadline, shotFile, guard, maxHeals = MAX_HEALS, minHealP = MIN_HEAL_P }) {
   const steps = [], diverged = [], history = []
   let healed = 0
   for (const [i, step] of trace.steps.entries()) {
@@ -44,11 +52,16 @@ export async function replay(page, { flow, trace, fixtures, jev, loginPath, dead
       if (step.op === 'scroll' || step.op === 'wait') {
         snap = { url: page.url() }
         hit = { action: { kind: step.op, delta: step.delta } }
+      } else if (step.op === 'press') {
+        snap = await observe(page)
+        const ok = pressMatches(trace.steps[i - 1], { actions: matchView(snap, secrets) }, await focusedNode(page))
+        hit = { action: ok ? { kind: 'press', key: step.key } : null, candidates: 0 }
       } else {
         // An empty result may just be a page that is still rendering: look again briefly before calling it a miss.
         for (let tries = 0; tries < 3; tries++) {
           snap = await observe(page)
-          hit = match(snap.actions, step)
+          hit = match(matchView(snap, secrets), step)
+          if (hit.action) hit.action = hit.action.orig
           if (hit.action || hit.candidates > 0) break
           await page.waitForTimeout(200)
         }
@@ -60,7 +73,7 @@ export async function replay(page, { flow, trace, fixtures, jev, loginPath, dead
         if (healed >= maxHeals) return blocked(`more than ${maxHeals} steps missed (step ${n}: ${describe(step)})`, steps, diverged)
         let d
         try {
-          d = await chooseAction(jev, { goal: flow.goal, snap, history, fixtureKeys: Object.keys(fixtures), secrets, stepToReplace: missed })
+          d = await chooseAction(jev, { goal: flow.goal, snap, history, fixtureKeys: Object.keys(fixtures), fixtures, secrets, stepToReplace: missed, canPress: step.op === 'fill' && (await canPressEnter(page)) })
         } catch (e) {
           if (e instanceof JevError) return blocked(`step ${n} missed (${describe(step)}): ${e.message}`, steps, diverged)
           throw e
@@ -68,6 +81,7 @@ export async function replay(page, { flow, trace, fixtures, jev, loginPath, dead
         if (d.end) return blocked(`step ${n} missed (${describe(step)}): jev chose ${d.end}`, steps, diverged)
         ;({ action, p } = d)
         fixtureKey = d.fixture
+        if (p < minHealP) return blocked(`step ${n} missed (${describe(step)}): jev's pick ${redact(describe(toStep(snap, action, fixtureKey)), secrets)} has p ${p.toFixed(2)} < ${minHealP}`, steps, diverged)
         by = 'jev'
         healed++
         if (healed === 1 && shotFile) {
@@ -77,14 +91,20 @@ export async function replay(page, { flow, trace, fixtures, jev, loginPath, dead
       }
       const ran = toStep(snap, action, fixtureKey)
       await perform(page, action, fixtures[fixtureKey])
-      steps.push({ ...ran, by })
-      history.push({ action: redact(describe(ran), secrets), fixture: ran.fixture })
+      steps.push({ ...ran, by, ...(by === 'jev' && { p: +p.toFixed(3) }) })
+      history.push({ action: redact(describe(ran), secrets), kind: action.kind, fixture: ran.fixture })
+      const off = guard?.check(page)
+      if (off) return blocked(off, steps, diverged)
       if (onLogin(page, loginPath, flow.start)) return { end: 'env', error: `redirected to ${loginPath}`, steps, diverged }
     } catch (e) {
-      return blocked(`step ${n} failed (${describe(step)}): ${redact(e.message.split('\n')[0], Object.values(fixtures))}`, steps, diverged)
+      return blocked(`step ${n} failed (${describe(step)}): ${redact(e.message.split('\n')[0], secrets)}`, steps, diverged)
     }
   }
   return { end: 'done', error: null, steps, diverged }
 }
+
+/** The snapshot actions as stored in traces (secrets redacted from name, scope and option), keeping `orig` to act on. */
+const matchView = (snap, secrets) =>
+  snap.actions.map(a => (a.node === undefined ? a : { ...a, name: redactValue(a.name, secrets), scope: redactValue(a.scope ?? '', secrets), ...(a.option !== undefined && { option: redactValue(a.option, secrets) }), orig: a }))
 
 const pick = ({ op, role, name }) => ({ op, role, name })

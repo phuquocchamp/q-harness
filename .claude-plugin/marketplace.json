@@ -18,7 +18,7 @@
     {
       "name": "q-pilot",
       "source": "./plugins/q-pilot",
-      "description": "Checks, when Claude tries to stop after UI edits, that your user flows still work: replays recorded flows with no model, re-picks a changed step with Jev, and judges pass or fail by code from each flow's verify block."
+      "description": "Runs browser tasks and UI tests from a prompt, like jev-ultrafast: Claude writes the task, Jev (TypeSafe) picks every step, Playwright executes it, and a live inspector shows and pauses each decision. Tests are graded by code, never by Jev's DONE; a passing test can be saved as a flow that the stop gate replays with no model when Claude edits UI."
     },
     {
       "name": "q-advisor",

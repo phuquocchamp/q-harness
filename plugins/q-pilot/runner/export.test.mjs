@@ -49,7 +49,7 @@ test('exports the design example flow', () => {
       '  await page.getByRole("button", { name: "Place order", exact: true }).click()',
       '  await expect.poll(() => { const u = new URL(page.url()); return u.pathname + u.search }, { timeout: 2000 }).toMatch(new RegExp("/checkout\\\\.html\\\\?item=coffee$"))',
       '  await expect(page.getByTestId("total")).toHaveText("€12.00", { timeout: 2000 })',
-      '  await expect(page.getByRole("status").first()).toHaveText("Order confirmed", { timeout: 2000 })',
+      '  await expect(page.getByRole("status")).toHaveText("Order confirmed", { timeout: 2000 })',
       '})',
       '',
     ].join('\n'),
@@ -70,8 +70,8 @@ test('writes each check kind', () => {
   const body = lines(out).filter((l) => l.includes('expect('))
   assert.deepEqual(body, [
     '  await expect(page).toHaveTitle("Demo Shop", { timeout: 2000 })',
-    '  await expect(page.getByRole("heading", { name: "Products", exact: true }).first()).toBeVisible({ timeout: 2000 })',
-    '  await expect(page.getByRole("heading", { name: "Products", exact: true }).first()).toContainText("Prod", { timeout: 2000 })',
+    '  await expect(page.getByRole("heading", { name: "Products", exact: true })).toBeVisible({ timeout: 2000 })',
+    '  await expect(page.getByRole("heading", { name: "Products", exact: true })).toContainText("Prod", { timeout: 2000 })',
     '  await expect(page.getByTestId("total")).toBeHidden({ timeout: 2000 })',
     '  await expect(page.getByLabel("Email", { exact: true })).toHaveValue("a@b.test", { timeout: 2000 })',
     '  await expect(page.getByText("Order confirmed", { exact: true })).toBeVisible({ timeout: 2000 })',
@@ -96,6 +96,12 @@ test('writes select, scroll and wait steps', () => {
   assert.ok(out.includes('  await page.getByRole("combobox", { name: "Size", exact: true }).selectOption({ label: "Large" })'))
   assert.ok(out.includes('  await page.mouse.wheel(0, 400)'))
   assert.ok(out.includes('  await page.waitForTimeout(100)'))
+})
+
+test('writes a press step and rejects other keys', () => {
+  const out = exportSpec({ ...flow, verify: [] }, { steps: [{ op: 'press', key: 'Enter' }] }, { baseURL })
+  assert.ok(out.includes('  await page.keyboard.press("Enter")'))
+  assert.throws(() => exportSpec(flow, { steps: [{ op: 'press', key: 'Tab' }] }, { baseURL }), /unsupported key/)
 })
 
 test('quotes names with quotes and backslashes safely', () => {
@@ -138,6 +144,9 @@ test('throws on an unknown op, an unknown check and a missing fixture', () => {
   )
 })
 
+// Fill, then press Enter: the demo form submits on Enter, so the press step is covered live too.
+const liveTrace = { ...trace, steps: [trace.steps[0], trace.steps[1], { op: 'press', key: 'Enter' }] }
+
 const demo = join(dirname(fileURLToPath(import.meta.url)), '..', 'examples', 'demo-app')
 const playwrightCli = join(demo, 'node_modules', '@playwright', 'test', 'cli.js')
 const skipReason = existsSync(playwrightCli) ? false : 'Playwright is not installed in examples/demo-app/node_modules'
@@ -158,7 +167,7 @@ test('the exported spec runs green against the demo app', { skip: skipReason, ti
     writeFileSync(join(dir, 'playwright.config.ts'), PLAYWRIGHT_CONFIG)
     symlinkSync(join(demo, 'node_modules'), join(dir, 'node_modules'))
     mkdirSync(join(dir, 'tests'))
-    writeFileSync(join(dir, 'tests', 'checkout-coffee.spec.ts'), exportSpec({ ...flow, verify: [...flow.verify, { url: '^/checkout\\.html' }] }, trace, { baseURL }))
+    writeFileSync(join(dir, 'tests', 'checkout-coffee.spec.ts'), exportSpec({ ...flow, verify: [...flow.verify, { url: '^/checkout\\.html' }] }, liveTrace, { baseURL }))
     const env = { ...process.env, E2E_PASSWORD: 'unused' }
     const run = spawnSync(process.execPath, [playwrightCli, 'test', '--reporter=line', '--retries=0'], { cwd: dir, env, encoding: 'utf8' })
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`)

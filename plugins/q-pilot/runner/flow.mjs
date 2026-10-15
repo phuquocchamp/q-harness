@@ -6,6 +6,8 @@ export class ConfigError extends Error {}
 
 export const ID = /^[a-z0-9-]+$/
 const ENV_NAME = /^(E2E_|Q_PILOT_)\w+$/
+// A path on the base origin: never `//host` or `/\host`, which a URL parser resolves off-origin.
+const START = /^\/(?![/\\])/
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
 const TARGETS = ['url', 'title', 'role', 'testid', 'label']
 const EXPECTATIONS = ['text', 'contains', 'value', 'visible']
@@ -21,12 +23,18 @@ const readJson = (file, what) => {
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v)
 const isStrArr = v => Array.isArray(v) && v.every(s => typeof s === 'string')
 
-/** A remote app is only allowed when the user's own environment opts in; a repo file cannot. */
-function assertLoopback(url, what, env) {
-  if (env.Q_PILOT_ALLOW_REMOTE === '1') return
+/**
+ * Network access is open by default: any baseURL, and a run may follow links to other origins. The user's own
+ * environment can close it (Q_PILOT_ALLOW_REMOTE=0, set by the `network: local` plugin option); a repo file cannot.
+ */
+export const remoteAllowed = env => env.Q_PILOT_ALLOW_REMOTE !== '0'
+
+/** With remote access closed, the app must be on loopback. */
+export function assertLoopback(url, what, env) {
+  if (remoteAllowed(env)) return
   let host
   try { host = new URL(url).hostname } catch { throw new ConfigError(`${what} is not a valid URL`) }
-  if (!LOOPBACK.has(host)) throw new ConfigError(`${what} must be loopback (localhost, 127.0.0.1, [::1]) unless Q_PILOT_ALLOW_REMOTE=1 is set in the environment`)
+  if (!LOOPBACK.has(host)) throw new ConfigError(`${what} must be loopback (localhost, 127.0.0.1, [::1]) while remote access is off (Q_PILOT_ALLOW_REMOTE=0 or the network: local option)`)
 }
 
 export function loadConfig(root, env = process.env) {
@@ -36,6 +44,7 @@ export function loadConfig(root, env = process.env) {
   if (c.flowsDir !== undefined && typeof c.flowsDir !== 'string') throw new ConfigError('config.flowsDir must be a string')
   if (c.loginPath !== undefined && typeof c.loginPath !== 'string') throw new ConfigError('config.loginPath must be a string')
   if (c.ignore !== undefined && !isStrArr(c.ignore)) throw new ConfigError('config.ignore must be an array of strings')
+  if (c.storageState !== undefined && (typeof c.storageState !== 'string' || !c.storageState)) throw new ConfigError('config.storageState must be a path')
   const s = c.server
   if (s !== undefined) {
     if (!isObj(s) || !isStrArr(s.command) || !s.command.length || typeof s.url !== 'string') throw new ConfigError('config.server needs command (string array) and url')
@@ -68,23 +77,90 @@ export function validateCheck(check, at = 'check') {
   return check
 }
 
+function validateFixtures(raw) {
+  const fixtures = raw ?? {}
+  if (!isObj(fixtures) || !Object.values(fixtures).every(v => typeof v === 'string')) throw new ConfigError('fixtures must map names to strings')
+  for (const [k, v] of Object.entries(fixtures)) {
+    if (v.startsWith('$env:') && !ENV_NAME.test(v.slice(5))) throw new ConfigError(`fixture "${k}": $env: names must start with E2E_ or Q_PILOT_ (got "${v.slice(5)}")`)
+  }
+  return fixtures
+}
+
 export function validateFlow(f, stem) {
   if (!isObj(f)) throw new ConfigError('flow must be an object')
   if (typeof f.id !== 'string' || !ID.test(f.id)) throw new ConfigError('flow.id must match [a-z0-9-]+')
   if (f.id !== stem) throw new ConfigError(`flow.id "${f.id}" must equal the file name stem "${stem}"`)
-  if (typeof f.start !== 'string' || !f.start.startsWith('/')) throw new ConfigError('flow.start must be a path starting with /')
+  if (typeof f.start !== 'string' || !START.test(f.start)) throw new ConfigError('flow.start must be a path starting with a single /')
   if (typeof f.goal !== 'string' || !f.goal.trim()) throw new ConfigError('flow.goal is required')
-  const fixtures = f.fixtures ?? {}
-  if (!isObj(fixtures) || !Object.values(fixtures).every(v => typeof v === 'string')) throw new ConfigError('flow.fixtures must map names to strings')
-  for (const [k, v] of Object.entries(fixtures)) {
-    if (v.startsWith('$env:') && !ENV_NAME.test(v.slice(5))) throw new ConfigError(`fixture "${k}": $env: names must start with E2E_ or Q_PILOT_ (got "${v.slice(5)}")`)
-  }
+  const fixtures = validateFixtures(f.fixtures)
   if (!Array.isArray(f.verify)) throw new ConfigError('flow.verify must be an array')
   f.verify.forEach((c, i) => validateCheck(c, `verify[${i}]`))
   for (const k of ['covers', 'tags']) if (f[k] !== undefined && !isStrArr(f[k])) throw new ConfigError(`flow.${k} must be an array of strings`)
   const b = f.budget ?? {}
   for (const k of ['steps', 'seconds']) if (b[k] !== undefined && !(b[k] > 0)) throw new ConfigError(`flow.budget.${k} must be positive`)
   return { ...f, fixtures, covers: f.covers ?? [], tags: f.tags ?? [], budget: { steps: 20, seconds: 20, ...b } }
+}
+
+/** The config, or null when the project has none (prompt mode does not need one). */
+export function loadConfigOptional(root, env = process.env) {
+  return existsSync(join(root, 'q-pilot.config.json')) ? loadConfig(root, env) : null
+}
+
+/**
+ * Task-mode spec: any browser task from a prompt, like jev-ultrafast. `url` is a full http(s) URL (its origin becomes
+ * the baseURL, its path and query the start); without it, baseURL and start work as in a prompt-mode spec. Checks are
+ * optional: with none, the outcome only says whether Jev reported DONE.
+ */
+export function validateTask(spec, config, env) {
+  if (!isObj(spec)) throw new ConfigError('task must be an object')
+  const name = spec.name ?? 'task'
+  if (typeof name !== 'string' || !ID.test(name)) throw new ConfigError('task.name must match [a-z0-9-]+')
+  let baseURL, start
+  if (spec.url !== undefined) {
+    let u
+    try { u = new URL(spec.url) } catch { throw new ConfigError('task.url must be a full URL such as https://example.com/search') }
+    // Page text goes to Jev: never a local file or a browser-internal page.
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new ConfigError('task.url must use http or https')
+    baseURL = u.origin
+    start = u.pathname + u.search
+  } else {
+    baseURL = spec.baseURL ?? config?.baseURL
+    if (typeof baseURL !== 'string' || !baseURL) throw new ConfigError('task.url is required when there is no q-pilot.config.json')
+    start = spec.start ?? '/'
+    if (typeof start !== 'string' || !START.test(start)) throw new ConfigError('task.start must be a path starting with a single /')
+  }
+  assertLoopback(baseURL, 'task.url', env)
+  if (typeof spec.goal !== 'string' || !spec.goal.trim()) throw new ConfigError('task.goal is required')
+  const fixtures = validateFixtures(spec.fixtures)
+  const checks = spec.checks ?? []
+  if (!Array.isArray(checks)) throw new ConfigError('task.checks must be an array')
+  checks.forEach((c, i) => validateCheck(c, `checks[${i}]`))
+  const soft = spec.softChecks ?? []
+  if (!isStrArr(soft) || soft.length > 5) throw new ConfigError('task.softChecks must be at most 5 strings')
+  const b = spec.budget ?? {}
+  for (const k of ['steps', 'seconds']) if (b[k] !== undefined && !(b[k] > 0)) throw new ConfigError(`task.budget.${k} must be positive`)
+  return { name, baseURL, start, goal: spec.goal, fixtures, checks, softChecks: soft, budget: { steps: 40, seconds: 180, ...b }, task: true }
+}
+
+/** Prompt-mode spec. baseURL falls back to `config`; returns the normalized spec. */
+export function validateSpec(spec, config, env) {
+  if (!isObj(spec)) throw new ConfigError('spec must be an object')
+  const name = spec.name ?? 'explore'
+  if (typeof name !== 'string' || !ID.test(name)) throw new ConfigError('spec.name must match [a-z0-9-]+')
+  const baseURL = spec.baseURL ?? config?.baseURL
+  if (typeof baseURL !== 'string' || !baseURL) throw new ConfigError('spec.baseURL is required when there is no q-pilot.config.json')
+  assertLoopback(baseURL, 'spec.baseURL', env)
+  const start = spec.start ?? '/'
+  if (typeof start !== 'string' || !START.test(start)) throw new ConfigError('spec.start must be a path starting with a single /')
+  if (typeof spec.goal !== 'string' || !spec.goal.trim()) throw new ConfigError('spec.goal is required')
+  const fixtures = validateFixtures(spec.fixtures)
+  if (!Array.isArray(spec.checks) || !spec.checks.length) throw new ConfigError('spec.checks needs at least one check')
+  spec.checks.forEach((c, i) => validateCheck(c, `checks[${i}]`))
+  const soft = spec.softChecks ?? []
+  if (!isStrArr(soft) || soft.length > 5) throw new ConfigError('spec.softChecks must be at most 5 strings')
+  const b = spec.budget ?? {}
+  for (const k of ['steps', 'seconds']) if (b[k] !== undefined && !(b[k] > 0)) throw new ConfigError(`spec.budget.${k} must be positive`)
+  return { name, baseURL, start, goal: spec.goal, fixtures, checks: spec.checks, softChecks: soft, budget: { steps: 20, seconds: 60, ...b } }
 }
 
 export const flowFile = (root, cfg, id) => join(root, cfg.flowsDir, `${id}.flow.json`)
@@ -102,15 +178,18 @@ export function flowIds(root, cfg) {
   return readdirSync(dir).filter(n => n.endsWith('.flow.json')).map(n => n.slice(0, -'.flow.json'.length)).sort()
 }
 
-/** `$env:NAME` values come from `env`; returns the resolved values and the names of missing variables. */
+/**
+ * `$env:NAME` values come from `env`. Returns the resolved values, the names of missing variables and the
+ * secrets: only values from the environment are secret, a literal fixture is plain test data.
+ */
 export function resolveFixtures(flow, env) {
-  const values = {}, missing = []
+  const values = {}, missing = [], secrets = []
   for (const [k, v] of Object.entries(flow.fixtures)) {
     if (v.startsWith('$env:')) {
       const name = v.slice(5)
-      if (env[name]) values[k] = env[name]
+      if (env[name]) secrets.push((values[k] = env[name]))
       else missing.push(name)
     } else values[k] = v
   }
-  return { values, missing }
+  return { values, missing, secrets }
 }

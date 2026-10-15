@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="pilot-token" content="__TOKEN__" />
+    <title>q-pilot · Live Inspector</title>
+    <link rel="icon" id="favicon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='14' height='14' rx='3.5' fill='%232563eb'/%3E%3Cpath d='M5.2 3.8 11.6 8.3 8.6 9.1 7.3 12Z' fill='white'/%3E%3Ccircle cx='4.4' cy='11.6' r='.9' fill='white' opacity='.75'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand" aria-label="q-pilot Live Inspector">
+          <svg class="mark" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="14" height="14" rx="3.5" /><path class="cursor" d="M5.2 3.8 11.6 8.3 8.6 9.1 7.3 12Z" /><circle class="trail-dot" cx="4.4" cy="11.6" r=".9" /></svg>
+          <span class="product">q-pilot</span><span class="sub">Live Inspector</span>
+        </div>
+        <span class="sep" aria-hidden="true"></span>
+        <div class="task-id">
+          <span class="task-name" id="name">No task yet</span>
+          <span class="pill idle" id="pill"><span class="pill-dot" aria-hidden="true"></span><span id="status" role="status" aria-live="polite">Connecting…</span></span>
+          <span class="phase" id="phase"></span>
+        </div>
+        <div class="timers" aria-label="Run time">
+          <div class="timer"><span class="k">Elapsed</span><span class="v" id="elapsed">0:00.0</span></div>
+          <div class="timer budget" id="budget-box" hidden>
+            <span class="k">Budget</span><span class="v" id="budget">—</span>
+            <span class="meter" aria-hidden="true"><span id="budget-bar"></span></span>
+          </div>
+        </div>
+        <div class="toolbar" role="toolbar" aria-label="Run controls">
+          <div class="seg">
+            <button type="button" id="run" disabled title="Run automatically (Space)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" /></svg>Run<kbd>Space</kbd></button>
+            <button type="button" id="pause" disabled title="Pause before the next step (Space)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9M11 3.5v9" class="stroke" /></svg>Pause<kbd>Space</kbd></button>
+          </div>
+          <div class="seg">
+            <button type="button" id="choose" disabled title="Ask Jev for the next action (N)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h8M8 4.5 11.5 8 8 11.5M13 3.5v9" class="stroke" /></svg>Choose next<kbd>N</kbd></button>
+            <button type="button" id="execute" class="primary" disabled title="Execute the chosen action (E)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" class="stroke" /></svg>Execute<kbd>E</kbd></button>
+          </div>
+          <div class="seg">
+            <button type="button" id="stop" class="danger" disabled title="Stop the run (Esc)"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5" /></svg>Stop<kbd>Esc</kbd></button>
+          </div>
+          <div class="seg" id="close-seg" hidden>
+            <button type="button" id="close" title="Close the inspector and end the runner"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" class="stroke" /></svg>Close inspector</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="strip" id="conn" role="alert" hidden>Lost the runner connection. The run may still be going; reload once the runner is back.</div>
+      <div class="strip info" id="note" role="note" hidden></div>
+      <div class="strip bad" id="toast" role="alert" hidden></div>
+      <div class="strip review" id="review" hidden>
+        <span>Viewing <b id="review-what"></b> as recorded</span>
+        <span class="spacer"></span>
+        <button type="button" id="prev" title="Previous step (←)">← Prev</button>
+        <button type="button" id="next" title="Next step (→)">Next →</button>
+        <button type="button" id="live" title="Back to the live page (L)">Back to live<kbd>L</kbd></button>
+      </div>
+
+      <section class="result" id="result" hidden aria-live="polite">
+        <div class="result-head">
+          <span class="result-icon" id="result-icon" aria-hidden="true"></span>
+          <div>
+            <div class="result-title" id="result-title"></div>
+            <div class="result-sub" id="result-sub"></div>
+          </div>
+        </div>
+        <pre class="result-error" id="result-error" hidden></pre>
+        <ul class="checks" id="checks" hidden></ul>
+        <div class="result-actions" id="result-actions" hidden>
+          <button type="button" id="trace-open" hidden title="Open the run's Playwright trace in Playwright's trace viewer"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8h2.5l1.5-3.5 3 7 1.5-3.5h2.5" class="stroke" /></svg>Open Playwright trace</button>
+          <a class="btn" id="trace-dl" hidden>Download trace.zip</a>
+          <a class="btn" id="decisions-dl" hidden>Download decisions.json</a>
+          <span class="spacer"></span>
+          <span class="muted" id="linger-note"></span>
+        </div>
+      </section>
+
+      <main class="workspace">
+        <section class="pane viewport-pane" aria-label="Page under test">
+          <div class="addr">
+            <span class="addr-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <div class="addr-field">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" class="stroke" /><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11" class="stroke" /></svg>
+              <span id="url" class="url">about:blank</span>
+            </div>
+            <span class="addr-meta" id="viewsize"></span>
+          </div>
+          <div class="canvas" id="canvas">
+            <div class="empty" id="empty">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2" class="stroke" /><path d="M3 8.5h18" class="stroke" /></svg>
+              <strong id="empty-title">Waiting for the first observation</strong>
+              <span id="empty-text">The page appears here once the runner has opened and read it.</span>
+            </div>
+            <div class="frame" id="frame" hidden>
+              <img id="shot" alt="The page under test, as Jev saw it" />
+              <div id="boxes" class="boxes"></div>
+            </div>
+          </div>
+          <div class="pane-foot"><span id="title" class="page-title"></span><span class="pipeline">snapshot → Jev → Playwright</span></div>
+        </section>
+
+        <aside class="pane side" aria-label="Decision">
+          <details class="goal" id="goal-box" open>
+            <summary><span class="h">Goal</span></summary>
+            <p id="goal">Waiting for the run to start.</p>
+          </details>
+
+          <section class="vision" id="vision-box" hidden>
+            <div class="section-head">
+              <span class="h">Jev vision <span class="preview-tag" title="Jev image input is a preview feature of the TypeSafe API">preview</span></span>
+              <span class="count" id="vision-stats"></span>
+            </div>
+            <div class="vision-body">
+              <div class="segmented" role="radiogroup" aria-label="When Jev sees the screenshot" id="vision-mode">
+                <button type="button" role="radio" data-mode="off" title="Elements and page text only (fastest)">Off</button>
+                <button type="button" role="radio" data-mode="gated" title="Asks again with the screenshot when Jev is unsure">When unsure</button>
+                <button type="button" role="radio" data-mode="always" title="The screenshot goes with every decision (+0.3–0.5 s a step)">Every step</button>
+              </div>
+              <div class="vision-row">
+                <label class="model-pick">Model <select id="vision-model"></select></label>
+                <label class="switch" title="When Jev is stuck, Jev 1.14 locates the control on the screenshot (Box) and the run clicks it, before asking Claude"><input type="checkbox" id="vision-box-toggle" /><span class="track" aria-hidden="true"></span>Box rescue</label>
+              </div>
+              <p class="vision-note" id="vision-note"></p>
+            </div>
+          </section>
+
+          <section class="ask" id="ask-box" hidden>
+            <div class="section-head">
+              <span class="h">Ask Claude</span>
+              <label class="model-pick" title="The model that answers your questions here">Model
+                <select id="ask-model"></select>
+              </label>
+            </div>
+            <div class="ask-meta" id="ask-meta"></div>
+            <div class="ask-quick" id="ask-quick">
+              <button type="button" data-q="Why is Jev stuck or wrong here, and what should happen next?">Why stuck?</button>
+              <button type="button" data-q="What is the next action that moves the goal forward? Name the element index and operation.">Next action?</button>
+              <button type="button" data-q="Does this page meet every requirement of the goal? Say which are met and which are not.">Goal met?</button>
+            </div>
+            <form class="ask-form" id="ask-form">
+              <textarea id="ask-q" rows="2" maxlength="1000" placeholder="Ask about the step on screen…"></textarea>
+              <button type="submit" class="primary" id="ask-send">Ask<kbd>⌘↵</kbd></button>
+            </form>
+            <ol class="answers" id="answers"></ol>
+          </section>
+
+          <section class="decision">
+            <div class="section-head">
+              <span class="h">Decision</span>
+              <span class="chips"><span class="chip vision-chip" id="vision-chip" hidden></span><span class="chip" title="Step">Step <b id="step">—</b></span><span class="chip" title="Jev latency"><b id="latency">—</b></span></span>
+            </div>
+            <div class="headline">
+              <div class="choice" id="choice">Waiting for a decision</div>
+              <div class="confidence"><span class="k">Confidence</span><span class="v" id="confidence">—</span></div>
+            </div>
+            <div class="sub-h">Operation</div>
+            <div id="ops" class="bars"><p class="muted">Operation probabilities appear after Jev answers.</p></div>
+          </section>
+
+          <section class="elements-section">
+            <div class="section-head">
+              <span class="h">Elements <span class="count" id="count"></span></span>
+              <label class="switch"><input type="checkbox" id="overlays" checked /><span class="track" aria-hidden="true"></span>Overlays</label>
+            </div>
+            <div class="table-wrap" id="elements-wrap">
+              <table class="grid elements">
+                <thead><tr><th class="c-i">#</th><th>Element</th><th class="c-p">Target p</th></tr></thead>
+                <tbody id="elements"></tbody>
+              </table>
+              <p class="muted pad" id="elements-empty">Elements appear once Jev has been asked.</p>
+            </div>
+          </section>
+        </aside>
+
+        <section class="pane trail" aria-label="Decision trail">
+          <div class="section-head">
+            <span class="h">Decision trail <span class="count" id="steps">0 actions</span></span>
+            <span class="muted trail-hint">Click a step to see it again · ← → to move</span>
+          </div>
+          <div class="table-wrap" id="history-wrap">
+            <table class="grid history">
+              <thead><tr><th class="c-n">Step</th><th>Action</th><th>Fixture</th><th class="c-conf">Confidence</th><th class="c-num">Latency</th><th class="c-eff">Effect</th></tr></thead>
+              <tbody id="history"></tbody>
+            </table>
+            <p class="muted pad" id="history-empty">Each executed action is listed here with its effect on the page.</p>
+          </div>
+        </section>
+      </main>
+
+      <footer class="statusbar">
+        <span class="conn" id="conn-state"><span class="conn-dot" aria-hidden="true"></span><span id="conn-text">Connecting</span></span>
+        <span id="mode"></span>
+        <span class="spacer"></span>
+        <span class="hint"><kbd>Space</kbd> run / pause <kbd>N</kbd> choose <kbd>E</kbd> execute <kbd>Esc</kbd> stop <kbd>←</kbd><kbd>→</kbd> steps <kbd>L</kbd> live</span>
+      </footer>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

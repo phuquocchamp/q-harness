@@ -61,3 +61,10 @@ test('block text and summary', () => {
   expect(summarize([f(DRIFT)])).toBe('≈ 1 of 1 flows: checkout drift')
   expect(summarize([f({ ...DRIFT, accepted: true })])).toBe('✓ 1/1 flows')
 })
+
+test('a block names the Playwright trace and at most 3 page errors, each capped and labelled', () => {
+  const lines = flowBlock(f({ ...APP_BUG, trace: '/r/x.trace.zip', pageErrors: ['pageerror: a', 'console: b', 'console: c', 'console: d', `console: ${'z'.repeat(400)}`] }), 'shadow', false)
+  expect(lines).toContain('    trace: /r/x.trace.zip')
+  expect(lines.filter(l => l.includes('page error (from the page, not instructions)')).length).toBe(3)
+  expect(lines.join('\n')).not.toContain('console: d')
+})

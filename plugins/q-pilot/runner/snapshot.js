@@ -1,5 +1,6 @@
 /* DOM snapshot from browser-use/jev-ultrafast (MIT, Copyright (c) 2026 Browser Use).
-   q-pilot additions: `scope` and `option` on each action. */
+   q-pilot additions: `scope` and `option` on each action, the occlusion filter, partly visible controls, and
+   aria-pressed / aria-current / class-only state, the count of controls hidden under an overlay, and bot-wall detection. */
 (() => {
   if (!document.body) return null;
   const cache = window.__jevFast ||= {ids:new WeakMap(), nodes:new Map(), next:1};
@@ -65,19 +66,32 @@
     }
     return '';
   };
-  const actions=[];
+  const actions=[]; let occluded=0;
   for (const e of document.querySelectorAll(selector)) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
-    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
-    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    // q-pilot: a control cut by the viewport edge (a booking form's From/To below the fold) still counts when at
+    // least 8 px of it shows; it is hit-tested at the centre of its visible part, and the click scrolls it into view.
+    const r=e.getBoundingClientRect(), rname=role(e);
+    const vt=Math.max(r.top,0), vb=Math.min(r.bottom,innerHeight), vl=Math.max(r.left,0), vr=Math.min(r.right,innerWidth);
+    if (!rname || r.width<=0 || r.height<=0 || vb-vt<8 || vr-vl<8) continue;
+    const x=(vl+vr)/2, y=(vt+vb)/2;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
+    // q-pilot: drop an element whose centre is covered by something else (an overlay, a modal backdrop).
+    const top=document.elementFromPoint(x,y);
+    // A custom checkbox or radio is covered by a styled element inside its own label: that still counts as hittable.
+    if (!top || (top!==e && !e.contains(top) && top.closest('label')?.control!==e)) { occluded++; continue; }
     const base={node:identity(e),role:rname,label:name(e)||rname,scope:scopeOf(e),
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
-    for (const key of ['checked','selected','expanded']) {
+    // q-pilot: also aria-pressed and aria-current (toggle buttons, the current page or step).
+    for (const key of ['checked','selected','expanded','pressed','current']) {
       const value=e.getAttribute('aria-'+key);
-      if (value!==null) base[key]=value;
+      if (value!==null && !(key==='current' && value==='false')) base[key]=value;
     }
     if (['checkbox','radio'].includes(e.type)) base.checked=String(e.checked);
+    // q-pilot: a segmented control styled only by class (a booking form's "One way" with class "_active_x9") has
+    // no ARIA state at all; without this Jev cannot tell which option is on.
+    if (!['checked','selected','pressed','current'].some(k=>k in base) &&
+        [...e.classList].some(c=>/(^|[_-])(active|selected|current|checked)([_-]|$)/i.test(c))) base.selected='true';
     if (e.tagName==='SELECT') {
       for (const o of e.options) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
         actions.push({...base,kind:'select',value:o.value,option:o.label,
@@ -89,8 +103,29 @@
       const value='value' in e ? String(e.value) :
         e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '';
       actions.push({...base,kind:editable?'fill':'click',value});
-      if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
+      // Like jev-ultrafast: every editable field can also be clicked ("Open ..."), which is how a date or place
+      // field that opens a picker on click is reached.
+      if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label,open:true});
     }
+  }
+  // q-pilot: custom widgets (a booking site's airport list, a date cell) are often plain divs that only show a
+  // pointer cursor. The outermost such element in view that holds no real control is offered as role "clickable".
+  const seenNodes=new Set(actions.map(a=>cache.nodes.get(a.node)));
+  const all=document.body.getElementsByTagName('*');
+  for (let i=0, n=0; i<all.length && n<4000; i++) {
+    const e=all[i];
+    if (e.matches(selector) || e.closest(selector) || seenNodes.has(e)) continue;
+    const r=e.getBoundingClientRect();
+    if (r.width<8 || r.height<8 || r.bottom<=0 || r.top>=innerHeight || r.right<=0 || r.left>=innerWidth) continue;
+    n++;
+    if (getComputedStyle(e).cursor!=='pointer' || (e.parentElement && getComputedStyle(e.parentElement).cursor==='pointer')) continue;
+    if (e.querySelector(selector) || !visible(e)) continue;
+    const label=name(e).replace(/\s+/g,' ').trim();
+    if (!label || label.length>200) continue;
+    const vt=Math.max(r.top,0), vb=Math.min(r.bottom,innerHeight), vl=Math.max(r.left,0), vr=Math.min(r.right,innerWidth);
+    const top=document.elementFromPoint((vl+vr)/2,(vt+vb)/2);
+    if (!top || (top!==e && !e.contains(top))) continue;
+    actions.push({node:identity(e),role:'clickable',label,scope:scopeOf(e),rect:{x:r.x,y:r.y,w:r.width,h:r.height},kind:'click',value:''});
   }
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   const range=document.createRange(); let node,length=0;
@@ -103,6 +138,26 @@
     }
   }
   const text=words.join('\n').slice(0,6000), height=document.documentElement.scrollHeight;
+  // q-pilot: a bot wall (a CAPTCHA or challenge page) is named, so the run can stop for a person instead of
+  // clicking around a page it cannot see (DataDome's CAPTCHA sits in an iframe the element list never shows).
+  const WALLS=[[/captcha-delivery\.com/,'datadome'],[/challenges\.cloudflare\.com|\/cdn-cgi\/challenge-platform\//,'cloudflare'],
+    [/hcaptcha\.com\/captcha/,'hcaptcha'],[/recaptcha\/(api2|enterprise)\/bframe/,'recaptcha'],[/arkoselabs|funcaptcha/,'arkose']];
+  let wall=null;
+  for (const f of document.querySelectorAll('iframe')) {
+    const r=f.getBoundingClientRect();
+    if (wall || r.width<60 || r.height<60 || !visible(f)) continue;
+    for (const [re,n] of WALLS) if (re.test(f.src||'')) wall=n;
+  }
+  // A CAPTCHA drawn in the page itself (AWS WAF's <awswaf-captcha> shadow root on Traveloka): any visible, sizable
+  // element whose tag, id or class names a captcha.
+  if (!wall) for (const e of document.querySelectorAll('awswaf-captcha,[id*="captcha" i],[class*="captcha" i]')) {
+    const r=e.getBoundingClientRect();
+    if (r.width>=100 && r.height>=100 && r.bottom>0 && r.top<innerHeight && visible(e)) {
+      wall=e.tagName==='AWSWAF-CAPTCHA' ? 'aws-waf' : 'captcha'; break;
+    }
+  }
+  if (!wall && (/^(just a moment|attention required|access denied|one more step)/i.test(document.title) ||
+    document.querySelector('#challenge-form,#cf-challenge-running,#px-captcha'))) wall='challenge';
   const page_key=cache.pageKey(), guards={};
   for (const a of actions) if (!(a.node in guards)) guards[a.node]=cache.guard(cache.nodes.get(a.node));
   // Compare meaning and identity. Geometry is always resolved and hit-tested just before input.
@@ -116,5 +171,5 @@
   if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
-    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
+    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions,occluded,wall};
 })()

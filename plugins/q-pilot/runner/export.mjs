@@ -6,7 +6,8 @@ const oneLine = (value) => String(value).replace(/\s+/g, ' ').trim()
 
 const envRef = (name) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? `process.env.${name}` : `process.env[${str(name)}]`)
 
-const roleLocator = (step) => `page.getByRole(${str(step.role)}, { name: ${str(step.name)}, exact: true })`
+// A "clickable" step is a plain element with a pointer cursor and no ARIA role: found by its text.
+const roleLocator = (step) => step.role === 'clickable' ? `page.getByText(${str(step.name)}, { exact: true })` : `page.getByRole(${str(step.role)}, { name: ${str(step.name)}, exact: true })`
 
 function fixtureValue(flow, step) {
   const fixtures = flow.fixtures ?? {}
@@ -28,6 +29,9 @@ function stepLines(flow, step) {
       return [`await ${roleLocator(step)}.selectOption({ label: ${str(step.option)} })`]
     case 'scroll':
       return [`await page.mouse.wheel(0, ${Number(step.delta)})`]
+    case 'press':
+      if (step.key !== 'Enter') throw new Error(`export: unsupported key "${step.key}" (only "Enter")`)
+      return [`await page.keyboard.press(${str(step.key)})`]
     case 'wait':
       return ['await page.waitForTimeout(100)']
     default:
@@ -56,7 +60,7 @@ function checkLine(check) {
   let ownsText = false
   if ('role' in check) {
     const name = 'name' in check ? `, { name: ${str(check.name)}, exact: true }` : ''
-    locator = `page.getByRole(${str(check.role)}${name}).first()`
+    locator = `page.getByRole(${str(check.role)}${name})`
   } else if ('testid' in check) {
     locator = `page.getByTestId(${str(check.testid)})`
   } else if ('label' in check) {

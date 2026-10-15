@@ -18,6 +18,11 @@ test('id must equal the file stem and match [a-z0-9-]+', () => {
   assert.throws(() => validateFlow({ ...good(), id: 'A_b' }, 'A_b'), /\[a-z0-9-\]/)
 })
 
+test('start must be a path on the base origin, never //host or /\\host', () => {
+  for (const start of ['//evil.com/x', '/\\evil.com', '//', 'x', 'http://evil.com']) assert.throws(() => validateFlow({ ...good(), start }, 'a-b'), /start/, start)
+  for (const start of ['/', '/a/b?c=1', '/a//b']) assert.ok(validateFlow({ ...good(), start }, 'a-b'), start)
+})
+
 test('start, goal, fixtures, verify and budget are validated', () => {
   assert.throws(() => validateFlow({ ...good(), start: 'x' }, 'a-b'), /start/)
   assert.throws(() => validateFlow({ ...good(), goal: '' }, 'a-b'), /goal/)
@@ -45,8 +50,9 @@ test('verify checks: every valid shape passes', () => {
 
 test('$env: fixtures resolve from env; a missing one is reported by name', () => {
   const flow = validateFlow({ ...good(), fixtures: { email: 'x@y.z', password: '$env:E2E_PASSWORD' } }, 'a-b')
-  assert.deepEqual(resolveFixtures(flow, { E2E_PASSWORD: 's3cret!' }), { values: { email: 'x@y.z', password: 's3cret!' }, missing: [] })
-  assert.deepEqual(resolveFixtures(flow, {}), { values: { email: 'x@y.z' }, missing: ['E2E_PASSWORD'] })
+  // Only values from the environment are secret; a literal is plain test data.
+  assert.deepEqual(resolveFixtures(flow, { E2E_PASSWORD: 's3cret!' }), { values: { email: 'x@y.z', password: 's3cret!' }, missing: [], secrets: ['s3cret!'] })
+  assert.deepEqual(resolveFixtures(flow, {}), { values: { email: 'x@y.z' }, missing: ['E2E_PASSWORD'], secrets: [] })
 })
 
 test('config: baseURL is required, server needs command and url', () => {
@@ -79,18 +85,20 @@ test('$env: names must start with E2E_ or Q_PILOT_; TYPESAFE_API_KEY is never al
   }
 })
 
-test('baseURL and server.url must be loopback unless Q_PILOT_ALLOW_REMOTE=1 is in the environment', () => {
+test('remote baseURL is allowed by default; with Q_PILOT_ALLOW_REMOTE=0, baseURL and server.url must be loopback', () => {
+  const local = { Q_PILOT_ALLOW_REMOTE: '0' }
   const root = mkdtempSync(join(tmpdir(), 'q-pilot-cfg-'))
   const put = c => writeFileSync(join(root, 'q-pilot.config.json'), JSON.stringify(c))
   for (const url of ['http://localhost:3000', 'http://127.0.0.1:1', 'http://[::1]:1']) {
     put({ baseURL: url })
-    assert.equal(loadConfig(root, {}).baseURL, url)
+    assert.equal(loadConfig(root, local).baseURL, url)
   }
   put({ baseURL: 'https://staging.example.com' })
-  assert.throws(() => loadConfig(root, {}), /baseURL must be loopback.*Q_PILOT_ALLOW_REMOTE=1/)
+  assert.throws(() => loadConfig(root, local), /baseURL must be loopback.*Q_PILOT_ALLOW_REMOTE=0/)
+  assert.equal(loadConfig(root, {}).baseURL, 'https://staging.example.com')
   assert.equal(loadConfig(root, { Q_PILOT_ALLOW_REMOTE: '1' }).baseURL, 'https://staging.example.com')
   put({ baseURL: 'http://localhost:1', server: { command: ['x'], url: 'http://evil.test' } })
-  assert.throws(() => loadConfig(root, {}), /server\.url must be loopback/)
+  assert.throws(() => loadConfig(root, local), /server\.url must be loopback/)
   put({ baseURL: 'http://localhost.evil.test' })
-  assert.throws(() => loadConfig(root, {}), /loopback/)
+  assert.throws(() => loadConfig(root, local), /loopback/)
 })

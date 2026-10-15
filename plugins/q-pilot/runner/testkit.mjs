@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { JEV_URL } from './jev.mjs'
 
+// Tests run without browser windows unless the caller sets Q_PILOT_HEADLESS=0.
+process.env.Q_PILOT_HEADLESS ??= '1'
+
 export const DEMO = new URL('../examples/demo-app/', import.meta.url).pathname.replace(/\/$/, '')
 
 export const freePort = () =>
@@ -47,16 +50,32 @@ const answer = (ids, choice) => {
 
 /**
  * Stubs fetch for the Jev URL only. `policy(body)` returns { op, label?, fixture? } and is turned into a valid
- * response, or returns { raw } to send an arbitrary `answers` object. Returns { requests, restore }.
+ * response, or returns { raw } to send an arbitrary `answers` object. `delayMs` holds each answer like a real
+ * round trip. Returns { requests, restore }.
  */
-export function stubJev(policy) {
+export function stubJev(policy, { noul = 0.5, delayMs = 0, box = null } = {}) {
   const real = globalThis.fetch
   const requests = []
+  let lastFixture
   globalThis.fetch = async (url, init) => {
     if (String(url) !== JEV_URL) return real(url, init)
     const body = JSON.parse(init.body)
-    requests.push({ raw: init.body, body })
+    requests.push({ raw: init.body, body, headers: init.headers ?? {} })
+    if (delayMs) await new Promise(r => setTimeout(r, delayMs))
+    // The follow-up fixture request (several fixtures): the fixture the last policy answer named.
+    if (!body.questions.operation && body.questions.fixture) {
+      const ids = Object.keys(body.questions.fixture.criteria)
+      const answers = { fixture: answer(ids, ids.includes(lastFixture) ? lastFixture : ids[0]) }
+      return new Response(JSON.stringify({ model: 'jev-latest', answers }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    // Soft-check requests carry only noul questions: answer them without asking the policy. A box question (Box
+    // rescue) gets `box`: { top, bottom, left, right, confidence }.
+    if (!body.questions.operation) {
+      const answers = Object.fromEntries(Object.entries(body.questions).map(([k, q]) => [k, q.type === 'box' ? { type: 'box', box: box ?? { top: 0.4, bottom: 0.6, left: 0.4, right: 0.6 }, confidence: box?.confidence ?? 0.9 } : { type: q.type, noul }]))
+      return new Response(JSON.stringify({ model: 'jev-latest', answers }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
     const d = policy(body)
+    lastFixture = d.fixture
     const answers = d.raw ?? {}
     if (!d.raw) {
       answers.operation = answer(Object.keys(body.questions.operation.criteria), d.op)
@@ -72,4 +91,13 @@ export function stubJev(policy) {
   return { requests, restore: () => (globalThis.fetch = real) }
 }
 
-export const ENV = { TYPESAFE_API_KEY: 'test-key' }
+/** The demo app's Jev behaviour: buy coffee beans, type the email, then submit with `submit` ('Place order' or 'ENTER'). */
+export const coffeePolicy = (submit = 'Place order') => ({ state, questions }) => {
+  if (state.page.text.includes('Order confirmed')) return { op: 'DONE' }
+  const email = state.elements.find(e => e.label === 'Email')
+  if (!email) return { op: 'CLICK', label: 'Buy coffee beans' }
+  if (email.value === '') return { op: 'TYPE_TEXT', label: 'Email', fixture: 'email' }
+  return submit === 'ENTER' && questions.operation.criteria.PRESS_ENTER ? { op: 'PRESS_ENTER' } : { op: 'CLICK', label: 'Place order' }
+}
+
+export const ENV = { TYPESAFE_API_KEY: 'test-key', E2E_EMAIL: 'buyer@example.test' }

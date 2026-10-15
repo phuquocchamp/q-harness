@@ -19,13 +19,23 @@ async function answers(url) {
   }
 }
 
+/** Variables the app server never gets: the Jev key belongs to q-pilot, not to code from the repo. */
+const PRIVATE = ['TYPESAFE_API_KEY']
+
+/** The environment for the repo's server command: the runner's own, minus q-pilot's private keys. */
+export function serverEnv(env = process.env) {
+  const out = { ...env }
+  for (const k of PRIVATE) delete out[k]
+  return out
+}
+
 /** Returns { stop() }. Throws ServerError when the server does not come up within timeoutMs. */
 export async function ensureServer(config, root) {
   const s = config.server
   if (!s || (await answers(s.url))) return { stop() {} }
   const [cmd, ...args] = s.command
   // `node` on PATH may be missing or another version: use the runner's own binary.
-  const child = spawn(cmd === 'node' ? process.execPath : cmd, args, { cwd: root, stdio: ['ignore', 'ignore', 'pipe'], detached: true })
+  const child = spawn(cmd === 'node' ? process.execPath : cmd, args, { cwd: root, env: serverEnv(), stdio: ['ignore', 'ignore', 'pipe'], detached: true })
   let err = '', exited = null
   child.stderr.on('data', d => (err = (err + d).slice(-500)))
   child.on('exit', code => (exited = code ?? 'signal'))

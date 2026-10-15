@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: ui-change-calls-pilot-test
+description: After a UI change, Claude tests it with pilot_test once, with business-value checks, and reports the result as it came back.
+tags: [q-pilot, prompt-mode]
+context:
+  scaffold_script: scaffold.sh

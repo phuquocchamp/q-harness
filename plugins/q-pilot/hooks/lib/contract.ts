@@ -1,4 +1,4 @@
-// Shapes shared by the pure helpers. The runner's result JSON is specified in DESIGN.md; the values
+// Shapes shared by the pure helpers. The runner's result JSON is the last stdout line of runner/pilot.mjs; the values
 // kept in state (`PilotRun`, `PilotFlow`) live in ../../types and are re-exported here.
 
 import type { PilotFlow, PilotOutcome } from '../../types'

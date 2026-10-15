@@ -2,10 +2,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { redact } from './redact.mjs'
+import { redactValue } from './redact.mjs'
 import { ID } from './flow.mjs'
 
-export const OPS = ['click', 'fill', 'select', 'scroll', 'wait']
+export const OPS = ['click', 'fill', 'select', 'scroll', 'wait', 'press']
 export const RUN_ID = /^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$/
 export const tracePath = (root, id) => {
   if (!ID.test(id)) throw new Error(`invalid flow id "${id}"`)
@@ -26,9 +26,9 @@ export function readTrace(root, id) {
   return t
 }
 
-/** A trace object for `steps`. Steps keep real element names; `by` is dropped and fixture values are removed from `url`. */
+/** A trace object for `steps`. `by` and `p` are dropped; secret ($env) values are redacted from name, scope, option and url (literal fixtures are not secret). */
 export function buildTrace(flowId, steps, version = 1, secrets = []) {
-  const clean = ({ by, ...s }) => (s.url ? { ...s, url: redact(s.url, secrets) } : s)
+  const clean = ({ by, p, ...s }) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, ['name', 'scope', 'option', 'url'].includes(k) && typeof v === 'string' ? redactValue(v, secrets) : v]))
   return { flow: flowId, version, recordedAt: new Date().toISOString(), steps: steps.map(clean) }
 }
 
@@ -48,6 +48,7 @@ export function newRun(root) {
 }
 
 export const writeProposal = (runDir, trace) => write(join(runDir, `${trace.flow}.trace.json`), trace)
+export const writeFlowProposal = (runDir, flow) => write(join(runDir, `${flow.id}.flow.json`), flow)
 export const writeResult = (runDir, result) => write(join(runDir, 'result.json'), result)
 
 /**
@@ -81,4 +82,30 @@ export function accept(root, id, runId) {
   mkdirSync(join(root, '.q-pilot', 'traces'), { recursive: true })
   copyFileSync(from, tracePath(root, id))
   return { from, to: tracePath(root, id) }
+}
+
+/** Copies a run's flow proposal and trace into the project as <id>. Never overwrites. Returns { flow, flowFile, trace } or throws. */
+export function saveRun(root, flowsDir, runId, name) {
+  if (!RUN_ID.test(runId ?? '')) throw new Error(`invalid run id "${runId}"`)
+  const runDir = join(runsDir(root), runId)
+  let result
+  try {
+    result = JSON.parse(readFileSync(join(runDir, 'result.json'), 'utf8'))
+  } catch {
+    throw new Error(`run ${runId} not found`)
+  }
+  const entry = result.flows?.find(f => f.flowProposal)
+  if (!entry) throw new Error(`run ${runId} has no proposal to save (only passing explore runs have one)`)
+  const id = name ?? entry.id
+  if (!ID.test(id)) throw new Error(`invalid flow id "${id}": must match [a-z0-9-]+`)
+  const flowFile = join(root, flowsDir, `${id}.flow.json`)
+  if (existsSync(flowFile)) throw new Error(`flow ${flowFile} already exists; not overwriting`)
+  if (existsSync(tracePath(root, id))) throw new Error(`trace for "${id}" already exists; not overwriting`)
+  const flow = { ...JSON.parse(readFileSync(join(runDir, `${entry.id}.flow.json`), 'utf8')), id }
+  const trace = { ...JSON.parse(readFileSync(join(runDir, `${entry.id}.trace.json`), 'utf8')), flow: id }
+  write(flowFile, flow)
+  write(tracePath(root, id), trace)
+  const config = join(root, 'q-pilot.config.json')
+  if (!existsSync(config) && entry.baseURL) write(config, { baseURL: entry.baseURL, flowsDir })
+  return { flow: id, flowFile, trace: tracePath(root, id) }
 }

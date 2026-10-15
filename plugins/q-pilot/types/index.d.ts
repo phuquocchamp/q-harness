@@ -1,4 +1,4 @@
-// State contract of q-pilot. No imports: these shapes mirror the runner's result JSON (DESIGN.md)
+// State contract of q-pilot. No imports: these shapes mirror the runner's result JSON
 // and hooks/lib/contract.ts structurally. Names carry a `Pilot` prefix so none shadows a type of the
 // `claude-code` module.
 
@@ -18,6 +18,10 @@ export type PilotOutcome =
   | 'needs-verify'
   | 'skipped'
   | 'error'
+  /** Prompt mode and task mode: Jev said DONE and a check is red. */
+  | 'fail'
+  /** Task mode without checks: Jev said DONE, nothing was verified. */
+  | 'done'
 
 /** One flow of a runner result (contract FlowResult), plus `accepted` once its proposal became the trace. */
 export type PilotFlow = {
@@ -33,6 +37,10 @@ export type PilotFlow = {
   verifyFails: { check: unknown; actual: unknown }[]
   proposal?: string | null
   screenshot?: string | null
+  /** Playwright trace of a run that was not a clean pass (absent when the flow had secret fixtures). */
+  trace?: string | null
+  /** Uncaught page errors and console errors seen during the run, capped at 10. */
+  pageErrors?: string[]
   error?: string | null
   accepted?: boolean
 }
@@ -49,6 +57,18 @@ export type PilotRun = {
 /** The last outcome of one flow, kept across runs. */
 export type PilotLast = { outcome: PilotOutcome; runId: string; at: number; accepted?: boolean; jevCalls?: number }
 
+/** A prompt-mode (explore) run. */
+export type PilotExplore = {
+  runId: string
+  name: string
+  outcome: PilotOutcome
+  at: number
+  jevCalls: number
+  /** Red checks, as text. */
+  red: string[]
+  screenshot?: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'q-pilot': {
@@ -58,10 +78,16 @@ declare module 'claude-code' {
       blocksThisTurn: number
       /** The last finished run; restored from `$.store` at session start. */
       lastRun: PilotRun | null
+      /** The last prompt-mode run; restored from `$.store` at session start. */
+      lastExplore: PilotExplore | null
+      /** The last prompt-mode run that passed (it has a proposal): what `/q-pilot save last` saves. */
+      lastPassingExplore: PilotExplore | null
+      /** The last task-mode run (pilot_run); restored from `$.store` at session start. */
+      lastTask: PilotExplore | null
       /** The last outcome of every flow that ran, by flow id. */
       lastByFlow: Record<string, PilotLast>
-      /** `/q-pilot mode` override of the `mode` option; null follows the option. */
-      mode: PilotMode | null
+      /** What `/q-pilot config` set (only the changed keys); restored from `$.store` at session start. */
+      settings: Partial<import('../hooks/lib/settings').PilotSettings>
       /** The main loop's running turn, from `turn.start`; null before the first. */
       currentTurn: string | null
       /** Set by the classic.Stop hook when it ran for the main turn; the turn.complete fallback skips that turn. */

@@ -13,3 +13,6 @@ blob-report/
 # Mods are TypeScript loaded by the host; compiled .js next to the sources is never shipped
 plugins/*/hooks/**/*.js
 plugins/*/tests/**/*.js
+
+# claude plugin eval output
+plugins/*/evals/results/

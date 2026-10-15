@@ -80,3 +80,8 @@ test('runVerify passes a check that becomes true while polling', async () => {
   await page.evaluate(() => setTimeout(() => (document.querySelector('[role=status]').textContent = 'Later'), 300))
   assert.deepEqual(await runVerify(page, [{ role: 'status', text: 'Later' }], { timeoutMs: 2000 }), [])
 })
+
+test('a check that matches several elements fails as ambiguous instead of grading the first', async () => {
+  assert.deepEqual(await checkOnce(page, { role: 'paragraph' }), { ok: false, actual: 'ambiguous: 3 elements match' })
+  assert.deepEqual(await checkOnce(page, { role: 'paragraph', visible: false }), { ok: false, actual: 'ambiguous: 3 elements match' })
+})

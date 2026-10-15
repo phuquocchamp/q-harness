@@ -21,8 +21,12 @@ export async function checkOnce(page, c) {
     const actual = await page.title()
     return { ok: actual === c.title, actual }
   }
-  const el = locatorOf(page, c).first()
-  if ((await el.count()) === 0) return { ok: c.visible === false, actual: null }
+  const all = locatorOf(page, c)
+  const n = await all.count()
+  if (n === 0) return { ok: c.visible === false, actual: null }
+  // Strict like Playwright's expect: a check that matches several elements is not trusted to grade the right one.
+  if (n > 1) return { ok: false, actual: `ambiguous: ${n} elements match` }
+  const el = all.first()
   const target = ['role', 'testid', 'label'].some(k => k in c)
   const exp = !target ? 'visible' : ['text', 'contains', 'value'].find(k => k in c) ?? 'visible'
   if (exp === 'visible') {
@@ -39,22 +43,30 @@ export async function checkOnce(page, c) {
 
 /**
  * Evaluates all checks, polling the ones that fail for up to `timeoutMs` (like `expect`).
- * Returns the failures as [{ check, actual }], with fixture values redacted from `actual`.
+ * Returns every check as { check, ok, actual }, redacted with the fixture secrets.
  */
-export async function runVerify(page, checks, { timeoutMs = 2000, secrets = [] } = {}) {
+export async function runChecks(page, checks, { timeoutMs = 2000, secrets = [] } = {}) {
   const end = Date.now() + timeoutMs
-  let pending = checks.map(check => ({ check, actual: null }))
+  const results = checks.map(check => ({ check, ok: false, actual: null }))
   for (;;) {
-    const next = []
-    for (const p of pending) {
-      const r = await checkOnce(page, p.check).catch(e => ({ ok: false, actual: `error: ${e.message.split('\n')[0]}` }))
-      if (!r.ok) next.push({ check: p.check, actual: r.actual })
+    for (const r of results) {
+      if (r.ok) continue
+      const v = await checkOnce(page, r.check).catch(e => ({ ok: false, actual: `error: ${e.message.split('\n')[0]}` }))
+      Object.assign(r, v)
     }
-    pending = next
-    if (!pending.length || Date.now() >= end) break
+    if (results.every(r => r.ok) || Date.now() >= end) break
     await new Promise(r => setTimeout(r, POLL_MS))
   }
-  return pending.map(p => redactDeep({ check: p.check, actual: p.actual }, secrets))
+  return redactDeep(results, secrets)
+}
+
+/**
+ * Evaluates all checks, polling the ones that fail for up to `timeoutMs` (like `expect`).
+ * Returns the failures as [{ check, actual }], with fixture values redacted from `actual`.
+ */
+export async function runVerify(page, checks, opts = {}) {
+  const results = await runChecks(page, checks, opts)
+  return results.filter(r => !r.ok).map(({ check, actual }) => ({ check, actual }))
 }
 
 /** Checks suggested for a flow with an empty verify: the final url, headings and status/alert texts. */
