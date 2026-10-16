@@ -1,21 +1,36 @@
-// Copies shared/ui/q-theme.css into each plugin that serves UI (plugins install independently, so
-// they cannot import from the repo root). `--check` exits 1 and lists the copies that drifted.
+// Copies the shared UI files into each plugin that serves UI (plugins install independently, so they cannot import
+// from the repo root): the q-theme.css tokens and the plugin's icon. `--check` exits 1 and lists the copies that drifted.
 // Run: node scripts/sync-ui.mjs [--check]
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const SOURCE = 'shared/ui/q-theme.css'
+export const THEME = 'shared/ui/q-theme.css'
+export const ICONS = 'docs/images/icons'
 // Add a plugin's copy here.
-export const TARGETS = ['plugins/q-graph/viewer/q-theme.css', 'plugins/q-pilot/runner/inspector/q-theme.css']
-export const HEADER = `/* GENERATED from ${SOURCE} by scripts/sync-ui.mjs — do not edit */\n`
+export const COPIES = [
+  { source: THEME, target: 'plugins/q-graph/viewer/q-theme.css' },
+  { source: THEME, target: 'plugins/q-pilot/runner/inspector/q-theme.css' },
+  { source: `${ICONS}/q-graph.svg`, target: 'plugins/q-graph/viewer/icon.svg' },
+  { source: `${ICONS}/q-pilot.svg`, target: 'plugins/q-pilot/runner/inspector/icon.svg' },
+]
 
-/** Writes every target, or with `check` only reports. Returns the targets that differ (or were written). */
-export const sync = ({ root, targets = TARGETS, check = false }) => {
-  const want = HEADER + readFileSync(join(root, SOURCE), 'utf8')
+export const header = source =>
+  source.endsWith('.svg')
+    ? `<!-- GENERATED from ${source} by scripts/sync-ui.mjs — do not edit -->\n`
+    : `/* GENERATED from ${source} by scripts/sync-ui.mjs — do not edit */\n`
+
+// The icons are drawn on the macOS app-icon grid (a 412px tile inside 512px). A web UI shows them as a favicon or a
+// header mark, so the copy crops the viewBox to the tile and it fills the box.
+export const render = (source, text) =>
+  header(source) + (source.endsWith('.svg') ? text.replace('viewBox="0 0 512 512"', 'viewBox="50 50 412 412"') : text)
+
+/** Writes every copy, or with `check` only reports. Returns the targets that differ (or were written). */
+export const sync = ({ root, copies = COPIES, check = false }) => {
   const changed = []
-  for (const target of targets) {
+  for (const { source, target } of copies) {
+    const want = render(source, readFileSync(join(root, source), 'utf8'))
     const path = join(root, target)
     let have = null
     try {

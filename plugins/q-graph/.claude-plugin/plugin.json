@@ -1,6 +1,6 @@
 {
   "name": "q-graph",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": { "name": "phuquocchamp" },
   "license": "MIT",
   "description": "Shows the subagents and teammates of a session as a live graph: a roster band above the prompt, an alert when one waits for you, and a pane with the agent tree, what each agent used (tools, skills, MCP servers, rules) and the session's harness.",

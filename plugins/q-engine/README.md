@@ -1,3 +1,5 @@
+<img src="../../docs/images/icons/q-engine.svg" width="72" alt="" align="right">
+
 # q-engine
 
 > Part of [q-harness](../../README.md), a collection of Claude Code plugins by [**phuquocchamp**](https://github.com/phuquocchamp)

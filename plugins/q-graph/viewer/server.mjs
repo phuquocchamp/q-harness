@@ -56,6 +56,7 @@ const PAGE = ['index.html', 'text/html; charset=utf-8']
 const ASSETS = {
   '/reactflow-base.css': ['reactflow-base.css', 'text/css; charset=utf-8'],
   '/q-theme.css': ['q-theme.css', 'text/css; charset=utf-8'],
+  '/icon.svg': ['icon.svg', 'image/svg+xml'],
 }
 
 const serve = (res, [name, type]) => res.writeHead(200, { 'content-type': type }).end(readFileSync(join(here, name)))

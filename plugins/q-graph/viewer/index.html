@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>q-graph</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="stylesheet" href="reactflow-base.css" id="rf-css">
 <link rel="stylesheet" href="q-theme.css">
 <style>
@@ -14,7 +15,8 @@
 html,body{height:100%;margin:0}
 body{background:var(--q-bg);color:var(--q-fg);font:14px/1.5 var(--q-sans);display:flex;flex-direction:column}
 header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 16px;border-bottom:1px solid var(--q-line);background:var(--q-surface)}
-header h1{font:700 16px var(--q-mono);margin:0}
+header h1{font:700 16px var(--q-mono);margin:0;display:flex;align-items:center;gap:8px}
+header h1 img{width:20px;height:20px}
 .live{font:600 12px var(--q-mono);color:var(--q-ok)}
 .live.off{color:var(--q-bad)}
 .counts{display:flex;gap:14px;font:12px var(--q-mono);color:var(--q-muted);margin-left:auto;flex-wrap:wrap}
@@ -199,7 +201,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
 </head>
 <body>
 <header>
-  <h1>q-graph</h1>
+  <h1><img src="icon.svg" alt="">q-graph</h1>
   <span id="views"></span>
   <span class="live off" id="live">● connecting</span>
   <span class="legend"><span><i style="--c:var(--q-k-main)"></i>main</span><span><i style="--c:var(--q-k-sub)"></i>subagent</span><span><i style="--c:var(--q-k-team)"></i>teammate</span><span><i style="--c:var(--q-k-tool)"></i>tool</span><span><i style="--c:var(--q-k-skill)"></i>skill</span><span><i style="--c:var(--q-k-mcp)"></i>mcp</span><span><i style="--c:var(--q-k-rule)"></i>rule</span></span>

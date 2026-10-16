@@ -106,6 +106,13 @@ test('the theme sheet is served as CSS without a token, and only to a valid Host
   assert.equal((await get('/q-theme.css', { host: 'evil.example', token: null })).status, 403)
 })
 
+test('the icon is served as SVG without a token', async () => {
+  const res = await get('/icon.svg', { token: null })
+  assert.equal(res.status, 200)
+  assert.match(res.headers['content-type'], /^image\/svg\+xml/)
+  assert.match(res.body, /<svg /)
+})
+
 test('403 for a Host other than 127.0.0.1:<port> or localhost:<port>', async () => {
   assert.equal((await get('/snapshot.json', { host: 'evil.example' })).status, 403)
   assert.equal((await get('/snapshot.json', { host: `evil.example:${info.port}` })).status, 403)

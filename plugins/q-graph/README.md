@@ -1,10 +1,12 @@
+<img src="../../docs/images/icons/q-graph.svg" width="72" alt="" align="right">
+
 # q-graph
 
 > Part of [q-harness](../../README.md), a collection of Claude Code plugins by [**phuquocchamp**](https://github.com/phuquocchamp)
 
 **Which agents are running, which one is stuck, and which one is waiting for me?** q-graph records every agent loop of the session (the main loop, subagents and teammates), shows the live ones in a band above the prompt, warns you when one waits for an answer, and draws the whole tree in a pane with a dot moving along the edge of each running agent.
 
-**Version** 0.1.0 · **Author** phuquocchamp · [Design and roadmap (artifact)](https://claude.ai/artifact/9r76tdnMNXSqDuBbkEND56)
+**Version** 0.1.1 · **Author** phuquocchamp · [Design and roadmap (artifact)](https://claude.ai/artifact/9r76tdnMNXSqDuBbkEND56)
 
 ## What it ships
 
