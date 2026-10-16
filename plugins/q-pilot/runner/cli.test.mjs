@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'no
 import { join } from 'node:path'
 import { headless, main } from './pilot.mjs'
 import { BUG, DRIFT, DRIFT_AND_BUG, ENV, freePort, makeApp, stubJev } from './testkit.mjs'
+import { withDashFor } from './dashkit.mjs'
 
 const FIXTURE = 'buyer@example.test'
 const run = (root, ...extra) => main(['run', '--root', root, '--flows', 'checkout-coffee', ...extra], ENV)
@@ -322,5 +323,21 @@ test('--dashboard and --keep-trace are accepted flags; --keep-trace keeps the tr
       const f = flowOf(await run(root, '--dashboard', '--keep-trace'))
       assert.equal(f.outcome, 'pass')
       assert.ok(f.trace && existsSync(f.trace), 'the Playwright trace is kept')
+    } finally { stub.restore() }
+  }))
+
+test('with a dashboard a replay registers one session per flow: kind flow by default, gate on request, never a tab', () =>
+  withApp({}, async ({ root }) => {
+    const stub = stubJev(() => assert.fail('jev must not be called'))
+    try {
+      await withDashFor(root, ENV, async ({ env, sessions, opened }) => {
+        const a = await main(['run', '--root', root, '--flows', 'checkout-coffee'], env)
+        const g = await main(['run', '--root', root, '--flows', 'checkout-coffee', '--session-kind', 'gate'], env)
+        const byId = Object.fromEntries((await sessions()).map(s => [s.id, s]))
+        assert.deepEqual([byId[`${a.runId}:checkout-coffee`].kind, byId[`${a.runId}:checkout-coffee`].outcome], ['flow', 'pass'])
+        assert.deepEqual([byId[`${g.runId}:checkout-coffee`].kind, byId[`${g.runId}:checkout-coffee`].status], ['gate', 'ended'])
+        assert.deepEqual(opened, [])
+        assert.equal(flowOf(g).outcome, 'pass')
+      })
     } finally { stub.restore() }
   }))

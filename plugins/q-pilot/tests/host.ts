@@ -9,8 +9,26 @@ export const ROOT = '/repo'
 
 /** A help request the fake runner raises (task mode) before it prints its result: written to `file`, then announced. */
 type Help = { n: number; reason: string; request: Record<string, unknown> }
-/** linger: after the result the fake runner stays up (an inspector open for review), raises `asks`, and ends only when the mod closes it. */
-type Proc = { exitCode?: number; stdout?: string; stderr?: string; throws?: string; helps?: Help[]; linger?: boolean; asks?: { model: string; prompt: string }[]; saves?: { keys: unknown; scope: unknown }[] }
+type Proc = { exitCode?: number; stdout?: string; stderr?: string; throws?: string; helps?: Help[] }
+
+/**
+ * The fake q-pilot Dashboard process (runner/dash-server.mjs). By default it prints its ready mark and idles until the
+ * mod closes it. `asks` and `saves` are the Ask Claude and Save as default requests it raises after the mark.
+ * `throws`: the spawn fails; `exits`: it ends before the mark; `silent`: it never prints the mark; `reused`: the mark says so.
+ */
+type Dash = {
+  url: string
+  throws?: string
+  /** `dash-server.mjs --open` exits 1 (no dashboard answers). */
+  openFails?: boolean
+  exits?: boolean
+  silent?: boolean
+  reused?: boolean
+  asks: { model: string; prompt: string }[]
+  saves: { keys: unknown; scope: unknown }[]
+  /** Requests of the Dashboard's Settings page (get, set, unset), raised in order. */
+  configs: Record<string, unknown>[]
+}
 
 /** One flow of a runner result; every field of the contract that the mod reads has a default. */
 export type FakeFlow = {
@@ -81,8 +99,15 @@ export const fakeHost = (on: On) => {
   const asked: unknown[] = []
   /** The mod's answers to the inspector's "Save as default" requests. */
   const saved: unknown[] = []
-  /** How many lingering fake runners the mod closed. */
+  /** How many fake dashboard processes the mod closed. */
   const closed = { n: 0 }
+  /** The argv of each dashboard spawn (kept apart from `runs`, which holds the runner calls). */
+  const dashSpawns: string[][] = []
+  /** The argv of each `dash-server.mjs --open` call (the tab the person asked for). */
+  const dashOpens: string[][] = []
+  const dash: Dash = { url: 'http://127.0.0.1:8767/', asks: [], saves: [], configs: [] }
+  /** The mod's answers to those requests. */
+  const configAnswers: Record<string, any>[] = []
   const suggested: string[] = []
   const filled: string[] = []
   const host = {
@@ -92,6 +117,10 @@ export const fakeHost = (on: On) => {
     asked,
     saved,
     closed,
+    dash,
+    configAnswers,
+    dashSpawns,
+    dashOpens,
     suggested,
     filled,
     submitDrop: undefined as string | undefined,
@@ -142,7 +171,7 @@ export const fakeHost = (on: On) => {
   on('ui.invalidate', () => ({ value: undefined }))
   on('env.get', (_$, e) => ({ value: host.env.get(e.name) }))
 
-  on('fs.exists', (_$, e) => ({ value: e.path.endsWith('/runner/pilot.mjs') ? host.runnerExists : files.has(e.path) || isDir(e.path) }))
+  on('fs.exists', (_$, e) => ({ value: e.path.endsWith('/runner/pilot.mjs') ? host.runnerExists : e.path.endsWith('/runner/dash-server.mjs') || files.has(e.path) || isDir(e.path) }))
   on('fs.read', (_$, e) => {
     const text = files.get(e.path)
     if (text === undefined) throw new Error(`ENOENT: ${e.path}`)
@@ -162,9 +191,14 @@ export const fakeHost = (on: On) => {
 
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
+    const answer = (p: Proc) => ({ value: { exitCode: p.exitCode ?? 0, stdout: p.stdout ?? '', stderr: p.stderr ?? '', isStdoutTruncated: false, isStderrTruncated: false } })
+    // `dash-server.mjs --open` asks the running Dashboard to open its tab.
+    if (argv.some(x => x.endsWith('runner/dash-server.mjs'))) {
+      dashOpens.push(argv)
+      return answer(dash.openFails ? { exitCode: 1, stderr: 'no dashboard is running' } : { stdout: `${dash.url}\n` })
+    }
     runs.push(argv)
     envs.push(e.init?.env)
-    const answer = (p: Proc) => ({ value: { exitCode: p.exitCode ?? 0, stdout: p.stdout ?? '', stderr: p.stderr ?? '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (argv[0] === 'git' && argv[1] === 'diff') return answer({ stdout: host.diff })
     const script = argv.findIndex(a => a.endsWith('runner/pilot.mjs'))
     if (script >= 0) {
@@ -177,9 +211,50 @@ export const fakeHost = (on: On) => {
     throw new Error(`unexpected process: ${argv.join(' ')}`)
   })
 
-  // The task runner is spawned (it outlives a tool call while it waits for help). Same canned answers as process.run.
+  // The dashboard and the task runner are spawned (each outlives a tool call). The runner has the same canned answers as process.run.
   on('process.spawn', async function* (_$, e) {
     const argv = [...e.argv]
+    if (argv.some(a => a.endsWith('runner/dash-server.mjs'))) {
+      dashSpawns.push(argv)
+      if (dash.throws) throw new Error(dash.throws)
+      if (dash.exits) return { value: { code: 1, signal: null } }
+      const requests = `${ROOT}/.q-pilot/dashboard/requests`
+      try {
+        if (!dash.silent) yield { stream: 'stderr' as const, text: `[q-pilot] dash ${JSON.stringify({ url: dash.url, file: `${ROOT}/.q-pilot/dashboard/server.json`, reused: dash.reused === true })}\n` }
+        for (const [k, a] of dash.asks.entries()) {
+          const file = `${requests}/ask-${k + 1}.json`
+          files.set(file, JSON.stringify({ n: k + 1, system: 'sys', ...a }))
+          yield { stream: 'stderr' as const, text: `[q-pilot] ask ${JSON.stringify({ n: k + 1, file })}\n` }
+          const answer = file.replace(/\.json$/, '.answer.json')
+          while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
+          asked.push(JSON.parse(files.get(answer)!))
+        }
+        for (const [k, a] of dash.saves.entries()) {
+          const file = `${requests}/settings-save-${k + 1}.json`
+          files.set(file, JSON.stringify({ n: k + 1, ...a }))
+          yield { stream: 'stderr' as const, text: `[q-pilot] settings-save ${JSON.stringify({ n: k + 1, file })}\n` }
+          const answer = file.replace(/\.json$/, '.answer.json')
+          while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
+          saved.push(JSON.parse(files.get(answer)!))
+        }
+        for (const [k, c] of dash.configs.entries()) {
+          const file = `${requests}/config-${k + 1}.json`
+          files.set(file, JSON.stringify(c))
+          yield { stream: 'stderr' as const, text: `[q-pilot] config ${JSON.stringify({ n: k + 1, file })}\n` }
+          const answer = file.replace(/\.json$/, '.answer.json')
+          while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
+          configAnswers.push(JSON.parse(files.get(answer)!))
+        }
+        // Progress lines while it serves: a generator only takes return() at a yield.
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 100))
+          yield { stream: 'stderr' as const, text: '[q-pilot] dashboard open\n' }
+        }
+        return { value: { code: 0, signal: null } }
+      } finally {
+        closed.n++
+      }
+    }
     runs.push(argv)
     envs.push(e.env)
     const script = argv.findIndex(a => a.endsWith('runner/pilot.mjs'))
@@ -199,33 +274,6 @@ export const fakeHost = (on: On) => {
     }
     if (next.stderr) yield { stream: 'stderr' as const, text: next.stderr }
     if (next.stdout) yield { stream: 'stdout' as const, text: next.stdout }
-    if (next.linger) {
-      try {
-        for (const [k, a] of (next.asks ?? []).entries()) {
-          const file = `${runDir}/ask-${k + 1}.json`
-          files.set(file, JSON.stringify({ n: k + 1, system: 'sys', ...a }))
-          yield { stream: 'stderr' as const, text: `[q-pilot] ask ${JSON.stringify({ n: k + 1, file })}\n` }
-          const answer = file.replace(/\.json$/, '.answer.json')
-          while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
-          asked.push(JSON.parse(files.get(answer)!))
-        }
-        for (const [k, a] of (next.saves ?? []).entries()) {
-          const file = `${runDir}/settings-save-${k + 1}.json`
-          files.set(file, JSON.stringify({ n: k + 1, ...a }))
-          yield { stream: 'stderr' as const, text: `[q-pilot] settings-save ${JSON.stringify({ n: k + 1, file })}\n` }
-          const answer = file.replace(/\.json$/, '.answer.json')
-          while (!files.has(answer)) await new Promise(r => setTimeout(r, 2))
-          saved.push(JSON.parse(files.get(answer)!))
-        }
-        // Progress lines while it serves the inspector: a generator only takes return() at a yield.
-        for (;;) {
-          await new Promise(r => setTimeout(r, 5))
-          yield { stream: 'stderr' as const, text: '[q-pilot] inspector open\n' }
-        }
-      } finally {
-        closed.n++
-      }
-    }
     return { value: { code: next.exitCode ?? 0, signal: null } }
   })
 
@@ -279,6 +327,9 @@ export const settle = async () => {
   const tick = (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout
   for (let i = 0; i < 50; i++) await new Promise<void>(r => tick(r, 0))
 }
+
+/** A runner's env without the Dashboard's descriptor path (which every run with the inspector on carries). */
+export const plain = (env: Record<string, string> | undefined) => Object.fromEntries(Object.entries(env ?? {}).filter(([k]) => k !== 'Q_PILOT_DASH_FILE'))
 
 /** The runner calls of one command. */
 export const calls = (runs: string[][], command: string) => runs.filter(a => a.some(x => x.endsWith('runner/pilot.mjs')) && a[a.findIndex(x => x.endsWith('runner/pilot.mjs')) + 1] === command)

@@ -1,11 +1,13 @@
 // Task mode (any browser task, checks optional) and the live inspector. Jev is stubbed; no browser window opens.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { main } from './pilot.mjs'
 import { ConfigError, validateTask } from './flow.mjs'
 import { createInspector } from './inspect.mjs'
 import { coffeePolicy, ENV, freePort, makeApp, stubJev } from './testkit.mjs'
+import { withDashFor } from './dashkit.mjs'
 
 const GOAL = 'Buy one bag of coffee beans and place the order with the email from the fixtures. Stop when an order confirmation is shown.'
 const CHECKS = [{ testid: 'total', text: '€12.00' }, { role: 'status', text: 'Order confirmed' }]
@@ -356,5 +358,56 @@ test('a page that stays empty while it loads is observed again before Jev is ask
     try {
       await task(root, taskFor(port, { url: `http://localhost:${port}/slow.html`, goal: 'Select a flight.', fixtures: {} }))
       assert.ok(seen[0].some(t => t.includes('] Select flight')), JSON.stringify(seen))
+    } finally { stub.restore() }
+  }))
+
+test('with a dashboard descriptor a task registers a session (kind task, open) and needs no --inspect-port', () =>
+  withApp(async ({ root, port }) => {
+    const stub = stubJev(coffeePolicy())
+    try {
+      await withDashFor(root, ENV, async ({ env, sessions, opened }) => {
+        const r = await main(['task', '--root', root, '--spec-json', JSON.stringify(taskFor(port)), '--inspect'], env)
+        assert.equal(r.flows[0].outcome, 'done')
+        const [s, ...rest] = await sessions()
+        assert.equal(rest.length, 0)
+        assert.deepEqual([s.id, s.kind, s.name, s.status, s.outcome], [`${r.runId}:coffee`, 'task', 'coffee', 'ended', 'done'])
+        assert.equal(s.target.kind, 'chromium')
+        assert.equal(opened.length, 1, 'the dashboard opened the tab once')
+        assert.ok(opened[0].endsWith(`#s=${encodeURIComponent(s.id)}`))
+        assert.ok(r.runDir)
+      })
+    } finally { stub.restore() }
+  }))
+
+test('--session-kind sets the kind and a gate session never opens a tab; a bad kind is a config error', () =>
+  withApp(async ({ root, port }) => {
+    const stub = stubJev(coffeePolicy())
+    try {
+      await withDashFor(root, ENV, async ({ env, sessions, opened }) => {
+        const r = await main(['task', '--root', root, '--spec-json', JSON.stringify(taskFor(port)), '--session-kind', 'gate'], env)
+        assert.equal(r.flows[0].outcome, 'done')
+        assert.equal((await sessions())[0].kind, 'gate')
+        assert.deepEqual(opened, [])
+      })
+      const bad = await main(['task', '--root', root, '--spec-json', JSON.stringify(taskFor(port)), '--session-kind', 'nope'], ENV)
+      assert.equal(bad.ok, false)
+      assert.match(bad.error, /--session-kind must be one of task, test, gate, flow/)
+    } finally { stub.restore() }
+  }))
+
+test('a dashboard that is gone (stale descriptor) or missing never changes a run: same outcome, no session', () =>
+  withApp(async ({ root, port }) => {
+    const stub = stubJev(coffeePolicy())
+    try {
+      const plain = (await task(root, taskFor(port))).flows[0]
+      for (const file of [join(root, 'missing.json'), join(root, 'q-pilot.config.json')]) {
+        const r = await main(['task', '--root', root, '--spec-json', JSON.stringify(taskFor(port))], { ...ENV, Q_PILOT_DASH_FILE: file })
+        assert.deepEqual([r.ok, r.flows[0].outcome, r.flows[0].steps.length], [true, plain.outcome, plain.steps.length])
+      }
+      // A descriptor whose server is down: registration fails fast and the run goes on.
+      const dead = join(root, 'dead.json')
+      writeFileSync(dead, JSON.stringify({ v: 1, pid: 1, port: await freePort(), url: `http://127.0.0.1:${await freePort()}/`, runnerToken: 'x', root, startedAt: 0 }))
+      const r = await main(['task', '--root', root, '--spec-json', JSON.stringify(taskFor(port))], { ...ENV, Q_PILOT_DASH_FILE: dead })
+      assert.equal(r.flows[0].outcome, plain.outcome)
     } finally { stub.restore() }
   }))

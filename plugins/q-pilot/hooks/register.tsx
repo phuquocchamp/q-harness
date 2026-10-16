@@ -13,11 +13,12 @@ import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { PilotExplore, PilotFlow, PilotLast, PilotMode, PilotRun, PilotStopSeen } from '../types'
 import { claimsSuccess } from './lib/claims'
+import { bandLink, parseDashMark, type DashMark } from './lib/dash'
 import type { FlowDef, PilotConfig, RunnerResult, Trust } from './lib/contract'
 import { DEFAULT_FLOWS_DIR, isUiRelevant, selectFlows } from './lib/impact'
 import { validateHelp, validateSpec, validateTask } from './lib/spec'
 import { HELPER_SYSTEM, helperTakes, newHelperState, parseHelperReply, type HelperState } from './lib/helper'
-import { WRITE_SCOPES, applyConfig, envLayer, explainSetting, keyOf, pickSettings, resolveSettings, showSettings, unsetConfig, type Helper, type Layer, type PilotSettings, type Resolved, type WriteScope } from './lib/settings'
+import { WRITE_SCOPES, applyConfig, envLayer, explainSetting, keyOf, pickSettings, resolveSettings, settingRows, showSettings, unsetConfig, type Helper, type Layer, type PilotSettings, type Resolved, type WriteScope } from './lib/settings'
 import { actionFor, blockText, flowBlock, flowLine, isBad, isTouched, parseResult, stderrTail, stopBudget, summarize } from './lib/report'
 
 const edits = atom({ plugin: 'q-pilot', key: 'edits' } as const, [] as string[])
@@ -33,6 +34,8 @@ const storedSettings = atom({ plugin: 'q-pilot', key: 'settings' } as const, {} 
 const currentTurn = atom({ plugin: 'q-pilot', key: 'currentTurn' } as const, null as string | null)
 const stopSeen = atom({ plugin: 'q-pilot', key: 'stopSeen' } as const, null as PilotStopSeen | null)
 const followUps = atom({ plugin: 'q-pilot', key: 'followUps' } as const, 0 as number)
+/** The prompt the runs belong to; every run started while it holds shows under one Dashboard entry. */
+const promptGroup = atom({ plugin: 'q-pilot', key: 'promptGroup' } as const, null as string | null)
 const interactive = atom({ plugin: 'q-pilot', key: 'interactive' } as const, true as boolean)
 
 const TOOL = 'pilot_status'
@@ -49,6 +52,11 @@ const CONFIG_FILE = 'q-pilot.config.json'
 const SETTINGS_KEY = 'settings'
 const SETTINGS_FILES = { project: '.q-pilot/settings.json', local: '.q-pilot/settings.local.json' } as const
 const RUNNER = 'runner/pilot.mjs'
+const DASH_SERVER = 'runner/dash-server.mjs'
+/** The runner commands that open a browser: they report to the Dashboard when it is up. */
+const DASH_COMMANDS = new Set(['explore', 'run', 'record'])
+/** The Dashboard's ready mark is waited for this long; later, runs go on without it. */
+const DASH_READY_MS = 5000
 const MAX_BLOCKS = 2
 const MAX_FOLLOW_UPS = 2
 /** Prompt origins that are the person's own prompt: they reset the follow-up cap. */
@@ -64,21 +72,26 @@ const WARN_COLOR = 'warning'
 
 const USAGE = [
   'Usage: /q-pilot <subcommand>',
-  '  run              run the flows this turn\'s edits affect',
-  '  run all|<id>     run every flow, or one',
-  '  task "<prompt>"  have Claude run any browser task with Jev (pilot_run), watched in the live inspector',
-  '  test "<prompt>"  have Claude write a spec for the prompt and run it with Jev (pilot_test)',
-  '  save [<runId>|last] [<name>]  save a passing test as a flow with its trace',
-  '  record <id>      record a flow\'s trace with Jev (needs a verify block)',
-  '  accept [<id>]    accept a drift or a fresh recording as the flow\'s trace',
-  '  status           last run per flow',
-  '  export <id>      write a Playwright spec from a flow and its trace',
-  '  init             write q-pilot.config.json and flows/example.flow.json when missing',
-  '  config           show the settings: value, where it came from (default|user|project|local|env), what it overrides',
-  '  config set <key> <value> [--scope user|project|local]  set one (default scope user; e.g. config set vision always --scope project)',
-  '  config unset <key> [--scope …]   drop it from that scope · config reset [--scope …]  drop them all',
-  '  config explain <key>             every scope\'s value and which one wins',
-  '  config <key> <value>             short form of set at user scope',
+  '  task "<prompt>"     do one thing in a browser',
+  '  test "<prompt>"     check the UI you just changed',
+  '  dashboard           open the q-pilot Dashboard',
+  '  flows               save · run · record · accept · export · status',
+  '  config              settings that differ from the default (--all: every setting)',
+  '  init                create q-pilot.config.json',
+  '',
+  '/q-pilot flows <save|run|record|accept|export|status> …  (the old top-level names still work)',
+  '/q-pilot config [--all] | set <key> <value> [--scope user|project|local] | unset <key> | explain <key> | reset',
+].join('\n')
+
+const FLOWS_USAGE = [
+  'Usage: /q-pilot flows [<subcommand>]',
+  '  (none)                         last run per flow',
+  '  run [all|<id>]                 run the flows this turn\'s edits affect, every flow, or one',
+  '  save [<runId>|last] [<name>]   save a passing test as a flow with its trace',
+  '  record <id>                    record a flow\'s trace with Jev (needs a verify block)',
+  '  accept [<id>]                  accept a drift or a fresh recording as the flow\'s trace',
+  '  export <id>                    write a Playwright spec from a flow and its trace',
+  '  status                         last run per flow',
 ].join('\n')
 
 const EXAMPLE_CONFIG = { baseURL: 'http://localhost:3000', flowsDir: DEFAULT_FLOWS_DIR, ignore: ['**/*.md'] }
@@ -151,7 +164,7 @@ type Opts = {
   maxStopMs: number
   maxTestMs: number
   maxTaskMs: number
-  /** on: the live inspector opens in the person's browser with every pilot_run; pause: it also holds before the first step; off: none. */
+  /** on: the Dashboard opens in the person's browser with every pilot_run; pause: it also holds before the first step; off: no Dashboard. */
   inspector: 'on' | 'pause' | 'off'
   /** Jev vision for tasks: off, gated (asks again with the screenshot when unsure) or always; its model; Box rescue. */
   vision: 'off' | 'gated' | 'always'
@@ -159,6 +172,8 @@ type Opts = {
   visionBox: boolean
   /** Show runs in the Playwright Dashboard (`playwright-cli show`). */
   dashboard: boolean
+  /** How the q-pilot Dashboard opens (`--window`): its own app window or a tab. */
+  dashboardWindow: 'app' | 'tab'
   /** The Claude model that answers Jev's help requests before the session does; session: the chat answers them. */
   helper: Helper
   node: string[]
@@ -189,6 +204,7 @@ const optsOf = (r: Resolved, jevKey: string): Opts => {
     visionModel: s.visionModel,
     visionBox: s.box,
     dashboard: s.dashboard,
+    dashboardWindow: s.dashboardWindow,
     helper: s.helper,
     node: node.length > 0 ? node : ['node'],
     jevKey,
@@ -302,7 +318,8 @@ async function note($: EngineInterface, text: string) {
 type RunnerOutcome = { result: RunnerResult } | { unavailable: string } | { error: string }
 
 /** Runs `node runner/pilot.mjs <args>` in the project root and parses the last stdout line. */
-async function runRunner($: EngineInterface, o: Opts, args: string[], timeoutMs: number): Promise<RunnerOutcome> {
+/** `quiet`: the stop gate, which never announces the Dashboard (the person did not ask for a run). */
+async function runRunner($: EngineInterface, o: Opts, args: string[], timeoutMs: number, quiet = false): Promise<RunnerOutcome> {
   const root = await $.session.root()
   const script = `${$.plugin.root}/${RUNNER}`
   if (!(await $.fs.exists(script).catch(() => false))) return { unavailable: `the runner is missing (${script})` }
@@ -313,6 +330,7 @@ async function runRunner($: EngineInterface, o: Opts, args: string[], timeoutMs:
   const env: Record<string, string> = {
     ...(key ? { TYPESAFE_API_KEY: key } : {}),
     ...(o.cdpUrlSet ? { Q_PILOT_CDP_URL: o.cdpUrl } : {}),
+    ...(DASH_COMMANDS.has(args[0]!) ? await dashEnv($, o, quiet) : {}),
   }
   let r
   try {
@@ -442,7 +460,7 @@ async function pilotTest($: EngineInterface, o: Opts, input: Record<string, unkn
 
 async function runTest($: EngineInterface, o: Opts, spec: Record<string, unknown>, specJson: string): Promise<string> {
   const { budgetMs, timeoutMs } = stopBudget(o.maxTestMs)
-  const out = await runRunner($, o, ['explore', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...visionArgs(o), ...(o.dashboard ? ['--dashboard'] : [])], timeoutMs)
+  const out = await runRunner($, o, ['explore', '--spec-json', specJson, '--budget-ms', String(budgetMs), '--session-kind', 'test', ...visionArgs(o), ...(o.dashboard ? ['--dashboard'] : []), '--settings-sources', o.sourcesJson, ...(await groupArgs($))], timeoutMs)
   if ('unavailable' in out) return `pilot_test: ${out.unavailable}. Nothing was run; tell the user.`
   if ('error' in out) return `pilot_test: ${out.error}`
   const f = out.result.flows?.[0]
@@ -482,15 +500,15 @@ type LiveEvent = HelpEvent | { kind: 'exit'; code: number | null; stdout: string
  * The task run in progress. pilot_run starts the runner with `--help` and returns at its first help request or its
  * end; the runner keeps the browser open meanwhile, and pilot_help answers through the run dir. One at a time.
  */
-type LiveTask = { name: string; events: LiveEvent[]; wake: (() => void) | null; ended: boolean; pending: HelpEvent | null; secrets: string[]; stop: () => Promise<void>; helper: HelperState }
+type LiveTask = { name: string; inspectorUrl?: string; events: LiveEvent[]; wake: (() => void) | null; ended: boolean; pending: HelpEvent | null; secrets: string[]; stop: () => Promise<void>; helper: HelperState }
 let live: LiveTask | null = null
-/** A finished task whose runner still serves its inspector for review (--linger): closed when the next task starts. */
-let lingering: LiveTask | null = null
-/** The runner's stderr line for each "Ask Claude" question from the inspector (runner/ask.mjs ASK_MARK). */
+/** The stderr line for each "Ask Claude" question from the Dashboard (runner/ask.mjs ASK_MARK). */
 const ASK_MARK = '[q-pilot] ask '
-/** The runner's stderr line for each "Save as default" from the inspector (runner/settings-save.mjs SAVE_MARK). */
+/** The stderr line for each "Save as default" from the Dashboard (runner/settings-save.mjs SAVE_MARK). */
 const SAVE_MARK = '[q-pilot] settings-save '
-/** The runner's stderr line with the live inspector's URL (runner/pilot.mjs). */
+/** The stderr line for each request from the Dashboard's Settings page (runner/config-bridge.mjs CONFIG_MARK). */
+const CONFIG_MARK = '[q-pilot] config '
+/** The runner's stderr line with its own inspector's URL (runner/pilot.mjs): only when no Dashboard is up. */
 const INSPECTOR_MARK = '[q-pilot] inspector '
 
 /** Answers one inspector question through the session's own client; the runner waits for the answer file. */
@@ -508,6 +526,130 @@ async function answerAsk($: EngineInterface, file: string) {
 
 const timers = globalThis as unknown as { setTimeout: (f: () => void, ms: number) => number; clearTimeout: (t: number) => void }
 
+// ---- the q-pilot Dashboard -------------------------------------------------------------------------
+
+/** The Dashboard process of this project (runner/dash-server.mjs): a child of this module, one at a time. */
+/** `reused`: another Claude session's process serves it (ours exited at once), so its liveness is checked again on every use. */
+type Dash = { url: string; file: string; root: string; reused: boolean; stop: () => Promise<void> }
+let dash: Dash | null = null
+let dashStarting: Promise<Dash | null> | null = null
+/** The start failed: runs go on without a Dashboard and the person was told once. `/q-pilot dashboard` tries again. */
+let dashDown = false
+/** The Dashboard's URL was toasted in this Claude session. */
+let dashAnnounced = false
+
+/**
+ * One stderr line of a child that may carry marks. Ask Claude and Save as default requests are answered here, for the
+ * Dashboard and for a runner alike; a dash mark is returned.
+ */
+function onRunnerLine($: EngineInterface, text: string): DashMark | undefined {
+  const file = (mark: string) => {
+    try {
+      return (JSON.parse(text.slice(mark.length)) as { file: string }).file
+    } catch {
+      return undefined // Not ours.
+    }
+  }
+  if (text.startsWith(ASK_MARK)) {
+    const f = file(ASK_MARK)
+    if (f) void answerAsk($, f)
+  } else if (text.startsWith(SAVE_MARK)) {
+    const f = file(SAVE_MARK)
+    if (f) void applySaveRequest($, f)
+  } else if (text.startsWith(CONFIG_MARK)) {
+    const f = file(CONFIG_MARK)
+    if (f) void applyConfigRequest($, f)
+  }
+  return parseDashMark(text)
+}
+
+/** Spawns the Dashboard and waits for its ready mark; null when it cannot start (the file is missing, it fails or stays silent). */
+async function startDash($: EngineInterface, o: Opts, root: string): Promise<Dash | null> {
+  const script = `${$.plugin.root}/${DASH_SERVER}`
+  if (!(await $.fs.exists(script).catch(() => false))) return null
+  const stream = $.process.spawn({ argv: [...o.node, script, '--root', root, '--window', o.dashboardWindow], cwd: root, env: {} })
+  const stop = () => closeWithin(stream.return(undefined as never), 3000)
+  let ready!: (m: DashMark | null) => void
+  const marked = new Promise<DashMark | null>(r => (ready = r))
+  let self: Dash | null = null
+  let reused = false
+  void (async () => {
+    let line = ''
+    try {
+      for (;;) {
+        const r = await stream.next()
+        if (r.done) break
+        if (r.value.stream !== 'stderr') continue
+        line = (line + r.value.text).slice(-100_000)
+        for (let i = line.indexOf('\n'); i >= 0; i = line.indexOf('\n')) {
+          const mark = onRunnerLine($, line.slice(0, i))
+          line = line.slice(i + 1)
+          if (mark) {
+            reused = mark.reused
+            ready(mark)
+          }
+        }
+      }
+    } catch {
+      // A failed spawn is the same as one that never answers.
+    }
+    ready(null)
+    // A reused one exits at once; the handle stays until the next ensureDash checks it again.
+    if (self && dash === self && !reused) dash = null
+  })()
+  const timer = timers.setTimeout(() => ready(null), DASH_READY_MS)
+  const mark = await marked
+  timers.clearTimeout(timer)
+  if (!mark) {
+    await stop()
+    return null
+  }
+  self = { url: mark.url, file: mark.file, root, reused: mark.reused, stop }
+  dash = self
+  return self
+}
+
+/**
+ * The Dashboard of this project, started on first use. null: it could not start (runs go on without it; one toast).
+ * The URL is toasted once per Claude session, unless `quiet` (the stop gate).
+ */
+async function ensureDash($: EngineInterface, o: Opts, quiet = false): Promise<Dash | null> {
+  const root = await $.session.root()
+  if (dash && dash.root !== root) {
+    await dash.stop()
+    dash = null
+  }
+  // The other session may have ended since: a new dash-server prints reused again while it lives, else it serves itself.
+  if (dash?.reused) dash = null
+  if (!dash && !dashDown) {
+    dashStarting ??= startDash($, o, root)
+      .catch(() => null)
+      .then(d => {
+        if (!d) {
+          dashDown = true
+          $.ui.toast('q-pilot: the Dashboard could not start; runs go on without it', { timeoutMs: 8000 })
+        }
+        return d
+      })
+      .finally(() => {
+        dashStarting = null
+      })
+    await dashStarting
+  }
+  if (dash && !quiet && !dashAnnounced) {
+    dashAnnounced = true
+    $.ui.toast(`q-pilot: Dashboard ${dash.url}`, { timeoutMs: 8000 })
+  }
+  return dash
+}
+
+/** The env that makes a runner report to the Dashboard: empty when the inspector is off or the Dashboard is down. */
+async function dashEnv($: EngineInterface, o: Opts, quiet = false): Promise<Record<string, string>> {
+  if (o.inspector === 'off') return {}
+  const d = await ensureDash($, o, quiet)
+  return d ? { Q_PILOT_DASH_FILE: d.file } : {}
+}
+
 /** Starts the runner as a child that outlives this tool call; its output is read in the background. */
 async function startTask($: EngineInterface, o: Opts, args: string[], name: string): Promise<LiveTask | { unavailable: string }> {
   const root = await $.session.root()
@@ -517,21 +659,11 @@ async function startTask($: EngineInterface, o: Opts, args: string[], name: stri
   const env: Record<string, string> = {
     ...(key ? { TYPESAFE_API_KEY: key } : {}),
     ...(o.cdpUrlSet ? { Q_PILOT_CDP_URL: o.cdpUrl } : {}),
-  }
-  // The previous task's inspector is closed: one dashboard, one browser at a time.
-  if (lingering) {
-    await lingering.stop()
-    lingering = null
+    ...(await dashEnv($, o)),
   }
   const stream = $.process.spawn({ argv: [...o.node, script, args[0]!, '--root', root, ...args.slice(1)], cwd: root, env })
   const task: LiveTask = { name, events: [], wake: null, ended: false, pending: null, secrets: key ? [key] : [], stop: () => closeWithin(stream.return(undefined as never), 3000), helper: newHelperState() }
-  let resolved = false
   const push = (ev: LiveEvent) => {
-    // The result line ends the task; the runner may stay up afterwards for the inspector, and its exit says nothing new.
-    if (ev.kind === 'exit') {
-      if (resolved) return
-      resolved = true
-    }
     task.events.push(ev)
     const w = task.wake
     task.wake = null
@@ -549,12 +681,6 @@ async function startTask($: EngineInterface, o: Opts, args: string[], name: stri
         }
         if (r.value.stream === 'stdout') {
           stdout += r.value.text
-          // --linger prints the result and keeps serving the inspector: the result is the task's end.
-          if (!resolved && stdout.endsWith('\n') && parseResult(stdout)) {
-            task.ended = true
-            lingering = task
-            push({ kind: 'exit', code: 0, stdout, stderr })
-          }
           continue
         }
         stderr = (stderr + r.value.text).slice(-100_000)
@@ -564,27 +690,11 @@ async function startTask($: EngineInterface, o: Opts, args: string[], name: stri
           line = line.slice(i + 1)
           const inspectorUrl = text.startsWith(INSPECTOR_MARK) ? /^(http:\/\/127\.0\.0\.1:\d+\/\S*)$/.exec(text.slice(INSPECTOR_MARK.length).trim())?.[1] : undefined
           if (inspectorUrl) {
-            $.ui.toast(`q-pilot: live inspector ${inspectorUrl} (opens in your browser)`, { timeoutMs: 8000 })
+            task.inspectorUrl = inspectorUrl
+            $.ui.toast(`q-pilot: inspector ${inspectorUrl} (opens in your browser)`, { timeoutMs: 8000 })
             continue
           }
-          if (text.startsWith(ASK_MARK)) {
-            try {
-              const a = JSON.parse(text.slice(ASK_MARK.length)) as { file: string }
-              void answerAsk($, a.file)
-            } catch {
-              // Not ours.
-            }
-            continue
-          }
-          if (text.startsWith(SAVE_MARK)) {
-            try {
-              const a = JSON.parse(text.slice(SAVE_MARK.length)) as { file: string }
-              void applySaveRequest($, a.file)
-            } catch {
-              // Not ours.
-            }
-            continue
-          }
+          if (onRunnerLine($, text) || text.startsWith(ASK_MARK) || text.startsWith(SAVE_MARK)) continue
           if (!text.startsWith(HELP_MARK)) continue
           try {
             const h = JSON.parse(text.slice(HELP_MARK.length)) as Omit<HelpEvent, 'kind'>
@@ -599,7 +709,6 @@ async function startTask($: EngineInterface, o: Opts, args: string[], name: stri
       code = code ?? 127
     }
     task.ended = true
-    if (lingering === task) lingering = null
     push({ kind: 'exit', code, stdout, stderr })
   })()
   return task
@@ -783,6 +892,12 @@ async function helperAnswer($: EngineInterface, o: Opts, task: LiveTask, ev: Hel
   return undefined
 }
 
+/** `--prompt-group <id>` for a run started from this prompt: the Dashboard lists the runs of one prompt as one entry. */
+async function groupArgs($: EngineInterface): Promise<string[]> {
+  const id = await read($, promptGroup).catch(() => null)
+  return id ? ['--prompt-group', id] : []
+}
+
 /** The tool's answer for pilot_run, always a string, like pilot_test's. */
 async function pilotRun($: EngineInterface, o: Opts, input: Record<string, unknown>, lock: { busy: () => boolean; set: (v: boolean) => void }): Promise<string> {
   const v = validateTask(input)
@@ -797,16 +912,15 @@ async function pilotRun($: EngineInterface, o: Opts, input: Record<string, unkno
   lock.set(true)
   try {
     const { budgetMs } = stopBudget(o.maxTaskMs)
-    // The runner opens the inspector in the person's default browser and prints its URL (toasted in startTask).
+    // The Dashboard opens the run in the person's default browser (the runner opens its own inspector only when no Dashboard is up).
     const inspect = o.inspector === 'off' ? [] : [o.inspector === 'pause' ? '--inspect-pause' : '--inspect']
     const name = String(v.spec.name ?? 'task')
     $.ui.status(`pilot task ${name}…`)
-    // With the inspector: it stays up after the run for review (--linger), and its "Ask Claude" goes through this
-    // session's client (--ask-via-mod); the helper model (else the session's) is shown as the one that answers help requests.
+    // The helper model (else the session's) is shown as the one that answers help requests.
     const sessionModel = inspect.length ? (o.helper !== 'session' ? `${o.helper}, then this session` : await $.session.model().catch(() => '')) : ''
-    const extra = inspect.length ? ['--linger', '--ask-via-mod', ...(sessionModel ? ['--session-model', sessionModel] : [])] : []
+    const extra = sessionModel ? ['--session-model', sessionModel] : []
     const vision = [...visionArgs(o), ...(o.dashboard ? ['--dashboard'] : []), ...(inspect.length ? ['--settings-sources', o.sourcesJson] : [])]
-    const started = await startTask($, o, ['task', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...inspect, '--help', ...extra, ...vision], name)
+    const started = await startTask($, o, ['task', '--spec-json', specJson, '--budget-ms', String(budgetMs), ...inspect, '--help', ...extra, ...vision, ...(await groupArgs($))], name)
     if ('unavailable' in started) return `pilot_run: ${started.unavailable}. Nothing was run; tell the user.`
     live = started
     return await awaitTask($, o, started)
@@ -843,7 +957,7 @@ const taskPrompt = (request: string) =>
     '1. Work out where it starts: a full https URL for a public site, or the route of this project\'s app (read the code for that). Prefer a URL that already holds the search when the site has one (Google Flights: https://www.google.com/travel/flights?q=Flights%20from%20SGN%20to%20DAD%20on%202026-10-20%20one%20way&hl=en&curr=VND): no form, no autocomplete, no date picker.',
     '2. Write the task: a goal in plain words that says when to stop and what not to do (never buy, book, send or delete unless the request says so), and fixtures for every value Jev must type (search terms, places, dates, emails; "$env:E2E_<NAME>" for secrets, never a literal password). Jev only sees fixture keys, so without fixtures it cannot type. A request that is really several searches (the cheapest day in a date range) is one search the goal names, or the site\'s price calendar; say which in the goal.',
     '3. Add checks when the final page can prove the result (a url that holds the route and date, a heading, a price). Without checks you confirm the end yourself.',
-    '4. Call mcp__q-pilot__pilot_run with it. Jev drives the browser; the user can watch and pause it in the live inspector. When Jev is stuck, pilot_run answers "needs_help" with the page: act with mcp__q-pilot__pilot_help (by element index) and hand back with then "resume", or end with "done"/"stop". On a CAPTCHA, ask the user to solve it in the browser window, then answer "observe".',
+    '4. Call mcp__q-pilot__pilot_run with it, once for this request (a second run only when the first ended blocked or failed). Jev drives the browser; the user can watch and pause it in the live inspector. When Jev is stuck, pilot_run answers "needs_help" with the page: act with mcp__q-pilot__pilot_help (by element index) and hand back with then "resume", or end with "done"/"stop". On a CAPTCHA, ask the user to solve it in the browser window, then answer "observe".',
     '5. Report verbatim: the outcome, the steps (Jev\'s and yours), red checks with their actual values, the screenshot path. If the outcome is done and no check ran, say whether you confirmed it on the page or it is not verified.',
   ].join('\n')
 
@@ -958,7 +1072,7 @@ async function gate($: EngineInterface, o: Opts, call: GateCall): Promise<GateRe
   const t0 = await $.clock.now()
   $.ui.status(`pilot running ${sel.ids.length} flow(s)…`)
   const { budgetMs, timeoutMs } = stopBudget(o.maxStopMs)
-  const out = await runRunner($, o, ['run', '--flows', sel.ids.join(','), '--budget-ms', String(budgetMs)], timeoutMs)
+  const out = await runRunner($, o, ['run', '--flows', sel.ids.join(','), '--budget-ms', String(budgetMs), '--session-kind', 'gate'], timeoutMs, true)
   if ('unavailable' in out) {
     $.ui.status(`pilot ⚠ ${cap(out.unavailable, 80)}`)
     $.ui.toast(`q-pilot: ${out.unavailable}`, { timeoutMs: 8000 })
@@ -1138,15 +1252,15 @@ async function commandRun($: EngineInterface, o: Opts, target: string): Promise<
   if ('error' in loaded) return { text: `q-pilot: ${loaded.error}. Fix it, then run again.`, exitCode: 1 }
   const cfg = loaded.cfg
   let args: string[]
-  if (target === 'all') args = ['run', '--all']
+  if (target === 'all') args = ['run', '--all', '--session-kind', 'flow']
   else if (target) {
     const bad = idError('/q-pilot run [all|<id>]', target)
     if (bad) return bad
-    args = ['run', '--flows', target]
+    args = ['run', '--flows', target, '--session-kind', 'flow']
   } else {
     const sel = selectFlows(await read($, edits), await loadFlows($, cfg), cfg, 'affected')
     if (sel.mode === 'none') return { text: 'No UI-relevant edits pending that a flow covers. Use /q-pilot run all or /q-pilot run <id>.' }
-    args = ['run', '--flows', sel.ids.join(',')]
+    args = ['run', '--flows', sel.ids.join(','), '--session-kind', 'flow']
   }
   $.ui.status('pilot running…')
   const out = await runRunner($, o, args, COMMAND_TIMEOUT_MS)
@@ -1168,7 +1282,7 @@ async function commandRecord($: EngineInterface, o: Opts, id: string): Promise<{
   const bad = idError('/q-pilot record <id>', id)
   if (bad) return bad
   $.ui.status(`pilot recording ${id}…`)
-  const out = await runRunner($, o, ['record', '--flow', id], COMMAND_TIMEOUT_MS)
+  const out = await runRunner($, o, ['record', '--flow', id, '--session-kind', 'flow'], COMMAND_TIMEOUT_MS)
   if ('unavailable' in out || 'error' in out) return { text: `q-pilot: ${'unavailable' in out ? out.unavailable : out.error}`, exitCode: 1 }
   const f = out.result.flows?.find(x => x.id === id) ?? out.result.flows?.[0]
   if (!f) return { text: 'q-pilot: the runner answered without a flow result.', exitCode: 1 }
@@ -1212,6 +1326,33 @@ async function commandExport($: EngineInterface, o: Opts, id: string): Promise<{
   if ('unavailable' in out || 'error' in out) return { text: `q-pilot: ${'unavailable' in out ? out.unavailable : out.error}`, exitCode: 1 }
   const where = [out.result.out, out.result.path, out.result.file].find((v): v is string => typeof v === 'string')
   return { text: where ? `Exported ${id} to ${where}.` : `Exported ${id}.` }
+}
+
+/** `/q-pilot dashboard`: the q-pilot Dashboard of this project, started when it is not up yet (a run is not needed). */
+async function openDashboard($: EngineInterface, o: Opts): Promise<{ text: string; exitCode?: number }> {
+  if (o.inspector === 'off') return { text: 'q-pilot: the Dashboard is off (inspector is off). /q-pilot config set inspector on turns it on.', exitCode: 1 }
+  dashDown = false
+  const d = await ensureDash($, o, true)
+  const url = d?.url ?? live?.inspectorUrl
+  if (!url) return { text: 'q-pilot: the Dashboard could not start. Runs still work; their results are in .q-pilot/runs/.', exitCode: 1 }
+  dashAnnounced = true
+  // The mod cannot open a browser or reach loopback itself: the Dashboard's own CLI asks the running server to open the tab.
+  let opened = false
+  if (d) {
+    const root = await $.session.root()
+    opened = await $.process
+      .run([...o.node, `${$.plugin.root}/${DASH_SERVER}`, '--open', '--root', root, '--window', o.dashboardWindow], { cwd: root, timeoutMs: 10_000 })
+      .then(r => r.exitCode === 0)
+      .catch(() => false)
+  }
+  $.ui.toast(`q-pilot: Dashboard ${url}`, { timeoutMs: 8000 })
+  return { text: `q-pilot Dashboard: ${url}${opened ? '' : ' (open it in your browser)'}` }
+}
+
+/** Bare `/q-pilot`: one line of state and where to go next. */
+async function describeOverview($: EngineInterface, o: Opts): Promise<string> {
+  const s = await statusJson($, o)
+  return `q-pilot · mode: ${s.mode} · ${s.summary ?? 'no flow run yet'} · pending edits: ${s.pendingEdits}\n/q-pilot dashboard opens the Dashboard · /q-pilot flows lists the flows · /q-pilot help shows every command`
 }
 
 /** Writes q-pilot.config.json and the example flow, each only when missing: never overwrites. */
@@ -1326,12 +1467,12 @@ function takeScope(args: string[]): { rest: string[]; scope: WriteScope } | { er
 }
 
 /**
- * `/q-pilot config`: shows every setting with its source. `set <key> <value>` (or just `<key> <value>`) and `unset <key>`
+ * `/q-pilot config`: shows the settings that differ from the default with their source (`--all`: every setting). `set <key> <value>` (or just `<key> <value>`) and `unset <key>`
  * write one scope (user by default, or --scope project|local); `explain <key>` lists every scope; `reset` empties a scope.
  */
 async function commandConfig($: EngineInterface, rest: string[]): Promise<{ text: string; exitCode?: number }> {
   const sub = rest[0]?.toLowerCase()
-  if (!sub) return { text: showSettings(await settingsNow($)) }
+  if (!sub || (sub === '--all' && rest.length === 1)) return { text: showSettings(await settingsNow($), sub === '--all') }
   if (sub === 'explain') {
     if (!rest[1]) return { text: 'Usage: /q-pilot config explain <key>', exitCode: 2 }
     const text = explainSetting(rest[1], await settingsNow($))
@@ -1409,6 +1550,46 @@ async function applySaveRequest($: EngineInterface, file: string): Promise<void>
   await answer({ ok: true, message })
 }
 
+/**
+ * The Dashboard's Settings page: get, set or unset one setting, through the same path as `/q-pilot config set|unset`
+ * (the same checks, the same personal-key rule). Every answer carries the rows as they resolve now.
+ */
+async function applyConfigRequest($: EngineInterface, file: string): Promise<void> {
+  if (!/config-\d+\.json$/.test(file)) return
+  const files = async () => ({ user: 'q-pilot plugin store', project: await settingsPath($, 'project'), local: await settingsPath($, 'local') })
+  const answer = async (out: { ok: true; message?: string } | { error: string }) => {
+    const body = { ...out, settings: settingRows(await settingsNow($)), files: await files() }
+    await $.fs.write(file.replace(/\.json$/, '.answer.json'), JSON.stringify(body)).catch(() => undefined)
+  }
+  let req: { op?: unknown; key?: unknown; value?: unknown; scope?: unknown }
+  try {
+    req = JSON.parse(await $.fs.read(file))
+  } catch (err) {
+    return await answer({ error: `the request could not be read (${errMsg(err)})` })
+  }
+  if (req.op === 'get') return await answer({ ok: true })
+  if (req.op !== 'set' && req.op !== 'unset') return await answer({ error: 'op must be get, set or unset' })
+  const scope = req.scope as WriteScope
+  if (!WRITE_SCOPES.includes(scope)) return await answer({ error: `scope must be ${WRITE_SCOPES.join(', ')}` })
+  if (typeof req.key !== 'string' || !keyOf(req.key)) return await answer({ error: `Unknown setting "${String(req.key)}".` })
+  if (req.op === 'set' && typeof req.value !== 'string') return await answer({ error: 'value must be a string' })
+  const loaded = await readWritable($, scope)
+  if ('error' in loaded) return await answer({ error: loaded.error })
+  const next = req.op === 'set' ? applyConfig(loaded.layer, req.key, req.value as string, scope) : unsetConfig(loaded.layer, req.key)
+  if (typeof next === 'string') return await answer({ error: next })
+  try {
+    await writeLayer($, scope, next)
+  } catch (err) {
+    return await answer({ error: `could not write the ${scope} settings: ${errMsg(err)}` })
+  }
+  const key = keyOf(req.key)!
+  const r = await settingsNow($)
+  const where = `${scope}${scope === 'user' ? '' : ` (${SETTINGS_FILES[scope]})`}`
+  const message = req.op === 'set' ? `saved ${key}=${shownValue(r.values[key])} to ${where}` : `removed ${key} from ${where}`
+  $.ui.toast(`q-pilot: ${message}`, { timeoutMs: 8000 })
+  await answer({ ok: true, message })
+}
+
 // ---- register --------------------------------------------------------------------------------------
 
 export const register: Register = (on, options) => {
@@ -1417,6 +1598,12 @@ export const register: Register = (on, options) => {
   let busy = false
 
   on('session.start', async ($, e, next) => {
+    // A new Claude session starts its own Dashboard and announces it once.
+    const old = dash
+    dash = null
+    dashDown = false
+    dashAnnounced = false
+    if (old) void old.stop()
     await update($, interactive, () => e.isInteractive !== false).catch(() => undefined)
     try {
       // Settings: the stored ones, else (first start after the upgrade) a /q-pilot mode set before settings existed, kept once.
@@ -1452,7 +1639,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'q-pilot',
       description: 'Test a UI change from a prompt, and run, record and accept saved user flows',
-      argumentHint: 'task "<prompt>" | test "<prompt>" | save [<runId>|last] [<name>] | run [all|<id>] | record <id> | accept [<id>] | status | export <id> | init | config [set|unset|explain|reset] [<key> [<value>]] [--scope user|project|local]',
+      argumentHint: 'task "<prompt>" | test "<prompt>" | dashboard | flows | config',
     })
     await $.tool.register({
       name: TOOL,
@@ -1462,7 +1649,7 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: TOOL_RUN,
       description:
-        "Runs one browser task from the user's prompt, like jev-ultrafast: Jev picks every click and field, Playwright executes it, and the user can watch and pause it in a live inspector. Put every value Jev must type in fixtures. When Jev is stuck (a loop, a widget it cannot work, a CAPTCHA, a DONE nothing checks) it answers needs_help with the page, and the run waits for pilot_help. Checks are optional. Call it once per task. To check UI you built or changed, use pilot_test instead.",
+        "Runs one browser task from the user's prompt, like jev-ultrafast: Jev picks every click and field, Playwright executes it, and the user can watch and pause it in a live inspector. Put every value Jev must type in fixtures. When Jev is stuck (a loop, a widget it cannot work, a CAPTCHA, a DONE nothing checks) it answers needs_help with the page, and the run waits for pilot_help. Checks are optional. Call it once per user prompt: put several searches or sites the prompt asks for in one goal, and when Jev is stuck answer with pilot_help instead of starting a new run. Start another run for the same prompt only when the first ended blocked or failed, or the user asks for more. To check UI you built or changed, use pilot_test instead.",
       inputSchema: TASK_SCHEMA,
     })
     await $.tool.register({
@@ -1549,6 +1736,9 @@ export const register: Register = (on, options) => {
   on('prompt.submit', async ($, e, next) => {
     // The person's own prompt resets the cap; our follow-ups (origin plugin) do not.
     if (USER_ORIGINS.has(e.origin?.kind)) await update($, followUps, () => 0)
+    // Every prompt, /q-pilot task and test included (origin plugin), starts a new Dashboard group.
+    const id = `p${(await $.clock.now()).toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    await update($, promptGroup, () => id)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -1579,9 +1769,14 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'q-pilot' }, async ($, e) => {
     const args = e.args.trim()
-    const [sub = 'status', ...rest] = args.split(/\s+/).filter(Boolean)
+    const [first, ...tail] = args.split(/\s+/).filter(Boolean)
     const busyText = { text: 'q-pilot: a gate run is in progress; try again when it ends.', exitCode: 1 }
     const o = await optsFor($, jevKey)
+    if (!first) return { text: await describeOverview($, o) }
+    // `flows <name> …` and the old top-level `<name> …` are the same command.
+    const inFlows = first === 'flows'
+    const [sub, ...rest] = inFlows ? (tail.length ? tail : ['status']) : [first, ...tail]
+    if (inFlows && !['run', 'save', 'record', 'accept', 'export', 'status', 'help'].includes(sub!)) return { text: `Unknown flows subcommand "${sub}".\n${FLOWS_USAGE}`, exitCode: 2 }
     switch (sub) {
       case 'run':
         if (busy) return busyText
@@ -1602,6 +1797,8 @@ export const register: Register = (on, options) => {
         return commandExport($, o, rest[0] ?? '')
       case 'status':
         return { text: await describeStatus($, o) }
+      case 'dashboard':
+        return openDashboard($, o)
       case 'init':
         return commandInit($)
       case 'config':
@@ -1611,9 +1808,9 @@ export const register: Register = (on, options) => {
         if (!rest[0]) return { text: `mode is ${o.mode}. Usage: /q-pilot config mode off|affected|all` }
         return commandConfig($, ['mode', rest[0]])
       case 'help':
-        return { text: USAGE }
+        return { text: inFlows ? FLOWS_USAGE : USAGE }
       default:
-        return { text: `Unknown subcommand "${sub}".\n${USAGE}`, exitCode: 2 }
+        return { text: `Unknown subcommand "${sub}".\n${inFlows ? FLOWS_USAGE : USAGE}`, exitCode: 2 }
     }
   })
 
@@ -1627,11 +1824,18 @@ export const register: Register = (on, options) => {
     if (!run || bad.length === 0) return next(e)
     const driftOnly = bad.every(f => f.outcome === 'drift')
     const { Box, Text } = $.ui.resolve(e)
+    const link = bandLink(dash?.url, run.runId, bad[0]?.id)
+    // The link is its own Text and keeps its width: on a narrow terminal the summary is cut first.
     return (
       <Box flexDirection="row" gap={2}>
         <Text key="red" wrap="truncate" color={driftOnly ? WARN_COLOR : RED_COLOR}>
           {`pilot ${summarize(run.flows, o.trust)}${driftOnly ? ' · /q-pilot accept' : ''}`}
         </Text>
+        {link ? (
+          <Box key="link" flexShrink={0}>
+            <Text wrap="truncate">{link}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
   })

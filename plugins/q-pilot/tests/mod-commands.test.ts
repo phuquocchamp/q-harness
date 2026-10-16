@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { APP_BUG, DRIFT, ROOT, calls, edit, fakeHost, flow, run, say, seedProject, start, stop } from './host'
+import { APP_BUG, DRIFT, ROOT, calls, plain, edit, fakeHost, flow, run, say, seedProject, start, stop } from './host'
 
 type Status = {
   mode: string
@@ -53,9 +53,9 @@ test('/q-pilot run all and run <id> pass --all and --flows', async ($, on) => {
   const all = await run($, 'run all')
   expect(all.exitCode).toBe(0)
   expect(all.text).toMatch(/^✓ 2\/2 flows\n {2}✓ checkout: pass/)
-  expect(host.runs[0]).toEqual(['node', expect.stringMatching(/pilot\.mjs$/), 'run', '--root', ROOT, '--all'])
+  expect(host.runs[0]).toEqual(['node', expect.stringMatching(/pilot\.mjs$/), 'run', '--root', ROOT, '--all', '--session-kind', 'flow'])
   await run($, 'run checkout')
-  expect(host.runs[1]!.slice(-2)).toEqual(['--flows', 'checkout'])
+  expect(host.runs[1]!.slice(-4)).toEqual(['--flows', 'checkout', '--session-kind', 'flow'])
   expect((await run($, 'run Bad_ID')).exitCode).toBe(2)
 })
 
@@ -67,7 +67,7 @@ test('/q-pilot run without an argument runs the flows the pending edits affect',
   expect((await run($, 'run')).text).toMatch(/No UI-relevant edits pending/)
   await edit($, `${ROOT}/src/checkout.html`)
   await run($, 'run')
-  expect(host.runs[0]!.slice(-2)).toEqual(['--flows', 'checkout'])
+  expect(host.runs[0]!.slice(-4)).toEqual(['--flows', 'checkout', '--session-kind', 'flow'])
 })
 
 test('/q-pilot run without a config explains, and a red run exits 1 and shows in the band', async ($, on) => {
@@ -90,7 +90,7 @@ test('/q-pilot record writes through the runner and reports needs-verify with th
   await start($)
   host.runner.record = [say([flow('checkout', 'pass', { recorded: true })], 'record')]
   expect((await run($, 'record checkout')).text).toMatch(/checkout: recorded, verify passed/)
-  expect(calls(host.runs, 'record')[0]!.slice(2)).toEqual(['record', '--root', ROOT, '--flow', 'checkout'])
+  expect(calls(host.runs, 'record')[0]!.slice(2)).toEqual(['record', '--root', ROOT, '--flow', 'checkout', '--session-kind', 'flow'])
   host.runner.record = [say([flow('checkout', 'needs-verify', { suggestedVerify: [{ url: '^/done$' }] })], 'record')]
   const r = await run($, 'record checkout')
   expect(r.exitCode).toBe(1)
@@ -167,11 +167,12 @@ test('/q-pilot mode switches the gate and survives in the store', async ($, on) 
 test('/q-pilot config shows, sets, checks and resets the settings; they survive in the store', async ($, on) => {
   const host = fakeHost(on)
   await start($)
-  const shown = (await run($, 'config')).text
+  const shown = (await run($, 'config --all')).text
   expect(shown).toMatch(/helper +haiku/)
   expect(shown).toMatch(/vision +gated/)
   expect(shown).toMatch(/box +off/)
   expect(shown).toMatch(/dashboard +off/)
+  expect(shown).toMatch(/dashboardWindow +app/)
   expect((await run($, 'config helper Opus')).text).toBe('q-pilot helper opus.')
   expect((await run($, 'config box on')).text).toBe('q-pilot box on.')
   expect((await run($, 'config visionmodel jev-1.14.0')).text).toBe('q-pilot visionModel jev-1.14.0.')
@@ -183,6 +184,107 @@ test('/q-pilot config shows, sets, checks and resets the settings; they survive 
   expect((await run($, 'config helper default')).text).toBe('q-pilot helper haiku.')
   expect((await run($, 'config reset')).text).toMatch(/^q-pilot user settings reset/)
   expect(host.store.get('settings')).toEqual({})
+})
+
+test('/q-pilot config lists only what differs from the default, --all lists every setting', async ($, on) => {
+  const host = fakeHost(on)
+  await start($)
+  const bare = (await run($, 'config')).text
+  expect(bare).toMatch(/\d+ settings at default · --all to see every setting/)
+  expect(bare).not.toMatch(/helper +haiku/)
+  expect((await run($, 'config helper opus')).text).toBe('q-pilot helper opus.')
+  const some = (await run($, 'config')).text
+  expect(row(some, 'helper')).toMatch(/helper +opus +user/)
+  expect(row(some, 'vision')).toBe('')
+  expect(some).toMatch(/14 settings at default/)
+  const all = (await run($, 'config --all')).text
+  expect(row(all, 'vision')).toMatch(/vision +gated +default/)
+  expect(all).not.toMatch(/--all to see/)
+  expect(host.store.get('settings')).toEqual({ helper: 'opus' })
+})
+
+test('/q-pilot with no arguments prints one status line and points to the dashboard; help lists the short menu', async ($, on) => {
+  fakeHost(on)
+  await start($)
+  const bare = (await run($, '')).text
+  expect(bare.split('\n')).toHaveLength(2)
+  expect(bare).toMatch(/mode: affected/)
+  expect(bare).toMatch(/\/q-pilot dashboard/)
+  const help = (await run($, 'help')).text
+  for (const l of ['task "<prompt>"', 'test "<prompt>"', 'dashboard', 'flows ', 'config ', 'init ']) expect(help).toContain(`  ${l}`)
+  expect(help).not.toMatch(/^ {2}(save|record|accept|export|status) /m)
+  expect((await run($, 'flows help')).text).toMatch(/record <id>/)
+})
+
+test('/q-pilot flows groups the flow commands; the old top-level names still work', async ($, on) => {
+  const host = fakeHost(on)
+  seedProject(host.files)
+  host.runner.run = [say([flow('home', 'pass')]), say([flow('home', 'pass')])]
+  await start($)
+  expect((await run($, 'flows')).text).toMatch(/flows: none run yet/)
+  expect((await run($, 'flows run home')).text).toMatch(/home/)
+  expect((await run($, 'flows status')).text).toMatch(/✓ home: pass/)
+  expect((await run($, 'status')).text).toMatch(/✓ home: pass/)
+  expect((await run($, 'run home')).text).toMatch(/home/)
+  expect((await run($, 'flows bogus')).exitCode).toBe(2)
+  expect((await run($, 'flows config')).exitCode).toBe(2)
+})
+
+test('/q-pilot dashboard starts the Dashboard when no run has happened yet, and returns its URL', async ($, on) => {
+  const host = fakeHost(on)
+  await start($)
+  expect((await run($, 'dashboard')).text).toBe('q-pilot Dashboard: http://127.0.0.1:8767/')
+  expect(host.dashSpawns).toHaveLength(1)
+  expect(host.runs).toEqual([])
+  expect(host.dashOpens).toHaveLength(1)
+  expect(host.dashOpens[0]!.slice(-5)).toEqual(['--open', '--root', ROOT, '--window', 'app'])
+  expect(host.toasts).toEqual(['q-pilot: Dashboard http://127.0.0.1:8767/'])
+  // A second call reuses the process and repeats the URL.
+  expect((await run($, 'dashboard')).text).toBe('q-pilot Dashboard: http://127.0.0.1:8767/')
+  expect(host.dashSpawns).toHaveLength(1)
+})
+
+test('/q-pilot dashboard says so when the tab could not be opened', async ($, on) => {
+  const host = fakeHost(on)
+  host.dash.openFails = true
+  await start($)
+  const r = await run($, 'dashboard')
+  expect(r.text).toBe('q-pilot Dashboard: http://127.0.0.1:8767/ (open it in your browser)')
+  expect(r.exitCode).toBeUndefined()
+})
+
+test('dashboardWindow tab reaches the Dashboard as --window tab, at the spawn and at --open; app is the default; a bad value is refused', async ($, on) => {
+  const host = fakeHost(on)
+  await start($)
+  expect((await run($, 'config dashboardWindow window')).exitCode).toBe(2)
+  expect((await run($, 'config set dashboardWindow tab --scope project')).text).toMatch(/^q-pilot dashboardWindow tab \(project/)
+  await run($, 'dashboard')
+  expect(host.dashSpawns[0]!.slice(-2)).toEqual(['--window', 'tab'])
+  expect(host.dashOpens[0]!.slice(-2)).toEqual(['--window', 'tab'])
+  expect(row((await run($, 'config')).text, 'dashboardWindow')).toMatch(/dashboardWindow +tab +project/)
+})
+
+test('/q-pilot dashboard with the inspector off starts nothing', async ($, on) => {
+  const host = fakeHost(on)
+  host.store.set('settings', { inspector: 'off' })
+  await start($)
+  const r = await run($, 'dashboard')
+  expect(r.exitCode).toBe(1)
+  expect(r.text).toMatch(/Dashboard is off/)
+  expect(host.dashSpawns).toEqual([])
+})
+
+test('/q-pilot run and record report to the Dashboard as flow sessions', async ($, on) => {
+  const host = fakeHost(on)
+  seedProject(host.files)
+  host.runner.run = [say([flow('checkout', 'pass')])]
+  host.runner.record = [say([flow('checkout', 'pass', { recorded: true })], 'record')]
+  await start($)
+  await run($, 'run checkout')
+  await run($, 'record checkout')
+  expect(host.envs.map(e => e?.Q_PILOT_DASH_FILE)).toEqual([`${ROOT}/.q-pilot/dashboard/server.json`, `${ROOT}/.q-pilot/dashboard/server.json`])
+  expect(calls(host.runs, 'run')[0]).toContain('flow')
+  expect(host.dashSpawns).toHaveLength(1)
 })
 
 test('the first start after the upgrade keeps a /q-pilot mode set before settings existed', async ($, on) => {
@@ -202,7 +304,7 @@ test('scopes: local beats project beats user beats default, and config shows eac
   host.files.set(PROJECT, JSON.stringify({ helper: 'sonnet', vision: 'off', dashboard: true }))
   host.files.set(LOCAL, JSON.stringify({ helper: 'session' }))
   await start($)
-  const shown = (await run($, 'config')).text
+  const shown = (await run($, 'config --all')).text
   expect(row(shown, 'helper')).toMatch(/helper +session +local +project=sonnet, user=opus/)
   expect(row(shown, 'vision')).toMatch(/vision +off +project +user=always/)
   expect(row(shown, 'box')).toMatch(/box +on +user +-/)
@@ -225,7 +327,7 @@ test('personal keys in the project or local file are ignored with a warning; set
   seedProject(host.files)
   host.runner.run = [say([flow('checkout', 'pass')])]
   await start($)
-  const shown = (await run($, 'config')).text
+  const shown = (await run($, 'config --all')).text
   expect(row(shown, 'node')).toMatch(/node\* +node +default/)
   expect(row(shown, 'trust')).toMatch(/trust\* +shadow +default/)
   expect(row(shown, 'mode')).toMatch(/mode +all +project/)
@@ -246,7 +348,7 @@ test('unknown keys, secrets and bad values in a file are dropped with a warning 
   const host = fakeHost(on)
   host.files.set(PROJECT, JSON.stringify({ jevApiKey: 'sk-abcdefghijklmnop', colour: 'red', helper: 'gpt', mode: 'all', maxTaskSeconds: 5 }))
   await start($)
-  const shown = (await run($, 'config')).text
+  const shown = (await run($, 'config --all')).text
   expect(shown).toMatch(/! project: "jevApiKey" looks like a secret/)
   expect(shown).toMatch(/! project: unknown setting "colour"/)
   expect(shown).toMatch(/! project: helper must be haiku\|sonnet\|opus\|session/)
@@ -259,7 +361,7 @@ test('invalid JSON in a settings file is a warning, not a crash, and set refuses
   const host = fakeHost(on)
   host.files.set(PROJECT, '{ "mode": ')
   await start($)
-  const shown = (await run($, 'config')).text
+  const shown = (await run($, 'config --all')).text
   expect(shown).toMatch(/! project: \.q-pilot\/settings\.json could not be read/)
   expect(row(shown, 'mode')).toMatch(/mode +affected +default/)
   const r = await run($, 'config set mode all --scope project')
@@ -310,16 +412,16 @@ test('two sessions see each other\'s settings: every call re-reads the files and
   seedProject(host.files)
   host.runner.run = [say([flow('checkout', 'pass'), flow('home', 'pass')])]
   await start($)
-  expect(row((await run($, 'config')).text, 'mode')).toMatch(/mode +affected +default/)
+  expect(row((await run($, 'config --all')).text, 'mode')).toMatch(/mode +affected +default/)
   // Another session (or an editor) changes a file and the shared store behind this one's back.
   host.files.set(PROJECT, JSON.stringify({ mode: 'all' }))
-  expect(row((await run($, 'config')).text, 'mode')).toMatch(/mode +all +project/)
+  expect(row((await run($, 'config --all')).text, 'mode')).toMatch(/mode +all +project/)
   await edit($, `${ROOT}/src/other.html`)
   expect((await stop($)).block).toBeUndefined()
-  expect(calls(host.runs, 'run')[0]!.at(-3)).toBe('checkout,home')
+  expect(calls(host.runs, 'run')[0]!.at(-5)).toBe('checkout,home')
   host.store.set('settings', { mode: 'off' })
   host.files.delete(PROJECT)
-  expect(row((await run($, 'config')).text, 'mode')).toMatch(/mode +off +user/)
+  expect(row((await run($, 'config --all')).text, 'mode')).toMatch(/mode +off +user/)
 })
 
 test('cdpUrl: the shell variable is the env scope and wins over user; a set value reaches the runner, off included', async ($, on) => {
@@ -329,16 +431,16 @@ test('cdpUrl: the shell variable is the env scope and wins over user; a set valu
   host.env.set('Q_PILOT_CDP_URL', 'http://127.0.0.1:9222')
   await start($)
   await run($, 'config set cdpUrl off')
-  const shown = (await run($, 'config')).text
+  const shown = (await run($, 'config --all')).text
   expect(row(shown, 'cdpUrl')).toMatch(/cdpUrl\* +http:\/\/127\.0\.0\.1:9222 +env +user=off/)
   await run($, 'run all')
-  expect(host.envs[0]).toEqual({ Q_PILOT_CDP_URL: 'http://127.0.0.1:9222' })
+  expect(plain(host.envs[0])).toEqual({ Q_PILOT_CDP_URL: 'http://127.0.0.1:9222' })
   host.env.delete('Q_PILOT_CDP_URL')
   await run($, 'run all')
-  expect(host.envs[1]).toEqual({ Q_PILOT_CDP_URL: '' })
+  expect(plain(host.envs[1])).toEqual({ Q_PILOT_CDP_URL: '' })
   await run($, 'config unset cdpUrl')
   await run($, 'run all')
-  expect(host.envs[2]).toEqual({})
+  expect(plain(host.envs[2])).toEqual({})
 })
 
 test('lastRun and the last run per flow are kept per project root', async ($, on) => {

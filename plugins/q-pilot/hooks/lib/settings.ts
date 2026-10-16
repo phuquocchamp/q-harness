@@ -12,6 +12,8 @@ export type PilotSettings = {
   box: boolean
   inspector: 'on' | 'pause' | 'off'
   dashboard: boolean
+  /** How the q-pilot Dashboard opens: its own app window, or a tab in the default browser. */
+  dashboardWindow: 'app' | 'tab'
   mode: 'off' | 'affected' | 'all'
   cdpUrl: string
   node: string
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: PilotSettings = {
   box: false,
   inspector: 'on',
   dashboard: false,
+  dashboardWindow: 'app',
   mode: 'affected',
   cdpUrl: '',
   node: 'node',
@@ -52,8 +55,9 @@ export const SPECS: Record<Key, Spec> = {
   vision: { kind: 'enum', values: ['off', 'gated', 'always'], help: 'Jev sees the screenshot: never, when unsure, every step (tasks and tests; not stop-gate replay)' },
   visionModel: { kind: 'enum', values: ['jev-1.13.0', 'jev-1.14.0'], help: 'Jev model that answers with the screenshot' },
   box: { kind: 'bool', help: 'Box rescue: Jev 1.14 finds the control on the screenshot when stuck' },
-  inspector: { kind: 'enum', values: ['on', 'pause', 'off'], help: 'live inspector in your browser for each task (pause: hold before step 1)' },
+  inspector: { kind: 'enum', values: ['on', 'pause', 'off'], help: 'q-pilot Dashboard for each run, opened for tasks (pause: hold before step 1)' },
   dashboard: { kind: 'bool', help: 'show runs in the Playwright Dashboard (playwright-cli show); pause in the inspector before taking control' },
+  dashboardWindow: { kind: 'enum', values: ['app', 'tab'], help: 'q-pilot Dashboard opens as its own app window (app) or a tab in your default browser (tab)' },
   mode: { kind: 'enum', values: ['off', 'affected', 'all'], help: 'stop gate: which saved flows run when a turn ends' },
   cdpUrl: { kind: 'string', help: 'run in your own Chrome (e.g. http://127.0.0.1:9222); off: launch Chromium', personal: true },
   node: { kind: 'string', help: 'Node 18+ command that runs the runner', personal: true },
@@ -207,17 +211,21 @@ const shown = (v: unknown) => (typeof v === 'boolean' ? (v ? 'on' : 'off') : v =
 
 const overrides = (s: Source) => (s.overridden.length ? s.overridden.map(o => `${o.scope}=${shown(o.value)}`).join(', ') : '-')
 
-/** `/q-pilot config`: every setting with its value, the scope it came from, what it overrides, and the warnings. */
-export function showSettings(r: Resolved): string {
+/** `/q-pilot config`: the settings with their value, the scope it came from, what it overrides, and the warnings. Without `all`, only those that differ from the default. */
+export function showSettings(r: Resolved, all = true): string {
   const row = (k: Key) => `  ${(SPECS[k].personal ? `${k}*` : k).padEnd(16)} ${shown(r.values[k]).padEnd(12)} ${r.sources[k].scope.padEnd(8)} ${overrides(r.sources[k]).padEnd(22)} ${SPECS[k].help} (${valuesOf(k)})`
   const head = `  ${'key'.padEnd(16)} ${'value'.padEnd(12)} ${'source'.padEnd(8)} ${'overrides'.padEnd(22)} help`
+  const listed = KEYS.filter(k => all || r.sources[k].scope !== 'default')
+  const basic = listed.filter(k => !SPECS[k].advanced)
+  const advanced = listed.filter(k => SPECS[k].advanced)
+  const atDefault = KEYS.length - listed.length
   return [
     'q-pilot settings, highest scope first: cli > env (Q_PILOT_CDP_URL) > local > project > user > default',
-    head,
-    ...KEYS.filter(k => !SPECS[k].advanced).map(row),
-    '  advanced:',
-    ...KEYS.filter(k => SPECS[k].advanced).map(row),
-    '  * personal: read only from user, env and cli, never from the project or local file',
+    ...(listed.length ? [head] : []),
+    ...basic.map(row),
+    ...(advanced.length ? ['  advanced:', ...advanced.map(row)] : []),
+    ...(all ? [] : [`  ${atDefault} settings at default · --all to see every setting`]),
+    ...(listed.some(k => SPECS[k].personal) ? ['  * personal: read only from user, env and cli, never from the project or local file'] : []),
     ...(r.warnings.length ? ['warnings:', ...r.warnings.map(w => `  ! ${w}`)] : []),
     'Change: /q-pilot config set <key> <value> [--scope user|project|local] · unset <key> [--scope …] · explain <key> · reset [--scope …]',
   ].join('\n')
@@ -235,4 +243,57 @@ export function explainSetting(typedKey: string, r: Resolved): string {
     return `  ${scope.padEnd(8)} ${text.padEnd(14)} ${scope === src.scope ? '<- wins' : ''}`.trimEnd()
   })
   return [`${key}: ${shown(r.values[key])} (${src.scope})`, `  ${SPECS[key].help} (${valuesOf(key)})`, ...(SPECS[key].personal ? ['  personal: only user, env and cli are read'] : []), ...rows, ...(ENV_VARS[key] ? [`  env variable: ${ENV_VARS[key]}`] : [])].join('\n')
+}
+
+// ---- rows for the Dashboard's Settings page ------------------------------------------------------------
+
+/** The Settings page's sections. */
+const GROUPS: Record<Key, 'Runs' | 'Jev vision' | 'Helper' | 'Dashboard' | 'Browser' | 'Flows'> = {
+  helper: 'Helper',
+  vision: 'Jev vision',
+  visionModel: 'Jev vision',
+  box: 'Jev vision',
+  inspector: 'Dashboard',
+  dashboard: 'Dashboard',
+  dashboardWindow: 'Dashboard',
+  mode: 'Flows',
+  cdpUrl: 'Browser',
+  node: 'Browser',
+  trust: 'Flows',
+  followUp: 'Flows',
+  maxStopSeconds: 'Flows',
+  maxTestSeconds: 'Runs',
+  maxTaskSeconds: 'Runs',
+}
+
+/** One setting as the Settings page shows it: the effective value, where it came from, and how it may be changed. */
+export type Row = {
+  key: string
+  value: unknown
+  source: Scope | 'default'
+  overridden: { scope: string; value: unknown }[]
+  help: string
+  kind: 'enum' | 'bool' | 'string' | 'number' | 'list'
+  options?: string[]
+  scopes: WriteScope[]
+  personal: boolean
+  group: (typeof GROUPS)[Key]
+}
+
+export function settingRows(r: Resolved): Row[] {
+  return KEYS.map(k => {
+    const spec = SPECS[k]
+    return {
+      key: k,
+      value: r.values[k],
+      source: r.sources[k].scope,
+      overridden: r.sources[k].overridden,
+      help: spec.help,
+      kind: spec.kind,
+      ...(spec.kind === 'enum' ? { options: [...spec.values] } : spec.kind === 'bool' ? { options: ['on', 'off'] } : {}),
+      scopes: spec.personal ? ['user'] : [...WRITE_SCOPES],
+      personal: spec.personal === true,
+      group: GROUPS[k],
+    }
+  })
 }

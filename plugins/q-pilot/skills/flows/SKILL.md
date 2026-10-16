@@ -1,5 +1,6 @@
 ---
 name: flows
+user-invocable: false
 description: How the q-pilot plugin drives a browser. Use when the user asks to do something in a web browser (search a site, fill a form, find flights; call pilot_run) or types /q-pilot task, after building or changing UI and before saying it works (call pilot_test), when the user types /q-pilot test, when touching flows/*.flow.json, .q-pilot/, or q-pilot.config.json, or when a q-pilot run is red or drifted.
 ---
 
@@ -11,7 +12,9 @@ When you try to finish a turn that changed UI-relevant files, the gate runs the 
 
 ## Browser tasks: `pilot_run`
 
-When the user asks you to do something in a web browser ("find one-way flights from Zurich to London", "search arXiv for browser agents and open the newest paper"), or types `/q-pilot task`, call `mcp__q-pilot__pilot_run` (once per task; answer its help requests with `pilot_help`, below). Jev picks every click and field, Playwright executes it, and the user watches it in a live inspector, where they can pause or stop it. Do not drive the browser yourself with other tools instead.
+When the user asks you to do something in a web browser ("find one-way flights from Zurich to London", "search arXiv for browser agents and open the newest paper"), or types `/q-pilot task`, call `mcp__q-pilot__pilot_run` (answer its help requests with `pilot_help`, below). Jev picks every click and field, Playwright executes it, and the user watches it in the q-pilot Dashboard (`/q-pilot dashboard` prints its URL), where they can pause, stop or take control of it. Do not drive the browser yourself with other tools instead.
+
+**One run per user prompt.** Every `pilot_run` call is one session in the Dashboard, so a prompt split into four runs shows the user four sessions to follow. Put the searches or sites the prompt asks for in one goal ("search arXiv for A, then for B"), answer a stuck Jev with `pilot_help` instead of starting over. Start another run for the same prompt only when the first ended `blocked` or failed, or the user asks for more. When a goal really needs several runs (Jev fails where a long goal crosses many pages), the Dashboard groups the runs of one prompt under one entry.
 
 `pilot_run` is for doing a task the user asked for. Checking UI you built or changed always goes through `pilot_test` (Rule 2), never `pilot_run`: a task without checks only reports `done`, which proves nothing.
 
@@ -21,7 +24,7 @@ When the user asks you to do something in a web browser ("find one-way flights f
 - **`checks`:** optional. Add them when the request has an outcome that can be checked on the final page; the run is then graded like `pilot_test`. Without checks, you are asked to confirm Jev's DONE on the page (`confirm_done`).
 - **Several searches.** "The cheapest day between 20 and 30 October" is many searches: run one task per date (or one on the site's price calendar or date grid) and compare, and say which in the goal.
 
-Jev may also look at the screenshot (the `vision` option, default `gated`: only when it is unsure). The user can switch it, and Box rescue, in the inspector. Nothing for you to set per task; it is off by itself for a task with a secret fixture.
+Jev may also look at the screenshot (the `vision` option, default `gated`: only when it is unsure). The user can switch it, and Box rescue, in the q-pilot Dashboard. Nothing for you to set per task; it is off by itself for a task with a secret fixture.
 
 ### When `pilot_run` answers `needs_help`
 

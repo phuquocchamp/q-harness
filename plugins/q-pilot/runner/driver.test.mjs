@@ -193,3 +193,13 @@ test('--dashboard binds a launched browser when bind exists, swallows failures, 
     assert.deepEqual(calls, ['unbind', 'close'])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
+
+test('openBrowser reports what it drives: a launched browser is chromium, a failed bind changes nothing, CDP binds in a try/catch', async () => {
+  const mk = browser => ({ chromium: { launch: async () => browser, connectOverCDP: async () => browser } })
+  const calls = []
+  const b = await openBrowser(mk({ version: () => '130.1.2', bind: async () => calls.push('bind'), close: async () => {} }), {}, { headless: true, dashboard: true })
+  assert.deepEqual(b.target, { kind: 'chromium', label: 'Chromium 130' })
+  assert.deepEqual(calls, ['bind'])
+  const cdp = await openBrowser(mk({ bind: async () => { throw new Error('unsupported') } }), { Q_PILOT_CDP_URL: 'http://127.0.0.1:1' }, { headless: true, dashboard: true })
+  assert.deepEqual([cdp.cdp, cdp.target.kind], [true, 'chrome-cdp'])
+})

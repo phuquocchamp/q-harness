@@ -8,6 +8,8 @@ import { main } from './pilot.mjs'
 import { observe } from './snapshot.mjs'
 import { pressMatches } from './replay.mjs'
 import { BUG, DRIFT, coffeePolicy, DEMO, ENV, makeApp, stubJev } from './testkit.mjs'
+import { sessionName } from './explore.mjs'
+import { withDashFor } from './dashkit.mjs'
 
 const FIXTURE = 'buyer@example.test'
 const GOAL = 'Buy one bag of coffee beans and place the order with the email from the fixtures. Stop when an order confirmation is shown.'
@@ -383,3 +385,30 @@ test('a start that resolves off-origin is an error entry', () =>
       assert.match(f.error, /start/)
     }
   }))
+
+test('explore registers a test session on the dashboard and ends it with the run\'s files', () =>
+  withApp({}, async ({ root, port }) => {
+    const stub = stubJev(coffeePolicy())
+    try {
+      await withDashFor(root, ENV, async ({ env, sessions, opened, d }) => {
+        const r = await main(['explore', '--root', root, '--spec-json', JSON.stringify(specFor(port))], env)
+        const f = flowOf(r)
+        const [s, ...rest] = await sessions()
+        assert.equal(rest.length, 0)
+        assert.deepEqual([s.id, s.kind, s.status, s.outcome], [`${r.runId}:coffee`, 'test', 'ended', 'pass'])
+        assert.deepEqual(opened, [], 'pilot_test registers silently')
+        const file = await fetch(new URL(`/api/file?t=${d.pageToken}&s=${encodeURIComponent(s.id)}&kind=screenshot`, d.url))
+        assert.equal(file.status, 200, 'the screenshot was handed over with files()')
+        assert.equal((await fetch(new URL(`/api/file?t=${d.pageToken}&s=${encodeURIComponent(s.id)}&kind=decisions`, d.url))).status, 200)
+        assert.ok(existsSync(f.screenshot))
+      })
+    } finally { stub.restore() }
+  }))
+
+test('session chips are named by the spec, else by a short redacted slug of the goal', () => {
+  assert.equal(sessionName({ name: 'checkout', goal: 'Buy coffee' }), 'checkout')
+  assert.equal(sessionName({ name: 'task', goal: 'Find flights from Prague to Rome!' }), 'find-flights-from-prague-to-rome')
+  assert.equal(sessionName({ name: 'task', goal: 'Find a very long list of things to look at on this page' }).length <= 40, true)
+  assert.ok(!sessionName({ name: 'explore', goal: 'Log in as hunter2 now' }, ['hunter2']).includes('hunter2'))
+  assert.equal(sessionName({ name: 'task', goal: '!!!' }), 'task')
+})

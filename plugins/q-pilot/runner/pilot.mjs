@@ -12,6 +12,8 @@ import { ensureServer, ServerError, stopAllServers } from './server.mjs'
 import { accept, newRun, readTrace, RUN_ID, saveRun, writeResult } from './trace.mjs'
 import { runFlow } from './run.mjs'
 import { createInspector, DEFAULT_PORT } from './inspect.mjs'
+import { connectSession, readDash } from './dash-client.mjs'
+import { GROUP_ID } from './session.mjs'
 import { createHelper } from './help.mjs'
 import { askViaCli, askViaMod, createAsker } from './ask.mjs'
 import { saveViaMod } from './settings-save.mjs'
@@ -19,8 +21,25 @@ import { visionDefaults } from './record.mjs'
 import { spawn } from 'node:child_process'
 
 const FLAGS = { all: true, 'no-jev': true, inspect: true, 'inspect-pause': true, help: true, linger: true, 'ask-via-mod': true, box: true, dashboard: true, 'keep-trace': true }
-/** With a dashboard open, the final state stays on screen this long before the browser closes. */
+/** Legacy inspector only: with a dashboard open, the final state stays on screen this long before the browser closes. */
 const HOLD_MS = 3000
+export const SESSION_KINDS = ['task', 'test', 'gate', 'flow']
+const KIND_OF = { task: 'task', explore: 'test', run: 'flow', record: 'flow' }
+
+/** What started the run: --session-kind, else from the command. */
+function kindOf(opts, command) {
+  const kind = opts['session-kind'] ?? KIND_OF[command]
+  if (!SESSION_KINDS.includes(kind)) throw new ConfigError(`--session-kind must be one of ${SESSION_KINDS.join(', ')}`)
+  return kind
+}
+
+/** The prompt the run belongs to (--prompt-group): runs that share one show as one Dashboard entry. */
+function groupOf(opts) {
+  const g = opts['prompt-group']
+  if (g === undefined) return null
+  if (!GROUP_ID.test(g)) throw new ConfigError('--prompt-group must match [\\w-]{1,64}')
+  return g
+}
 
 function parseArgs(argv) {
   const [command, ...rest] = argv
@@ -74,24 +93,55 @@ async function runCommand(command, opts, root, cfg, env, spec) {
   const vision = visionOf(opts)
   // Where the mod's settings came from (--settings-sources); saving one goes back through the mod, which is the only writer.
   const sources = sourcesOf(opts)
-  const settings = sources && { sources, save: opts['ask-via-mod'] ? saveViaMod({ runDir }) : null }
-  // "Ask Claude" in the dashboard: through the mod (the session's own client) when it started the run, else the CLI.
-  const asker = createAsker(opts['ask-via-mod']
-    ? { transport: askViaMod({ runDir }), via: 'session' }
-    : { transport: askViaCli({ cwd: root }), via: 'cli', screenshotFor: f => frameShot(runDir, f) })
+  const kind = kindOf(opts, command)
+  const group = groupOf(opts)
+  // With the mod's dashboard (a descriptor file) every flow registers a session there; without one, a task started
+  // with --inspect gets the legacy single-run inspector.
+  const dash = readDash(env, root)
+  const legacy = !dash && prompted && Boolean(opts.inspect || opts['inspect-pause'])
   // Opens the run's Playwright trace in Playwright's own viewer, from the dashboard (a separate window).
   const openTrace = file => {
     const cli = join(playwright.path, 'cli.js')
     if (!existsSync(cli)) return console.error(`[q-pilot] no Playwright CLI at ${cli}`)
     spawn(process.execPath, [cli, 'show-trace', file], { detached: true, stdio: 'ignore' }).unref()
   }
-  const inspector = prompted && (opts.inspect || opts['inspect-pause'])
-    ? await createInspector({ port: num(opts['inspect-port'], 'inspect-port') ?? (Number(env.Q_PILOT_INSPECT_PORT) || DEFAULT_PORT), mode: opts['inspect-pause'] ? 'pause' : 'run', asker, sessionModel: opts['session-model'] ?? null, openTrace, vision, settings })
-    : null
-  // --linger: the dashboard stays up after the run (the result is printed first); see the CLI entry at the end.
+  let inspector = null
+  if (legacy) {
+    // "Ask Claude" in the inspector: through the mod (the session's own client) when it started the run, else the CLI.
+    const asker = createAsker(opts['ask-via-mod']
+      ? { transport: askViaMod({ runDir }), via: 'session' }
+      : { transport: askViaCli({ cwd: root }), via: 'cli', screenshotFor: f => frameShot(runDir, f) })
+    const settings = sources && { sources, save: opts['ask-via-mod'] ? saveViaMod({ runDir }) : null }
+    inspector = await createInspector({ port: num(opts['inspect-port'], 'inspect-port') ?? (Number(env.Q_PILOT_INSPECT_PORT) || DEFAULT_PORT), mode: opts['inspect-pause'] ? 'pause' : 'run', asker, sessionModel: opts['session-model'] ?? null, openTrace, vision, settings })
+    console.error(`[q-pilot] inspector ${inspector.url}`)
+  }
+  // --linger (legacy only): the inspector stays up after the run (the result is printed first); see the CLI entry at the end.
   const linger = Boolean(inspector && opts.linger && !headless())
-  if (inspector) console.error(`[q-pilot] inspector ${inspector.url}`)
   let dashboard = null
+  // One session per flow on the dashboard. Never throws and never blocks a run: null means "go on without".
+  const facades = []
+  const inspectorFor = async m => {
+    if (inspector) return inspector
+    try {
+      const target = (await launching?.catch(() => null))?.target ?? { kind: 'chromium', label: 'Chromium' }
+      const controls = kind === 'task' || kind === 'test'
+      const f = await connectSession(dash, {
+        ...m, id: `${runId}:${m.flowId}`, runId, runDir, kind, group, target, controls, startedAt: Date.now(),
+        open: controls && Boolean(opts.inspect || opts['inspect-pause']),
+        mode: kind === 'task' && opts['inspect-pause'] ? 'pause' : 'run',
+        settings: sources ? { sources } : null,
+        helper: opts['session-model'] ? { model: opts['session-model'] } : null,
+        vision: { mode: vision.mode, model: vision.model, box: vision.box },
+      }, { vision, openTrace })
+      if (f) {
+        facades.push(f)
+        console.error(`[q-pilot] inspector ${f.url}`)
+      }
+      return f ?? null
+    } catch {
+      return null
+    }
+  }
   // Started once and shared; begun next to the server start so the two overlap.
   const launch = () => (launching ||= Promise.resolve().then(() => openBrowser(playwright.pw, env, { headless: headless(), dashboard: Boolean(opts.dashboard), title: ids.length === 1 ? `${command} ${ids[0]}` : command, root })))
   const cleanup = async () => {
@@ -99,6 +149,7 @@ async function runCommand(command, opts, root, cfg, env, spec) {
     stopAllServers()
     await dashboard?.close().catch(() => {})
     await inspector?.close().catch(() => {})
+    for (const f of facades) await Promise.resolve().then(() => f.close?.()).catch(() => {})
     await launching?.then(b => closeBrowser(b.browser)).catch(() => {})
   }
   const onSignal = sig => () => {
@@ -118,8 +169,9 @@ async function runCommand(command, opts, root, cfg, env, spec) {
       serverError = e.message
     }
     const ctx = {
-      root, cfg, jev, env, runDir, storageState, inspector,
-      // A dashboard that stays up for review (or --keep-trace) keeps the run's Playwright trace whatever the outcome.
+      root, cfg, jev, env, runDir, storageState,
+      inspectorFor: inspector || dash ? inspectorFor : undefined,
+      // A legacy inspector that stays up for review (or --keep-trace) keeps the run's Playwright trace whatever the outcome.
       keepTrace: linger || Boolean(opts['keep-trace']),
       vision,
       get deadline() { return deadline },
@@ -146,8 +198,6 @@ async function runCommand(command, opts, root, cfg, env, spec) {
           if (dashboard) await inspector.waitForClient(5000)
           const f = await runExplore(ctx, spec)
           flows.push(f)
-          inspector?.end({ outcome: f.outcome, error: f.error, checks: f.checks })
-          inspector?.files({ trace: f.trace, decisions: f.decisions, screenshot: f.screenshot })
           if (dashboard && inspector.clients && !linger) await new Promise(r => setTimeout(r, Math.max(0, Math.min(HOLD_MS, deadline - Date.now()))))
         }
         continue

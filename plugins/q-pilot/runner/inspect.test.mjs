@@ -29,11 +29,12 @@ test('every observation is a frame with its decision and screenshot; /api/frame 
     ins.start({ name: 't', goal: 'g', deadline: Date.now() + 60000 })
     await ins.observed(page, snap(1, 'Search'), 1)
     ins.decided({ operation: 'CLICK', operations: { CLICK: 1 }, elements: [{ index: '1', role: 'button', label: 'Search' }] }, 'click button "Search"', 0.9)
-    ins.acted({ step: 1, action: 'click button "Search"', p: 0.9, latencyMs: 300, by: 'jev' })
+    ins.acted({ step: 1, action: 'click button "Search"', p: 0.9, latencyMs: 300, by: 'jev', model: 'jev-1.14.0', vision: true })
     await ins.observed(page, snap(2, 'Back'), 2)
     ins.helping('loop')
     assert.deepEqual(ins.state.frames.map(f => [f.i, f.step, f.label, f.help, f.shot]), [[1, 1, 'click button "Search"', null, true], [2, 2, null, 'loop', true]])
     assert.equal(ins.state.history[0].frame, 1, 'a trail row points at the frame it ran on')
+    assert.deepEqual([ins.state.history[0].model, ins.state.history[0].vision], ['jev-1.14.0', true], 'a trail row names the model that chose it')
     const f = await (await fetch(new URL(`/api/frame?i=1&t=${token}`, ins.url))).json()
     assert.equal(f.decision.label, 'click button "Search"')
     assert.equal(f.screenshot, Buffer.from('jpeg').toString('base64'))
@@ -157,3 +158,32 @@ test('/api/settings/save: token and origin checked, scope, keys and values valid
   })
   rmSync(dir, { recursive: true, force: true })
 })
+
+test('the page API lists the run as the one session "local", like the dashboard does', () =>
+  withInspector({}, async (ins, api, token) => {
+    const get = async () => (await (await fetch(new URL(`/api/sessions?t=${token}`, ins.url))).json()).sessions
+    assert.equal((await fetch(new URL('/api/sessions?t=bad', ins.url))).status, 403)
+    ins.start({ name: 'find flights', goal: 'g' })
+    ins.acted({ step: 1, action: 'click', by: 'jev' })
+    const [s, ...rest] = await get()
+    assert.equal(rest.length, 0)
+    assert.deepEqual([s.id, s.kind, s.name, s.status, s.source, s.controls, s.secret], ['local', 'task', 'find flights', 'live', 'live', true, false])
+    ins.end({ outcome: 'done' })
+    assert.deepEqual((await get()).map(x => [x.status, x.outcome, x.controls]), [['ended', 'done', false]])
+    // The stream starts with the same list, then the state.
+    const res = await fetch(new URL(`/api/events?t=${token}&s=local`, ins.url))
+    const reader = res.body.getReader()
+    const text = new TextDecoder().decode((await reader.read()).value)
+    assert.match(text, /^event: sessions\ndata: \{"sessions":\[\{"id":"local"/)
+    await reader.cancel()
+  }))
+
+test('the legacy server has no mod: /api/config is a 503 with the explanation, behind the token', () =>
+  withInspector({}, async (ins, api, token) => {
+    const r = await fetch(new URL(`/api/config?t=${token}`, ins.url))
+    assert.equal(r.status, 503)
+    assert.match((await r.json()).error, /started by Claude Code/)
+    assert.equal((await fetch(new URL('/api/config?t=bad', ins.url))).status, 403)
+    assert.equal((await api('/api/config', { method: 'POST', body: '{"op":"set"}' })).status, 503)
+    assert.equal((await api('/api/config', { method: 'POST', body: '{}', headers: { 'x-pilot-token': 'bad' } })).status, 403)
+  }))

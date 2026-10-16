@@ -39,8 +39,9 @@ const blocked = (error, steps, diverged) => ({ end: 'blocked', error, steps, div
 /**
  * Replays `trace.steps` on `page`. Returns { end: 'done' | 'blocked' | 'env', error, steps, diverged }.
  * `steps` are the steps as run (healed ones replaced) with `by`; `diverged` lists old -> new for healed steps.
+ * `inspector` (optional) is told what was observed and done; replay never holds at a gate. `phase` tags those rows.
  */
-export async function replay(page, { flow, trace, fixtures, secrets = [], jev, loginPath, deadline, shotFile, guard, tracer = null, maxHeals = MAX_HEALS, minHealP = MIN_HEAL_P }) {
+export async function replay(page, { flow, trace, fixtures, secrets = [], jev, loginPath, deadline, shotFile, guard, tracer = null, inspector = null, phase = null, maxHeals = MAX_HEALS, minHealP = MIN_HEAL_P }) {
   const steps = [], diverged = [], history = []
   let healed = 0
   for (const [i, step] of trace.steps.entries()) {
@@ -67,6 +68,7 @@ export async function replay(page, { flow, trace, fixtures, secrets = [], jev, l
           await page.waitForTimeout(200)
         }
       }
+      if (snap.actions) await tell(() => inspector?.observed(page, snap, n))
       let action = hit.action, fixtureKey = step.fixture, by = 'replay', p
       if (!action) {
         const missed = { op: step.op, role: step.role, name: step.name }
@@ -95,6 +97,7 @@ export async function replay(page, { flow, trace, fixtures, secrets = [], jev, l
       await traced(tracer, `Step ${n} · ${redact(describe(ran), secrets)} · ${by === 'jev' ? `healed p ${p.toFixed(2)}` : 'replay'}`, () => perform(page, action, fixtures[fixtureKey]))
       steps.push({ ...ran, by, ...(by === 'jev' && { p: +p.toFixed(3) }) })
       history.push({ action: redact(describe(ran), secrets), kind: action.kind, fixture: ran.fixture })
+      await tell(() => inspector?.acted({ step: n, action: history.at(-1).action, fixture: ran.fixture, p: p ?? null, by, ...(phase && { phase }) }))
       const off = guard?.check(page)
       if (off) return blocked(off, steps, diverged)
       if (onLogin(page, loginPath, flow.start)) return { end: 'env', error: `redirected to ${loginPath}`, steps, diverged }
@@ -108,5 +111,10 @@ export async function replay(page, { flow, trace, fixtures, secrets = [], jev, l
 /** The snapshot actions as stored in traces (secrets redacted from name, scope and option), keeping `orig` to act on. */
 const matchView = (snap, secrets) =>
   snap.actions.map(a => (a.node === undefined ? a : { ...a, name: redactValue(a.name, secrets), scope: redactValue(a.scope ?? '', secrets), ...(a.option !== undefined && { option: redactValue(a.option, secrets) }), orig: a }))
+
+/** The inspector is a view: whatever it does, the replay goes on. */
+const tell = async fn => {
+  try { await fn() } catch {}
+}
 
 const pick = ({ op, role, name }) => ({ op, role, name })

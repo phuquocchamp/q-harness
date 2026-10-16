@@ -21,8 +21,15 @@ export const blankEntry = (id, outcome, error = null) => ({
   checks: [], softChecks: [], warnings: [], proposal: null, flowProposal: null, screenshot: null, trace: null, pageErrors: [], error,
 })
 
+/** The chip name on the dashboard: the spec's own name, else (for the default "task"/"explore") a slug of the redacted goal. */
+export function sessionName(spec, secrets = []) {
+  if (!['task', 'explore'].includes(spec.name)) return spec.name
+  const slug = redact(spec.goal, secrets).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40).replace(/^-+|-+$/g, '')
+  return slug || spec.name
+}
+
 /**
- * Runs one validated spec. ctx: { jev, env, deadline, runDir, cfg, storageState, getBrowser }. Always returns a flow
+ * Runs one validated spec. ctx: { jev, env, deadline, runDir, cfg, storageState, getBrowser, inspectorFor }. Always returns a flow
  * entry. The Playwright trace is kept unless the outcome is pass, and not recorded when the spec has secret fixtures.
  */
 export async function runExplore(ctx, spec) {
@@ -48,6 +55,8 @@ export async function runExplore(ctx, spec) {
     const browser = await ctx.getBrowser()
     const session = await openSession(browser, { baseURL: spec.baseURL, storageState: ctx.storageState, traceFile: secrets.length ? null : join(ctx.runDir, `${spec.name}.trace.zip`), title: `q-pilot ${spec.task ? 'task' : 'test'} ${spec.name}`, ...(spec.task && { viewport: TASK_VIEWPORT }) })
     let live = null
+    // The dashboard session of this flow (null without one); it ends in the finally below.
+    const inspector = (await ctx.inspectorFor?.({ flowId: spec.name, name: sessionName(spec, secrets), goal: redact(spec.goal, secrets), secret: secrets.length > 0 })) ?? null
     try {
       const { page } = session
       trackNetwork(page)
@@ -72,14 +81,14 @@ export async function runExplore(ctx, spec) {
       const flow = { id: spec.name, start: spec.start, goal: spec.goal, budget: spec.budget }
       // The loop's deadline moves with the command's while Claude is asked for help (ctx.extend).
       let loopDeadline = Math.min(ctx.deadline, Date.now() + spec.budget.seconds * 1000)
-      const helper = ctx.makeHelper?.({ goal: spec.goal, secrets, fixtureKeys: Object.keys(fixtures), confirmDone: !spec.checks.length, onWait: ms => (loopDeadline += ms, ctx.extend?.(ms), ctx.inspector?.extend?.(ms)) }) ?? null
-      ctx.inspector?.start({ name: spec.name, goal: spec.goal, deadline: loopDeadline, secrets })
+      const helper = ctx.makeHelper?.({ goal: spec.goal, secrets, fixtureKeys: Object.keys(fixtures), confirmDone: !spec.checks.length, onWait: ms => (loopDeadline += ms, ctx.extend?.(ms), inspector?.extend?.(ms)) }) ?? null
+      inspector?.start({ name: spec.name, goal: spec.goal, deadline: loopDeadline, secrets })
       // With a helper: the checks are tried on Jev's DONE, so a red one reaches Claude while the browser is open.
       const checkDone = helper && spec.checks.length
         ? async p => (await runChecks(p, spec.checks, { secrets, timeoutMs: 1500 })).filter(c => !c.ok).map(({ check, actual }) => redactDeep({ check, actual }, secrets))
         : null
       // Vision settings are one object shared with the inspector, which may change them during the run.
-      const r = await pilot(page, { flow, fixtures, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector: ctx.inspector, helper, checkDone, tracer: session, ...(ctx.vision && { vision: ctx.vision }) })
+      const r = await pilot(page, { flow, fixtures, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector, helper, checkDone, tracer: session, ...(ctx.vision && { vision: ctx.vision }) })
       if (helper) res.helpRequests = helper.used()
       if (r.by === 'claude') res.doneBy = 'claude'
       if (r.decisions?.length) {
@@ -117,11 +126,14 @@ export async function runExplore(ctx, spec) {
       }
       return done(outcome, outcome === 'blocked' ? r.error : null)
     } finally {
-      ctx.inspector?.end({ outcome: res.outcome, error: res.error, checks: res.checks })
+      // Before end(): a dashboard session carries these files in its end message. The trace only exists after the close below.
+      inspector?.files({ decisions: res.decisions ?? null, screenshot: res.screenshot })
+      inspector?.end({ outcome: res.outcome, error: res.error, checks: res.checks })
       // A tab the run moved into: closed here, since an attached Chrome only closes the tab the session opened.
       if (live && live !== session.page) await live.close().catch(() => {})
       res.trace = await session.close(ctx.keepTrace || (res.outcome !== 'pass' && res.outcome !== 'done'))
       res.pageErrors = redactDeep(session.pageErrors, secrets)
+      inspector?.files({ trace: res.trace, decisions: res.decisions ?? null, screenshot: res.screenshot })
     }
   } catch (e) {
     return done('error', String(e.message || e).split('\n')[0])

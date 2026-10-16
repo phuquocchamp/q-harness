@@ -17,13 +17,13 @@ This repository is a Claude Code plugin **marketplace** named `q-harness`. Each 
 
 ## Plugins
 
-| Plugin | Version | Components | Description |
-|--------|---------|------------|-------------|
-| [`q-panel`](plugins/q-panel/README.md) | 0.3.0 | mod | Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with copy and collapse buttons. Replaces `q-bash`, `q-git` and `q-files`. |
-| [`q-pilot`](plugins/q-pilot/README.md) | 0.9.0 | mod, skill | Runs browser tasks from a prompt like jev-ultrafast: `/q-pilot task "<what to do>"`, Claude writes the task, Jev picks every step, Playwright executes it, and a live inspector in your own browser shows and pauses each decision. When Jev is stuck (a loop, a picker, a CAPTCHA, a DONE nothing checks) a helper model (Haiku by default) answers first, then your session through `pilot_help`, with the browser still open. Settings: `/q-pilot config`. Tests UI features too: `/q-pilot test "<what to check>"` or Claude itself writes a spec with checks, Jev drives, and code grades the checks. Passing tests can be saved as flows that the stop gate replays with no model. Replaces q-e2e. |
-| [`q-graph`](plugins/q-graph/README.md) | 0.1.0 | mod | Shows the subagents and teammates of a session as a live graph: a roster band above the prompt, an alert when one waits for you, and a pane with the agent tree, what each agent used (tools, skills, MCP servers, rules) and the session's harness, plus a live browser view with a session timeline, where clicking a node shows its prompt, result and every tool call with input and output. |
-| [`q-advisor`](plugins/q-advisor/README.md) | 0.1.0 | mod | Context advice at turn boundaries: focuses Claude Code's own autocompact on the plan, decisions and changed files, and suggests compacting, clearing for a new task or switching model. Jev (Haiku fallback) makes the judgement calls; it starts in shadow mode. |
-| [`q-engine`](plugins/q-engine/README.md) | 0.2.0 | agents, skills | A software engineering team as subagents (`swe-product-manager`, `swe-product-owner`, `swe-architect`, `swe-database`, `swe-engineer`, `swe-debugger`, `swe-reviewer`, `swe-verifier`) that hand work to each other through files, with the `/q-engine:feature` and `/q-engine:reproduce-bug` workflows and the `swe-core`, `swe-commit` and `playwright-cli` skills. |
+|  | Plugin | Version | Components | Description |
+|:-:|--------|---------|------------|-------------|
+| <img src="docs/images/icons/q-panel.svg" width="32" alt=""> | [`q-panel`](plugins/q-panel/README.md) | 0.3.0 | mod | Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with copy and collapse buttons. Replaces `q-bash`, `q-git` and `q-files`. |
+| <img src="docs/images/icons/q-pilot.svg" width="32" alt=""> | [`q-pilot`](plugins/q-pilot/README.md) | 0.10.0 | mod, skill | Runs browser tasks from a prompt like jev-ultrafast: `/q-pilot task "<what to do>"`, Claude writes the task, Jev picks every step, Playwright executes it, and the q-pilot Dashboard in your own browser shows each decision live, lets you pause or take control, and keeps the history of past runs. When Jev is stuck (a loop, a picker, a CAPTCHA, a DONE nothing checks) a helper model (Haiku by default) answers first, then your session through `pilot_help`, with the browser still open. Settings: `/q-pilot config`. Tests UI features too: `/q-pilot test "<what to check>"` or Claude itself writes a spec with checks, Jev drives, and code grades the checks. Passing tests can be saved as flows that the stop gate replays with no model. Replaces q-e2e. |
+| <img src="docs/images/icons/q-graph.svg" width="32" alt=""> | [`q-graph`](plugins/q-graph/README.md) | 0.1.1 | mod | Shows the subagents and teammates of a session as a live graph: a roster band above the prompt, an alert when one waits for you, and a pane with the agent tree, what each agent used (tools, skills, MCP servers, rules) and the session's harness, plus a live browser view with a session timeline, where clicking a node shows its prompt, result and every tool call with input and output. |
+| <img src="docs/images/icons/q-advisor.svg" width="32" alt=""> | [`q-advisor`](plugins/q-advisor/README.md) | 0.1.0 | mod | Context advice at turn boundaries: focuses Claude Code's own autocompact on the plan, decisions and changed files, and suggests compacting, clearing for a new task or switching model. Jev (Haiku fallback) makes the judgement calls; it starts in shadow mode. |
+| <img src="docs/images/icons/q-engine.svg" width="32" alt=""> | [`q-engine`](plugins/q-engine/README.md) | 0.2.0 | agents, skills | A software engineering team as subagents (`swe-product-manager`, `swe-product-owner`, `swe-architect`, `swe-database`, `swe-engineer`, `swe-debugger`, `swe-reviewer`, `swe-verifier`) that hand work to each other through files, with the `/q-engine:feature` and `/q-engine:reproduce-bug` workflows and the `swe-core`, `swe-commit` and `playwright-cli` skills. |
 
 ## Use case 1: Install from GitHub (users)
 
@@ -147,7 +147,7 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 ├── .claude/                      # Claude Code settings and rules for working on this repo
 ├── .github/workflows/ci.yml      # validate, plugin test for every mod, viewer and runner tests, shared UI drift check
 ├── shared/ui/q-theme.css         # Design tokens (source of truth); plugins ship generated copies
-├── scripts/sync-ui.mjs           # Copies the tokens into each plugin (--check fails on drift)
+├── scripts/sync-ui.mjs           # Copies the tokens and icons into each plugin (--check fails on drift)
 ├── plugins/                      # One folder per plugin; only these folders are shipped
 │   ├── q-panel/                  # Plugin with a mod
 │   │   ├── .claude-plugin/plugin.json
@@ -160,12 +160,12 @@ Users pick it up with `claude plugin marketplace update q-harness` and `claude p
 │   │   ├── LICENSE               # copy of the root LICENSE (the root file is never installed)
 │   │   └── README.md
 │   ├── q-graph/                  # Plugin with a mod, laid out like q-panel
-│   ├── q-pilot/                  # Mod + skills/ + runner/ (Node CLI: task + live inspector, explore, replay, Jev record/heal, verify) + examples/demo-app/
+│   ├── q-pilot/                  # Mod + skills/ + runner/ (Node CLI: task, explore, replay, Jev record/heal, verify) + examples/demo-app/
 │   ├── q-engine/                 # agents/ + skills/ only, no mod; LICENSE + NOTICE for adapted skills
 │   └── q-advisor/                # Mod only (hooks/register.tsx + hooks/lib/)
 ├── docs/
 │   ├── guides/                   # How-to guides (see Docs below)
-│   ├── images/                   # README banner and other images
+│   ├── images/                   # README banner; icons/ holds every plugin icon (SVG + png/ exports)
 │   └── playground/               # Scratch notes
 ├── LICENSE                       # MIT; each plugin folder carries a copy
 └── TODOS.md                      # Ideas for upcoming plugins
@@ -175,7 +175,7 @@ Files at the repository root (`README.md`, `docs/`, `TODOS.md`, `.claude/`) are 
 
 ## Design system
 
-Plugins that serve a UI (the q-graph viewer, the q-pilot inspector) share one token sheet, `shared/ui/q-theme.css`: cool neutrals, one accent, light and dark (`prefers-color-scheme`, or `data-theme` on `<html>`). Every token starts with `--q-`. Because each plugin installs on its own, the sheet is copied into the plugin by `node scripts/sync-ui.mjs`; the copies are generated (do not edit them) and CI runs `node scripts/sync-ui.mjs --check` to fail on drift. Rules: kind colours (`--q-k-*`) mark graph kinds only (main, subagent, teammate, tool, skill, mcp, rule); UI chrome and "running" use `--q-accent`; success, warning and error use `--q-ok`, `--q-warn`, `--q-bad`. Terminal UI uses the host's theme keys instead. Details in [Design system](docs/guides/design-system.md).
+Plugins that serve a UI (the q-graph viewer, the q-pilot inspector) share one token sheet, `shared/ui/q-theme.css`: cool neutrals, one accent, light and dark (`prefers-color-scheme`, or `data-theme` on `<html>`). Every token starts with `--q-`. Because each plugin installs on its own, the sheet is copied into the plugin by `node scripts/sync-ui.mjs`; the copies are generated (do not edit them) and CI runs `node scripts/sync-ui.mjs --check` to fail on drift. Rules: kind colours (`--q-k-*`) mark graph kinds only (main, subagent, teammate, tool, skill, mcp, rule); UI chrome and "running" use `--q-accent`; success, warning and error use `--q-ok`, `--q-warn`, `--q-bad`. Every plugin has an icon in `docs/images/icons/` (dark dotted tile, amber q, one glyph per plugin); the sync script also copies a UI plugin's icon in as its favicon and header mark. Terminal UI uses the host's theme keys instead. Details in [Design system](docs/guides/design-system.md).
 
 ## Docs
 

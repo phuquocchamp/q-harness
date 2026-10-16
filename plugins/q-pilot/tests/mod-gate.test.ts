@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { stopBudget } from '../hooks/lib/report'
-import { APP_BUG, DRIFT, ROOT, calls, edit, fakeHost, flow, say, seedProject, start, stop } from './host'
+import { APP_BUG, DRIFT, ROOT, calls, plain, edit, fakeHost, flow, say, seedProject, start, stop } from './host'
 
 const CHECKOUT = `${ROOT}/src/checkout.html`
 
@@ -32,7 +32,7 @@ test('a green run lets the turn end; the runner argv is the one in DESIGN', asyn
   await start($)
   await edit($, CHECKOUT)
   expect((await stop($)).block).toBeUndefined()
-  expect(host.runs).toEqual([['node', expect.stringMatching(/\/runner\/pilot\.mjs$/), 'run', '--root', ROOT, '--flows', 'checkout', '--budget-ms', '48000']])
+  expect(host.runs).toEqual([['node', expect.stringMatching(/\/runner\/pilot\.mjs$/), 'run', '--root', ROOT, '--flows', 'checkout', '--budget-ms', '48000', '--session-kind', 'gate']])
   expect(host.statuses.at(-1)).toBe('pilot ✓ 1/1 flows')
   expect((host.stored('lastByFlow') as Record<string, { outcome: string }>).checkout!.outcome).toBe('pass')
 })
@@ -44,11 +44,11 @@ test('uncovered UI files select the smoke flows; mixed changes select both', asy
   await start($)
   await edit($, `${ROOT}/src/other.html`)
   await stop($)
-  expect(calls(host.runs, 'run')[0]!.at(-3)).toBe('home')
+  expect(calls(host.runs, 'run')[0]!.at(-5)).toBe('home')
   await edit($, CHECKOUT)
   await edit($, `${ROOT}/src/other.html`)
   await stop($)
-  expect(calls(host.runs, 'run')[1]!.at(-3)).toBe('checkout,home')
+  expect(calls(host.runs, 'run')[1]!.at(-5)).toBe('checkout,home')
 })
 
 test('mode all runs every flow', async ($, on) => {
@@ -59,7 +59,7 @@ test('mode all runs every flow', async ($, on) => {
   await start($)
   await edit($, `${ROOT}/src/other.html`)
   await stop($)
-  expect(calls(host.runs, 'run')[0]!.at(-3)).toBe('checkout,home')
+  expect(calls(host.runs, 'run')[0]!.at(-5)).toBe('checkout,home')
 })
 
 test('mode off never runs', async ($, on) => {
@@ -219,7 +219,7 @@ test('the Jev key goes to the runner env only, and a stderr leak of it is redact
   await start($)
   await edit($, CHECKOUT)
   const { block } = await stop($)
-  expect(host.envs[0]).toEqual({ TYPESAFE_API_KEY: 'sk-secret-1' })
+  expect(plain(host.envs[0])).toEqual({ TYPESAFE_API_KEY: 'sk-secret-1' })
   expect(block).not.toContain('sk-secret-1')
   expect(host.runs[0]!.join(' ')).not.toContain('sk-secret-1')
 })
@@ -255,7 +255,7 @@ test('the node option and maxStopSeconds shape the argv', async ($, on) => {
   await edit($, CHECKOUT)
   await stop($)
   expect(host.runs[0]!.slice(0, 1)).toEqual(['/opt/homebrew/bin/node'])
-  expect(host.runs[0]!.slice(-2)).toEqual(['--budget-ms', '13000'])
+  expect(host.runs[0]!.slice(-4, -2)).toEqual(['--budget-ms', '13000'])
 })
 
 test('after 2 blocks in a row the gate lets the turn end', async ($, on) => {

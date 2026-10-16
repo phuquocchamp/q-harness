@@ -93,6 +93,8 @@ declare module 'claude-code' {
       currentTurn: string | null
       /** Set by the classic.Stop hook when it ran for the main turn; the turn.complete fallback skips that turn. */
       stopSeen: PilotStopSeen | null
+      /** The prompt the runs of this turn belong to: minted on every `prompt.submit`, so the Dashboard groups its sessions. */
+      promptGroup: string | null
       /** Follow-up prompts the fallback submitted since the person's last prompt (max 2). */
       followUps: number
       /** Whether a person is at the prompt (false for `-p` and the SDK); from session.start. */

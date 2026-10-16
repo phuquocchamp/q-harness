@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, posix, relative, resolve, win32 } from 'node:path'
 import { homedir } from 'node:os'
 import { ConfigError } from './flow.mjs'
+import { targetOf } from './screencast.mjs'
 
 const NAMES = ['playwright', '@playwright/test']
 const VIEWPORT = { width: 1280, height: 720 }
@@ -90,20 +91,27 @@ export function resolvePlaywright(root, env = process.env, { roots = globalRoots
 
 /**
  * The browser for a command: attach to a running Chrome when Q_PILOT_CDP_URL is set (its default profile, so the
- * user's logins), else launch Chromium. Returns { browser, cdp }. `close()` on an attached browser only disconnects.
- * `dashboard`: bind a launched browser so the Playwright Dashboard (`playwright-cli show`) lists it as `title`.
+ * user's logins), else launch Chromium. Returns { browser, cdp, target } (target: see screencast.mjs `targetOf`).
+ * `close()` on an attached browser only disconnects.
+ * `dashboard`: bind the browser so the Playwright Dashboard (`playwright-cli show`) lists it as `title`. Over CDP this is
+ * unverified: a failed bind is ignored.
  */
 export async function openBrowser(pw, env, { headless, dashboard = false, title = 'run', root = process.cwd() }) {
   if (env.Q_PILOT_CDP_URL) {
     const attach = () => pw.chromium.connectOverCDP(env.Q_PILOT_CDP_URL, { timeout: 5000 })
+    const attached = async () => {
+      const browser = await attach()
+      await bindTo(browser, { dashboard, title, root })
+      return { browser, cdp: true, target: await targetOf(browser, env) }
+    }
     try {
-      return { browser: await attach(), cdp: true }
+      return await attached()
     } catch (e) {
       // A Chrome with every window closed (macOS keeps it running) refuses context management: open a tab, retry once.
       if (/context management is not supported/i.test(String(e.message))) {
         try {
           await fetch(new URL('/json/new?about:blank', env.Q_PILOT_CDP_URL), { method: 'PUT', signal: AbortSignal.timeout(3000) })
-          return { browser: await attach(), cdp: true }
+          return await attached()
         } catch (e2) {
           e = e2
         }
@@ -112,10 +120,14 @@ export async function openBrowser(pw, env, { headless, dashboard = false, title 
     }
   }
   const browser = await pw.chromium.launch({ headless })
+  await bindTo(browser, { dashboard, title, root })
+  return { browser, cdp: false, target: await targetOf(browser, env) }
+}
+
+async function bindTo(browser, { dashboard, title, root }) {
   if (dashboard && typeof browser.bind === 'function') {
     try { await browser.bind(`q-pilot · ${title}`, { workspaceDir: root }) } catch {}
   }
-  return { browser, cdp: false }
 }
 
 /** Closes a launched browser; a Dashboard binding is released first. Never throws. */

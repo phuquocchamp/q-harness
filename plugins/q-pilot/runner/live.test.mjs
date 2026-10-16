@@ -3,8 +3,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { main } from './pilot.mjs'
-import { DRIFT, makeApp } from './testkit.mjs'
+import { sendInput, startLive } from './screencast.mjs'
+import { DEMO, DRIFT, makeApp } from './testkit.mjs'
 
 const live = process.env.Q_PILOT_LIVE === '1' && process.env.TYPESAFE_API_KEY
 const trace = root => join(root, '.q-pilot', 'traces', 'checkout-coffee.json')
@@ -73,4 +75,33 @@ test('live explore: arXiv search from the home page (reports honestly, no assert
     line(f)
     assert.ok(['pass', 'fail', 'blocked'].includes(f.outcome))
   } finally { app.cleanup() }
+})
+
+// Needs only the Playwright install the demo app uses (no key): a real Chromium screencast and take-control input.
+const chromium = (() => {
+  try { return createRequire(`${DEMO}/package.json`)('playwright').chromium } catch { return null }
+})()
+
+test('screencast: a real Chromium streams JPEG frames, take-control input lands in the page, stop is clean', { skip: chromium ? false : 'Playwright not installed' }, async () => {
+  const browser = await chromium.launch()
+  const page = await browser.newPage({ viewport: { width: 640, height: 400 } })
+  try {
+    await page.setContent('<button style="position:fixed;left:0;top:0;width:640px;height:400px" onclick="document.title=\'clicked\'">Go</button><input id="i" style="position:fixed;left:0;top:0;width:10px">')
+    const frames = []
+    const live = await startLive(page, (buf, meta) => frames.push({ buf, meta }), { fps: 20 })
+    const t0 = Date.now()
+    while (!frames.length && Date.now() - t0 < 5000) {
+      await page.evaluate(() => (document.body.style.background = `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')}`))
+      await page.waitForTimeout(100)
+    }
+    assert.ok(frames.length, 'no screencast frame within 5 s')
+    assert.deepEqual([...frames[0].buf.subarray(0, 2)], [0xff, 0xd8], 'a JPEG')
+    assert.ok(frames[0].meta.deviceWidth > 0)
+    assert.match(await sendInput(page, { type: 'click', x: 0.5, y: 0.5 }, frames[0].meta), /^click at \(\d+, \d+\)$/)
+    assert.equal(await page.title(), 'clicked')
+    await live.stop()
+    await live.stop()
+  } finally {
+    await browser.close()
+  }
 })

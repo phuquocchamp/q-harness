@@ -8,6 +8,8 @@ Done in 0.6 (from the autopsy of 22 real-site runs, 1 real pass): help requests 
 
 Done in 0.6.1: the inspector stays open after the run for review (click a step, ← →), offers the Playwright trace and decisions, and has "Ask Claude" with a model picker (Haiku 5.5 default); its title and icon follow the run.
 
+Done in 0.10.0: the q-pilot Dashboard: the q-pilot icon (`inspector/icon.svg`, synced from `docs/images/icons/`) as its favicon, header mark and app-window icon, with the run's tone as a badge; one per project, started by the mod, with a session for each task, test, stop-gate run and flow run (`--session-kind`, `Q_PILOT_DASH_FILE`); the stop gate's band links to its first red flow; a live view with Take control; history from `.q-pilot/runs/` (`<flow>.session.json`); Ask Claude and Save as default work after a run has ended; a Dashboard that cannot start never stops a run; it opens as its own app window (`dashboardWindow app|tab`, Chrome, Edge, Chromium or Brave with `--app`, then Playwright's Chromium, then a tab). `--linger` and `--ask-via-mod` are gone from `pilot_run` (the mod answers for the Dashboard). The runs of one prompt share a `--prompt-group` and show as one sidebar entry, and Claude is told to make one `pilot_run` per prompt; the Ask Claude box is hidden from the right panel for now (`/api/ask` stays).
+
 Done in 0.9.0: layered settings (cli > env > local > project > user > default) with `/q-pilot config set|unset|explain --scope`; `node`, `cdpUrl` and `trust` only from user, env and cli; vision settings reach `pilot_test` as well as `pilot_run`; the last run, last run per flow and last test or task are kept per project; a `q-pilot.config.json` that does not parse is reported.
 
 Done in 0.8.0: settings moved to `/q-pilot config` (one plugin option left, the Jev key); a helper model (Haiku by default) answers help requests before the session; the inspector opens in the default browser.
@@ -26,12 +28,13 @@ What is still left out.
 - **Prompt-mode runs in the stop gate.** The gate replays saved flows only. Running a prompt-mode spec at turn end would cost one Jev call per step each time.
 - **Exporting `scope`.** Exported specs do not narrow a locator by scope.
 - **CI export by default.** `/q-pilot export` writes a Playwright spec on request. Exporting every flow on save, and a CI recipe for running them, is not set up.
-- **A viewer for old runs.** The inspector reviews the run it served; a run that has ended and closed is JSON, screenshots and a trace in `.q-pilot/runs/`, with no page to reopen it.
 - **Vision thresholds.** The gate (p < 0.6, top-two gap < 0.25) and Box limits (0.5 / 0.6) are first guesses from a handful of live decisions; tune them on more runs.
-- **Advisor answering help requests.** The inspector's model (e.g. Haiku) answers questions; it does not yet answer Jev's help requests in place of the session.
+- **Advisor answering help requests.** The Dashboard's model (e.g. Haiku) answers questions; it does not yet answer Jev's help requests in place of the session.
 - **Jev latency in a loop.** Live runs show about 0.28 s a call; a p95 over many calls (for the 15 s request timeout) has not been measured.
 - **Live numbers.** The README quotes PoC numbers for prompt mode. Replace them with numbers from the runner's live runs.
-- **Electron target.** `openSession()` covers launch and CDP attach. An Electron target (`_electron.launch`, one Page per window, stubbed native dialogs and menus) is not built.
+- **Electron target.** The Dashboard labels an Electron app attached over CDP (`Q_PILOT_CDP_URL`), but the live view (`Page.startScreencast` on a renderer) and the Playwright Dashboard's `bind()` over CDP are unverified, and `_electron.launch` (one Page per window, stubbed native dialogs and menus) is not built.
+- **Dashboard across restarts.** The Dashboard is a child of the mod: a Claude Code restart or a plugin reload ends it and loses the in-memory screenshots of past runs. A detached daemon with a link process for Ask and Save was weighed and left out.
+- **Gate sessions are review-only.** The Dashboard shows a stop-gate or flow run, but cannot pause it; pausing a gate would hold the turn.
 - **aria snapshot as a second observer.** Playwright's `ariaSnapshot()` + `getByRef()` could cover shadow DOM and iframes next to `snapshot.js`. Not prototyped.
 - **tmux end-to-end tests.** The band and the stop gate (with `cc-plugin-sec-default` on and off) are only covered by mod tests with a fake host.
 - **Clearer CDP refusal.** An endpoint that refuses new tabs (an Electron app on the port) ends as `error: ... Target.createTarget: Not supported`; it could say what it is.

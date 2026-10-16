@@ -138,9 +138,12 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     keyFills = new Map()
     sigs = []
   }
+  /** Latency and model of a Jev decision: the vision model when it saw the screenshot, else the text model. */
+  const jevMeta = detail => ({ latencyMs: detail?.latencyMs ?? null, model: (detail?.vision?.used ? detail.vision.model : detail?.jevModel) ?? null, vision: Boolean(detail?.vision?.used) })
   /** Trace group title: step number, role and name of the target, p and source; never a typed value. */
   const titleOf = (snap, action, fixture, p, by) => `Step ${steps.length + 1} · ${redact(describe(toStep(snap, action, fixture)), secrets)} · p ${p.toFixed(2)} · ${by}`
-  const record = (snap, action, fixture, p, by, latencyMs = null) => {
+  /** `extra`: latencyMs, and the model that chose the action (with vision: true when Jev saw the screenshot). */
+  const record = (snap, action, fixture, p, by, { latencyMs = null, model = null, vision = false } = {}) => {
     const ran = toStep(snap, action, fixture)
     steps.push({ ...ran, by, p: +p.toFixed(3) })
     const text = action.kind === 'fill' ? fixtures[fixture] ?? action.text : undefined
@@ -150,7 +153,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
       ...(text !== undefined && { text: secrets.includes(text) ? '[secret]' : text }),
       ...(by !== 'jev' && { by }), page_changed: null,
     })
-    inspector?.acted({ step: steps.length, action: history.at(-1).action, fixture: ran.fixture, p, latencyMs, by })
+    inspector?.acted({ step: steps.length, action: history.at(-1).action, fixture: ran.fixture, p, latencyMs, by, model, vision })
     return ran
   }
 
@@ -222,7 +225,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
       console.error(`[q-pilot] box click failed: ${redact(e.message.split('\n')[0], secrets)}`)
       return false
     }
-    record(snap, action, undefined, r.confidence * r.present, 'box')
+    record(snap, action, undefined, r.confidence * r.present, 'box', { latencyMs: r.ms, model: r.model })
     if (await takeTab()) filled = null
     // The page moved on another way: Jev starts again with fresh loop counters.
     banned = new Set()
@@ -345,7 +348,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
           staleEnds = 0
           await traced(tracer, `Step ${steps.length + 1} · ${d.end} · p ${d.p.toFixed(2)} · jev`, () => {})
           // The decision that ends (or would end) the run gets its own row in the inspector's trail.
-          inspector?.acted({ step: steps.length + 1, action: d.end, p: d.p, latencyMs: d.detail?.latencyMs, by: 'jev', end: true })
+          inspector?.acted({ step: steps.length + 1, action: d.end, p: d.p, by: 'jev', end: true, ...jevMeta(d.detail) })
           if (d.end === 'DONE') {
             // With checks, a DONE whose checks are red goes to Claude first (the search ran with a wrong date):
             // still fixable while the browser is open, a dead `fail` once the run ends.
@@ -423,7 +426,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
           fills.set(fillKey(d.action, d.fixture), (fills.get(fillKey(d.action, d.fixture)) ?? 0) + 1)
           keyFills.set(d.fixture, (keyFills.get(d.fixture) ?? 0) + 1)
         }
-        record(snap, d.action, d.fixture, d.p, 'jev', d.detail?.latencyMs)
+        record(snap, d.action, d.fixture, d.p, 'jev', jevMeta(d.detail))
         if (!PASSIVE.has(d.action.kind)) {
           // The path (not the query) and the action: a cycle through the same pages with the same actions is a loop
           // even when every step changes the page (Traveloka: fill → search → back, 20 times).
