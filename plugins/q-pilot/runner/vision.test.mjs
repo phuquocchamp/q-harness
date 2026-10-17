@@ -58,6 +58,35 @@ test('gated: an unsure text answer is asked again with the screenshot (the previ
   }
 })
 
+test('an unsure BLOCKED from the screenshot does not overrule the action of the text answer, gated or always', async () => {
+  const text = { raw: { operation: choice({ CLICK: 0.5, DONE: 0.05, BLOCKED: 0.45 }), click_target: choice({ 1: 0.9, 2: 0.1 }) } }
+  const seen = { raw: { operation: choice({ CLICK: 0.44, BLOCKED: 0.51, DONE: 0.05 }), click_target: choice({ 1: 0.9, 2: 0.1 }) } }
+  const stub = stubJev(body => (body.assets ? seen : text))
+  try {
+    for (const mode of ['gated', 'always']) {
+      const d = await chooseAction(createJev({ apiKey: 'k' }), { goal: 'g', snap: SNAP, history: [], fixtureKeys: [], secrets: [], vision: { mode, model: 'jev-1.14.0', shot: async () => SHOT } })
+      assert.equal(d.end, undefined, mode)
+      assert.equal(d.action.node, 1, mode)
+      assert.equal(d.detail.vision.overruled, 'BLOCKED', mode)
+    }
+    assert.equal(stub.requests.length, 4, 'gated: text then image; always: image then text')
+  } finally {
+    stub.restore()
+  }
+})
+
+test('a sure BLOCKED from the screenshot stands', async () => {
+  const text = { raw: { operation: choice({ CLICK: 0.5, DONE: 0.05, BLOCKED: 0.45 }), click_target: choice({ 1: 0.9, 2: 0.1 }) } }
+  const seen = { raw: { operation: choice({ CLICK: 0.1, BLOCKED: 0.85, DONE: 0.05 }) } }
+  const stub = stubJev(body => (body.assets ? seen : text))
+  try {
+    const d = await chooseAction(createJev({ apiKey: 'k' }), { goal: 'g', snap: SNAP, history: [], fixtureKeys: [], secrets: [], vision: { mode: 'gated', model: 'jev-1.14.0', shot: async () => SHOT } })
+    assert.equal(d.end, 'BLOCKED')
+  } finally {
+    stub.restore()
+  }
+})
+
 test('always sends the screenshot with the first request; off (no vision) never does', async () => {
   const stub = stubJev(() => ({ op: 'CLICK', label: 'Search' }))
   try {

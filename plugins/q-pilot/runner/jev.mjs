@@ -222,9 +222,26 @@ export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offe
       return null
     })
     if (again && validateChoice(again.res.answers?.operation, Object.keys(operations))) {
-      answers = again.res.answers
-      res = again.res
       visionDetail = { used: true, mode: 'gated', model: again.res.model ?? vision.model, before: { operation: before, target: topOf(targetsOfFirst) }, ms: again.ms }
+      // An unsure BLOCKED from the screenshot does not overrule an action the text answer chose (arXiv's home page:
+      // text CLICK, vision BLOCKED at p 0.5, on a page with 169 controls).
+      if (weakBlock(again.res.answers) && answers.operation.choice !== 'BLOCKED') visionDetail.overruled = 'BLOCKED'
+      else {
+        answers = again.res.answers
+        res = again.res
+      }
+    }
+  }
+  if (usedFirst && weakBlock(answers)) {
+    // "always": the same rule, with the text answer asked for afterwards.
+    const text = await jev.request({ state, questions }).catch(e => {
+      if (!(e instanceof JevError)) throw e
+      return null
+    })
+    if (text && validateChoice(text.answers?.operation, Object.keys(operations)) && text.answers.operation.choice !== 'BLOCKED') {
+      answers = text.answers
+      res = text
+      visionDetail.overruled = 'BLOCKED'
     }
   }
   const op = answers.operation
@@ -258,6 +275,8 @@ export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offe
 /** Unsure: the operation below VISION_P, or its target head with the top two within VISION_GAP. */
 export const VISION_P = 0.6
 export const VISION_GAP = 0.25
+/** A BLOCKED below VISION_P: a guess, not a reason to end the run. */
+const weakBlock = answers => answers?.operation?.choice === 'BLOCKED' && (answers.operation.probabilities?.BLOCKED ?? 0) < VISION_P
 const headOf = answers => {
   const op = answers?.operation?.choice
   return op ? answers[`${op.toLowerCase()}_target`] ?? null : null

@@ -10,7 +10,7 @@
 
 A passing test can be saved as a flow plus a recorded trace. Saved flows replay with no model call, heal a drifted step with one Jev request, and run as a stop gate when a turn changes UI files.
 
-**Version** 0.10.0 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
+**Version** 0.10.1 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
 
 ## What it ships
 
@@ -135,7 +135,7 @@ Jev 1.13 and 1.14 accept images as a TypeSafe preview ("Dreamer-ready", turned o
 | Setting | What happens |
 |---------|--------------|
 | `vision: off` | Jev decides from the element list and page text only (about 0.3 s a step) |
-| `vision: gated` (default) | Jev answers from text first; when it is unsure (operation p below 0.6, the top two targets within 0.25, or DONE/BLOCKED) it is asked again with the screenshot, and that answer is used (about +0.4 s on those steps) |
+| `vision: gated` (default) | Jev answers from text first; when it is unsure (operation p below 0.6, the top two targets within 0.25, or DONE/BLOCKED) it is asked again with the screenshot, and that answer is used (about +0.4 s on those steps). An unsure BLOCKED (p below 0.6) from the screenshot does not overrule an action the text answer chose (with `always`, the text answer is asked for then); the decision is marked `vision.overruled: "BLOCKED"`. |
 | `vision: always` | The screenshot goes with every decision |
 | `visionModel` | `jev-1.13.0` (jev-latest) or `jev-1.14.0` (preview) answers with the image |
 | `box: on` | **Box rescue**: where Jev is stuck (loop, no progress, BLOCKED, low confidence), Jev 1.14 locates on the screenshot the control that advances the goal (a Box question plus a "visible at all?" Noul, since Box never answers "not found") and the run clicks its centre, before asking the helper model. At most 3 per run, and only above Box confidence 0.5 and visibility 0.6. The step is recorded as `click_at`. |
