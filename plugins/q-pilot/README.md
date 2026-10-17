@@ -77,7 +77,7 @@ Claude turns the request into a task: where it starts, a goal that says when to 
 | `url` | Full `http`/`https` URL where the task starts. Omit it to start on the configured app (`baseURL` from `q-pilot.config.json` plus `start`). |
 | `goal` | The whole task in plain words, with a stop condition and what not to do |
 | `fixtures` | Values Jev may type: a literal, or `"$env:E2E_NAME"` for a secret |
-| `checks` | Optional, the same closed set as `pilot_test`. With checks, the run is graded like a test. |
+| `checks` | Optional, the same closed set as `pilot_test`. With checks, the run is graded like a test. Write the stop condition as a strong check (text only the finished page shows): the run then ends as soon as it is reached. |
 | `name`, `softChecks`, `budget` | As for a test; `budget` defaults to 40 steps and 180 seconds |
 
 | Outcome | When |
