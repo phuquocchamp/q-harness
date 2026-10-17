@@ -9,31 +9,49 @@ const navs = new WeakMap()
  * started a page load and wait for it. Call once per page.
  */
 export function trackNetwork(page) {
-  const state = { n: 0, done: 0 }
+  // `seq` numbers each XHR/fetch; `open` maps the ones still in flight to their number.
+  const state = { n: 0, done: 0, seq: 0, open: new Map() }
   page.on('request', r => {
     if (r.isNavigationRequest() && r.frame() === page.mainFrame()) state.n++
+    else if (DATA_TYPES.has(r.resourceType())) state.open.set(r, ++state.seq)
   })
+  const finished = r => state.open.delete(r)
+  page.on('requestfinished', finished)
+  page.on('requestfailed', finished)
   page.on('framenavigated', f => {
     if (f === page.mainFrame()) state.done++
   })
   navs.set(page, state)
 }
 
-const count = page => navs.get(page) ?? { n: 0, done: 0 }
+const DATA_TYPES = new Set(['xhr', 'fetch'])
+/** The longest an action waits for the data requests it started (a price grid, a suggestion list). */
+const DATA_WAIT_MS = 3000
+const count = page => navs.get(page) ?? { n: 0, done: 0, seq: 0, open: new Map() }
+/** True while an XHR/fetch numbered above `after` is in flight. */
+const loading = (page, after) => [...count(page).open.values()].some(s => s > after)
+/**
+ * Waits (at most DATA_WAIT_MS) until the data requests started after `after` are done: content that arrives by XHR
+ * (Google Flights' date grid shows "0000" placeholders until its prices load) is then on the page Jev sees next.
+ * Only requests the action started count, so background polling that was already running does not hold a step.
+ */
+async function dataLoaded(page, after) {
+  for (const end = Date.now() + DATA_WAIT_MS; loading(page, after) && Date.now() < end; ) await new Promise(r => setTimeout(r, 25))
+}
 
 const frames = page =>
   page.evaluate(() => new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(r)); setTimeout(r, 50) })).catch(() => {})
 
 /**
  * After an action, like jev-ultrafast: 2 animation frames or 50 ms, whichever comes first. A page load the action
- * started is waited for (domcontentloaded). Background traffic (analytics, polling) is not: on real sites the
- * network is rarely idle, and late content is covered by replay's re-observe and the polling checks.
+ * started is waited for (domcontentloaded); without one, the XHR/fetch requests the action started (dataLoaded).
+ * Background traffic that was already running is not: on real sites the network is rarely idle.
  * `navsBefore`: the navigation count taken before the action.
  */
 export async function settle(page, before = { ...count(page) }) {
   await frames(page)
   const now = count(page)
-  if (now.n === before.n) return
+  if (now.n === before.n) return dataLoaded(page, before.seq)
   // waitForLoadState resolves at once while a slow navigation has not committed yet, so wait for the commit first.
   for (const end = Date.now() + 10000; count(page).done === before.done && Date.now() < end; ) await new Promise(r => setTimeout(r, 25))
   await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {})
@@ -137,7 +155,8 @@ export async function perform(page, action, fixtureValue) {
   const before = { ...count(page) }
   let suggested = false
   if (action.kind === 'scroll') await page.mouse.wheel(0, action.delta)
-  else if (action.kind === 'wait') await page.waitForTimeout(100)
+  // WAIT also waits for data requests already in flight (Jev waits because the page is still loading).
+  else if (action.kind === 'wait') await page.waitForTimeout(100).then(() => dataLoaded(page, 0))
   else if (action.kind === 'press') await page.keyboard.press(action.key)
   // Box rescue: a click at a point of the viewport (CSS px), for a control the element list does not have.
   else if (action.kind === 'click_at') await page.mouse.click(action.x, action.y)

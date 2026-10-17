@@ -87,10 +87,15 @@ export async function runExplore(ctx, spec) {
       const checkDone = helper && spec.checks.length
         ? async p => (await runChecks(p, spec.checks, { secrets, timeoutMs: 1500 })).filter(c => !c.ok).map(({ check, actual }) => redactDeep({ check, actual }, secrets))
         : null
+      // A task whose checks pin a business value (at least one strong check) ends as soon as they are green: an
+      // url/visible-only spec could be green on a page that is not finished, so it still waits for DONE.
+      const checksMet = spec.task && spec.checks.some(c => !isWeak(c))
+        ? async p => (await runChecks(p, spec.checks, { secrets, timeoutMs: 0 })).every(c => c.ok)
+        : null
       // Vision settings are one object shared with the inspector, which may change them during the run.
-      const r = await pilot(page, { flow, fixtures, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector, helper, checkDone, tracer: session, ...(ctx.vision && { vision: ctx.vision }) })
+      const r = await pilot(page, { flow, fixtures, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector, helper, checkDone, checksMet, tracer: session, ...(ctx.vision && { vision: ctx.vision }) })
       if (helper) res.helpRequests = helper.used()
-      if (r.by === 'claude') res.doneBy = 'claude'
+      if (r.by === 'claude' || r.by === 'checks') res.doneBy = r.by
       if (r.decisions?.length) {
         res.decisions = join(ctx.runDir, `${spec.name}.decisions.json`)
         writeFileSync(res.decisions, JSON.stringify(r.decisions, null, 2))
@@ -115,7 +120,7 @@ export async function runExplore(ctx, spec) {
       }
       const outcome = r.end !== 'done' ? 'blocked' : !spec.checks.length ? 'done' : res.verifyFails.length ? 'fail' : 'pass'
       const file = join(ctx.runDir, `${spec.name}.png`)
-      const caption = redact(`${spec.name}: ${outcome} (${r.end === 'done' ? (r.by === 'claude' ? 'Claude confirmed DONE' : 'Jev DONE') : r.error}) · checks ${!spec.checks.length ? 'none' : res.verifyFails.length ? `RED ${res.verifyFails.map(f => JSON.stringify(f.actual)).join(' ')}` : 'green'}`, secrets)
+      const caption = redact(`${spec.name}: ${outcome} (${r.end === 'done' ? (r.by === 'claude' ? 'Claude confirmed DONE' : r.by === 'checks' ? 'checks green' : 'Jev DONE') : r.error}) · checks ${!spec.checks.length ? 'none' : res.verifyFails.length ? `RED ${res.verifyFails.map(f => JSON.stringify(f.actual)).join(' ')}` : 'green'}`, secrets)
       await shot(live, snap, file, caption).then(() => (res.screenshot = file), () => {})
       if (outcome === 'pass') {
         res.proposal = writeProposal(ctx.runDir, buildTrace(spec.name, r.steps, 1, secrets))

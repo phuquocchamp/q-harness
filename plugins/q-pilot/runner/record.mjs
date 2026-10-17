@@ -25,6 +25,8 @@ const MAX_LOW = 3
 const MAX_STALE_END = 2
 /** Steps added once when Claude hands a run back after the budget is spent. */
 const BUDGET_EXTRA = 15
+/** Green checks are looked at again after this long before they end a run (a page still settling). */
+const CHECKS_AGAIN_MS = 300
 /** Box rescue: at most this many per run, and only above these (Box confidence, Noul "visible at all"). */
 const MAX_RESCUE = 3
 const BOX_MIN = 0.5
@@ -96,7 +98,7 @@ const escapable = snap => snap.actions.some(a => a.expanded === 'true' || a.role
  * never executed. `helper` (optional, task mode): asks Claude where Jev is stuck. `deadline` may be a number or a
  * function (it moves while Claude is asked). `by` is 'claude' when Claude ended the run with DONE.
  */
-export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath, deadline, guard, inspector = null, helper = null, checkDone = null, vision = visionDefaults(), tracer = null }) {
+export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath, deadline, guard, inspector = null, helper = null, checkDone = null, checksMet = null, vision = visionDefaults(), tracer = null }) {
   const steps = [], history = []
   const until = typeof deadline === 'function' ? deadline : () => deadline
   // Every Jev decision as Jev saw it (redacted elements, both probability heads): written next to the run for debugging.
@@ -259,12 +261,29 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     return { ok: true, op: act.op, index: act.index }
   }
 
+  /**
+   * `checksMet` (task mode, strong checks only): after a step, the run ends as done when the checks are green on two
+   * looks CHECKS_AGAIN_MS apart, without waiting for Jev's DONE (Jev looped on a finished Date grid). Asked once per step.
+   */
+  let checkedAt = 0
+  const goalMet = async () => {
+    if (!checksMet || steps.length === checkedAt) return false
+    checkedAt = steps.length
+    if (!(await checksMet(page))) return false
+    await page.waitForTimeout(CHECKS_AGAIN_MS)
+    return checksMet(page)
+  }
+
   if (!jev.available) return out('blocked', 'jev unavailable')
   let budget = flow.budget.steps, extended = false
   for (;;) {
     while (steps.length < budget) {
       if (Date.now() > until()) return out('blocked', 'time budget exceeded')
       try {
+        if (await goalMet()) {
+          await traced(tracer, `Step ${steps.length + 1} · checks green · done`, () => {})
+          return out('done', null, 'checks')
+        }
         let snap = await observeSettled(page, until)
         let fp = fingerprint(snap)
         if (last && fp !== null) {

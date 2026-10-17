@@ -38,7 +38,7 @@ Jev is stuck and the run waits, browser open, for your answer. A helper model (`
 - `human_needed`: a CAPTCHA or challenge covers the page. Ask the user to solve it in the browser window q-pilot opened, wait for them, then `observe`. Never try to solve it yourself. If they decline, `stop`.
 - A run asks at most 6 times, the helper's answers included. With only a `runId`, `pilot_help` waits for the run's next event.
 
-Report what came back: the outcome, the steps (Jev's and yours), red checks with their `actual` values, the screenshot path. `done` with `doneBy: "claude"` means you confirmed it on the page: say what you saw. `done` without it means Jev reported DONE and nothing was checked: say the result is not verified, and describe what the screenshot shows instead of claiming success. `blocked` with "stopped from the dashboard" means the user pressed Stop: do not run it again unless they ask.
+Report what came back: the outcome, the steps (Jev's and yours), red checks with their `actual` values, the screenshot path. `done` with `doneBy: "claude"` means you confirmed it on the page: say what you saw. `pass` with `doneBy: "checks"` means the strong checks turned green and ended the run before Jev chose DONE. `done` without it means Jev reported DONE and nothing was checked: say the result is not verified, and describe what the screenshot shows instead of claiming success. `blocked` with "stopped from the dashboard" means the user pressed Stop: do not run it again unless they ask.
 
 ## Rule 1: evidence before claims
 

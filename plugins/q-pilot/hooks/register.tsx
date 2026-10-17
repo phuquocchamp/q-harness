@@ -427,12 +427,15 @@ const MAX_SPEC_BYTES = 32 * 1024
 const MAX_RESULT = 20_000
 /** Page-derived text (an actual value, an error) is capped before it reaches the model. */
 const MAX_ECHO = 200
+/** The task goal is the session's own text, not page data: the helper gets all of it (a 200-char cut hid the stop condition). */
+const MAX_GOAL = 2000
 
 const clip = (v: unknown): unknown => {
   if (v === null || v === undefined || typeof v === 'number' || typeof v === 'boolean') return v
   const text = typeof v === 'string' ? v : JSON.stringify(v)
   return text.length > MAX_ECHO ? `${text.slice(0, MAX_ECHO)}…` : typeof v === 'string' ? v : v
 }
+const capGoal = (goal: string) => (goal.length > MAX_GOAL ? `${goal.slice(0, MAX_GOAL)}…` : goal)
 
 /** The flow entry with every page-derived value capped. */
 const clipFlow = (f: PilotFlow & { checks?: { check: unknown; ok: boolean; actual: unknown }[] }) => ({
@@ -771,7 +774,7 @@ async function helpText($: EngineInterface, ev: HelpEvent, helper = false): Prom
     return `[${e.index}] ${e.role} "${clip(e.name)}"${e.value ? ` = "${clip(e.value)}"` : ''}${e.scope ? ` (in ${clip(e.scope)})` : ''}${state.length ? ` ${state.join(' ')}` : ''} · ${e.ops.join('/')}${e.options ? ` · options: ${e.options.slice(0, 12).map(x => `"${clip(x)}"`).join(', ')}` : ''}`
   })
   const answerHow = helper
-    ? [`goal: ${clip(String(req.goal ?? ''))}`, `fixture keys: ${((req.fixtures as string[]) ?? []).join(', ') || 'none'}`]
+    ? [`goal: ${capGoal(String(req.goal ?? ''))}`, `fixture keys: ${((req.fixtures as string[]) ?? []).join(', ') || 'none'}`]
     : [
         '',
         HELP_HINT[ev.reason] ?? HELP_HINT.observe,

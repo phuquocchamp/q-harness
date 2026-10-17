@@ -306,6 +306,17 @@ test('the helper model answers a stuck run first; the session gets confirm_done 
   expect(last).toMatch(/2 help request\(s\) to Claude \(1 answered by the haiku helper\)/)
 })
 
+test('the helper reads the whole goal: its stop condition past 200 characters is not cut', async ($, on) => {
+  const host = fakeHost(on)
+  const goal = `Limit the results to Vietnam Airlines: open the Airlines filter, turn off "Select all airlines", scroll the airline list down to Vietnam Airlines, turn it on, and close the filter. Then open the Date grid. Stop when the Date grid shows prices.`
+  host.modelReplies = ['{"actions":[{"op":"click","index":31}],"then":"resume"}']
+  host.runner.task = [{ ...say([DONE], 'task'), helps: [{ n: 1, reason: 'loop', request: { ...HELP_REQ, goal } }] }]
+  await start($)
+  await call($, { ...TASK, goal })
+  expect(goal.length).toBeGreaterThan(200)
+  expect(host.completes[0]!.prompt).toContain('Stop when the Date grid shows prices.')
+})
+
 test('the helper steps aside: free text, stop, or a bot wall go to the session; helper sonnet is used when set', async ($, on) => {
   const host = fakeHost(on)
   host.store.set('settings', { helper: 'sonnet' })

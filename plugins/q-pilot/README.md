@@ -83,13 +83,15 @@ Claude turns the request into a task: where it starts, a goal that says when to 
 | Outcome | When |
 |---------|------|
 | `done` | The task had no checks and the run ended on DONE. With `doneBy: "claude"` Claude confirmed it on the page; otherwise nothing was verified, and the result says so. |
-| `pass` / `fail` | Jev said DONE and every check is green / a check is red |
+| `pass` / `fail` | Jev said DONE and every check is green / a check is red. A task with at least one strong check (`text`, `contains` or `value`) also passes as soon as its checks are green on two looks 300 ms apart after a step, without waiting for DONE (`doneBy: "checks"`); a spec of only `url`/`title`/`visible` checks still waits for DONE. |
 | `blocked` | Jev said BLOCKED and Claude could not help, a loop or a bot wall stopped it, the budget ran out, a step failed, Jev is unavailable, Claude answered `stop`, or you pressed Stop |
 | `env`, `error` | As for a test |
 
 A task with checks that passes can be saved with `/q-pilot flows save`, like a test. A `done` task cannot: nothing showed that it worked.
 
 #### When Jev is stuck: help requests
+
+After each action the runner waits for what the action started: a page load, or (at most 3 s) the XHR/fetch requests it sent, so content that arrives by script (Google Flights' date grid shows `0000` placeholders until its prices load) is on the page Jev sees next. A WAIT also waits for data requests already in flight. Background traffic that was running before the action does not hold a step.
 
 Jev is fast (about 0.3 s a step) but has no memory of the goal beyond its last ten actions and no idea whether a value it typed was committed. On real sites that showed as loops and false endings (22 runs on Traveloka, Vietnam Airlines, Google and YouTube, 1 real pass). So `pilot_run` does not end there: it hands the run to Claude while the browser stays open.
 
@@ -110,7 +112,7 @@ The runner does this with `task --help`: it writes `help-<n>.json` (and `help-<n
 
 #### The helper model
 
-Before a help request reaches your chat, the **helper model** answers it: a Claude model you pick with `/q-pilot config helper haiku|sonnet|opus` (default `haiku`). It gets the same request Claude would (the reason, the numbered elements, the page text marked untrusted) and answers with actions on those elements, then `resume` or `observe`. The run goes on with no round trip through the session. So a stuck run climbs this ladder:
+Before a help request reaches your chat, the **helper model** answers it: a Claude model you pick with `/q-pilot config helper haiku|sonnet|opus` (default `haiku`). It gets the same request Claude would (the whole goal, up to 2000 characters, the reason, the numbered elements, the page text marked untrusted) and answers with actions on those elements, then `resume` or `observe`. The run goes on with no round trip through the session. So a stuck run climbs this ladder:
 
 ```text
 Jev (text) ─▶ Jev with the screenshot (vision) ─▶ Box rescue (box on) ─▶ helper model ─▶ your Claude session

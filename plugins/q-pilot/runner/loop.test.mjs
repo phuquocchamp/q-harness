@@ -4,7 +4,7 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { pilot, findCycle } from './record.mjs'
-import { perform } from './act.mjs'
+import { perform, trackNetwork } from './act.mjs'
 import { observe } from './snapshot.mjs'
 import { chooseAction, createJev } from './jev.mjs'
 import { DEMO, stubJev } from './testkit.mjs'
@@ -140,5 +140,40 @@ test('with several fixtures, the fixture is asked for the chosen field in a seco
     assert.equal(d.fixture, 'to')
   } finally {
     stub.restore()
+  }
+})
+
+test('a click waits for the data request it started, so the next look sees the loaded values, not placeholders', async () => {
+  const page = await browser.newPage()
+  try {
+    trackNetwork(page)
+    // Google Flights' date grid shape: placeholders until the prices arrive by fetch.
+    await page.route('https://data.test/**', async r => {
+      await new Promise(res => setTimeout(res, 700))
+      await r.fulfill({ body: '₫847,181', headers: { 'access-control-allow-origin': '*' } })
+    })
+    await page.setContent(`<button onclick="fetch('https://data.test/p').then(r => r.text()).then(t => out.textContent = t)">Date grid</button><p id=out>0000</p>`)
+    const snap = await observe(page)
+    await perform(page, snap.actions.find(a => a.label === 'Date grid'))
+    assert.equal(await page.locator('#out').textContent(), '₫847,181')
+  } finally {
+    await page.close()
+  }
+})
+
+test('with checksMet, a run ends as done by checks once they are green, though Jev never chose DONE', async () => {
+  const page = await browser.newPage()
+  // Jev keeps clicking: the grid is finished after the first click, but it never says DONE.
+  const stub = stubJev(() => ({ op: 'CLICK', label: 'Show total' }))
+  try {
+    await page.setContent('<button onclick="t.textContent = \'€12.00\'; n.textContent = +n.textContent + 1">Show total</button><p id=t></p><p id=n>0</p>')
+    const checksMet = async p => (await p.locator('#t').textContent()) === '€12.00'
+    const r = await pilot(page, { flow: { id: 't', start: '/', goal: 'g', budget: { steps: 10 } }, fixtures: {}, jev: createJev({ apiKey: 'k' }), deadline: Date.now() + 20000, checksMet })
+    assert.equal(r.end, 'done')
+    assert.equal(r.by, 'checks')
+    assert.equal(r.steps.length, 1)
+  } finally {
+    stub.restore()
+    await page.close()
   }
 })
