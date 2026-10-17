@@ -1,0 +1,11 @@
+{
+  "name": "q-pilot-demo-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

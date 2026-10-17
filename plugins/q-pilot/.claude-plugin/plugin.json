@@ -1,0 +1,19 @@
+{
+  "name": "q-pilot",
+  "version": "0.10.2",
+  "author": {
+    "name": "phuquocchamp"
+  },
+  "license": "MIT",
+  "description": "Runs browser tasks and UI tests from a prompt, like jev-ultrafast: Claude writes the task, Jev (TypeSafe) picks every step, Playwright executes it, and a live inspector shows and pauses each decision. Tests are graded by code, never by Jev's DONE; a passing test can be saved as a flow that the stop gate replays with no model when Claude edits UI.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "jevApiKey": {
+      "type": "string",
+      "title": "TypeSafe Jev API key",
+      "description": "Optional. The Jev key for driving tasks and tests, recording and healing. This option wins; when empty, TYPESAFE_API_KEY from the environment is used. Every other setting is set with /q-pilot config. Never put the key in q-pilot.config.json: that file is committed.",
+      "sensitive": true,
+      "required": false
+    }
+  }
+}

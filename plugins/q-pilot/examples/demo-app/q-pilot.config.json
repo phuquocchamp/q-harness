@@ -1,0 +1,5 @@
+{
+  "baseURL": "http://localhost:4731",
+  "flowsDir": "flows",
+  "server": { "command": ["node", "server.mjs"], "url": "http://localhost:4731", "timeoutMs": 20000 }
+}

@@ -1,0 +1,10 @@
+Copyright (c) 2026 phuquocchamp. Licensed under the MIT License (see LICENSE).
+
+This plugin includes material adapted from third-party projects:
+
+runner/ (DOM snapshot script, operation and target design)
+  Adapted from jev-ultrafast by Browser Use,
+  https://github.com/browser-use/jev-ultrafast
+  Copyright (c) 2026 Browser Use
+  Licensed under the MIT License.
+  Modified: ported to a plain Node ESM runner with record, replay and heal.

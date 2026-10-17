@@ -47,8 +47,12 @@ type Surface = Parameters<EngineInterface['ui']['copy']>[0]['surface']
 
 /** Copies `text` to the clipboard of the surface that was pressed and says how it went. */
 const copyText = async ($: EngineInterface, text: string, surface: Surface, what: string) => {
-  const r = await $.ui.copy({ text, surface })
-  $.ui.toast(r.isCopied ? `${what} copied` : `Could not copy: ${r.reason ?? 'no clipboard'}`)
+  try {
+    const r = await $.ui.copy({ text, surface })
+    $.ui.toast(r.isCopied ? `${what} copied` : `Could not copy: ${r.reason ?? 'no clipboard'}`)
+  } catch (err) {
+    $.ui.toast(`Could not copy: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 /** Colour of a diff row in a file panel. */
@@ -333,19 +337,30 @@ export const register: Register = on => {
         const startsOpen = !seg.closed || lineCount <= cfg.codeFoldLines
         const member = memberOf(codeOpen, { requestId: `${e.requestId}#${i}` })
         const isOpen = (await read($, member)) ?? startsOpen
+        const toggle = () => update($, member, v => !(v ?? startsOpen))
 
         return (
           <Box key={`code${i}`} flexDirection="column" width="100%" borderStyle="round" borderColor="gray" paddingX={1}>
             <Box flexDirection="row" justifyContent="space-between">
-              <Button key={`q-panel-code-${e.requestId}-${i}`} plain onPress={() => update($, member, v => !(v ?? startsOpen))}>
+              <Button key={`q-panel-code-${e.requestId}-${i}`} plain onPress={toggle}>
                 <Text color="cyan">
                   {isOpen ? '▾' : '▸'} {seg.lang || 'text'}
                 </Text>
               </Button>
-              <Text dimColor>
-                {lineCount} {lineCount === 1 ? 'line' : 'lines'}
-                {seg.closed ? '' : ' …'}
-              </Text>
+              <Box flexDirection="row" columnGap={1}>
+                <Text dimColor>
+                  {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+                  {seg.closed ? '' : ' …'}
+                </Text>
+                {seg.closed && seg.code !== '' && (
+                  <Button key={`q-panel-code-copy-${e.requestId}-${i}`} plain onPress={press => copyText($, seg.code, press.surface, 'Code')}>
+                    <Text dimColor>[ copy ]</Text>
+                  </Button>
+                )}
+                <Button key={`q-panel-code-fold-${e.requestId}-${i}`} plain onPress={toggle}>
+                  <Text dimColor>[ {isOpen ? 'collapse' : 'expand'} ]</Text>
+                </Button>
+              </Box>
             </Box>
             {isOpen && seg.code !== '' && <Code source={seg.code} language={seg.lang || undefined} />}
           </Box>

@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Validate marketplace and every plugin
+        run: claude plugin validate .
+      - name: Test each mod
+        run: |
+          for dir in plugins/*/; do
+            if [ -d "$dir/tests" ]; then
+              echo "::group::$dir"
+              claude plugin test "$dir"
+              echo "::endgroup::"
+            fi
+          done
+      - name: Viewer tests (q-graph)
+        run: node --test plugins/q-graph/viewer/*.test.mjs
+      - name: Shared UI copies are in sync
+        run: node scripts/sync-ui.mjs --check
+      - name: Script tests
+        run: node --test scripts/*.test.mjs
+      - name: Runner tests (q-pilot)
+        run: node --test plugins/q-pilot/runner/*.test.mjs

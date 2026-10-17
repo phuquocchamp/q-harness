@@ -1,0 +1,1309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>q-graph</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="stylesheet" href="reactflow-base.css" id="rf-css">
+<link rel="stylesheet" href="q-theme.css">
+<style>
+/* The q-graph live viewer. Tokens come from q-theme.css (generated from shared/ui). Kind colours (--q-k-*) mark
+   graph kinds only; UI chrome and "running" use --q-accent. */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--q-bg);color:var(--q-fg);font:14px/1.5 var(--q-sans);display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 16px;border-bottom:1px solid var(--q-line);background:var(--q-surface)}
+header h1{font:700 16px var(--q-mono);margin:0;display:flex;align-items:center;gap:8px}
+header h1 img{width:20px;height:20px}
+.live{font:600 12px var(--q-mono);color:var(--q-ok)}
+.live.off{color:var(--q-bad)}
+.counts{display:flex;gap:14px;font:12px var(--q-mono);color:var(--q-muted);margin-left:auto;flex-wrap:wrap}
+.counts b{color:var(--q-fg);font-weight:700}
+#app{flex:1;min-height:0;position:relative}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--q-muted);font:13px var(--q-mono);text-align:center;padding:24px}
+.qn{background:var(--q-surface);border:1.6px solid var(--k);border-left-width:6px;border-radius:9px;padding:8px 12px;width:240px;color:var(--q-fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.qn .h{display:flex;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden}
+.qn .h b{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis}
+.qn .h span{font:10.5px var(--q-mono);color:var(--q-muted)}
+.qn .h i{font:normal 10.5px var(--q-mono);color:var(--q-muted);margin-left:auto}
+.qn .t{margin-top:1px;font:11.5px var(--q-sans);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qn .s{display:flex;justify-content:space-between;gap:10px;margin-top:4px;font:600 11px var(--q-mono)}
+.qn .s em{font-style:normal;font-weight:400;color:var(--q-muted);flex:none;white-space:nowrap}
+.qn .s span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qn.pending{opacity:.5}
+.qn.ask{background:var(--q-warn-soft);border-color:var(--q-warn)}
+.qn.running{box-shadow:0 0 0 4px color-mix(in srgb,var(--k) 20%,transparent)}
+.qn.sel{outline:2px solid var(--k);outline-offset:3px}
+.qt{background:color-mix(in srgb,var(--c) 10%,var(--q-surface));border:1.4px solid var(--c);border-radius:7px;padding:3px 9px;width:184px;font:600 11.5px var(--q-mono);color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qt small{font:400 10px var(--q-mono);opacity:.75;margin-right:6px;text-transform:uppercase;letter-spacing:.04em}
+.qt.hot{background:var(--c);color:var(--q-surface)}
+.qh{background:var(--q-sunken);border:1.4px dashed var(--q-muted);border-radius:9px;padding:8px 12px;width:300px;font:11.5px var(--q-mono);color:var(--q-fg)}
+.qh b{display:block;font:600 13px var(--q-sans);margin-bottom:4px}
+.qh b span{font:400 10.5px var(--q-mono);color:var(--q-muted);margin-left:8px}
+.qh div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qh i{font-style:normal;font-weight:700;color:var(--c)}
+.react-flow__handle{opacity:0;pointer-events:none}
+.react-flow__attribution{display:none}
+.react-flow__controls{box-shadow:var(--q-shadow-1);border:1px solid var(--q-line);border-radius:var(--q-r-md);overflow:hidden}
+.react-flow__controls-button{background:var(--q-surface);border-bottom-color:var(--q-line)}
+.react-flow__controls-button:hover{background:var(--q-sunken)}
+.react-flow__controls-button svg{fill:var(--q-fg)}
+.react-flow__minimap{background:var(--q-surface);border:1px solid var(--q-line)}
+.react-flow__minimap-mask{fill:color-mix(in srgb,var(--q-bg) 70%,transparent)}
+.react-flow__edge.selected .react-flow__edge-path,.react-flow__edge:focus-visible .react-flow__edge-path{stroke:var(--q-accent)}
+.react-flow__selection,.react-flow__nodesselection-rect{background:var(--q-accent-soft);border:1px dotted var(--q-accent-line)}
+.qt.sel{outline:2px solid var(--c);outline-offset:2px}
+/* The canvas and, while a node is selected, the detail sidebar on its right (a bottom sheet on narrow screens). */
+.row{display:flex;height:100%}
+.canvas{flex:1;min-width:0;min-height:0;position:relative}
+.side{width:var(--side-w,360px);flex:none;position:relative;border-left:1px solid var(--q-line);background:var(--q-surface);display:flex;min-width:0}
+.side .scroll{flex:1;min-width:0;overflow:auto;padding:12px 14px 24px;font:12px/1.5 var(--q-mono)}
+/* Drag the left edge to resize; double-click it (or the ⤢ button) to toggle wide. */
+.grip{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:5;touch-action:none}
+.grip::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:transparent;transition:background .15s}
+.grip:hover::after,.grip:focus-visible::after,.side.drag .grip::after{background:var(--q-accent)}
+.grip:focus-visible{outline:none}
+.side.drag{user-select:none}
+/* Narrow screens: the sidebar is a bottom sheet that starts as a peek (⤢ makes it taller), no minimap, a one-line scrolling header. */
+@media (max-width:760px){
+  .row{flex-direction:column}
+  .side{width:auto;height:35vh;max-height:35vh;display:block;overflow:auto;border-left:0;border-top:1px solid var(--q-line)}
+  .side.tall{height:70vh;max-height:70vh}
+  .grip{display:none}
+  .react-flow__minimap{display:none}
+  header{flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;gap:10px 14px}
+  header>*{flex:none}
+  .legend,.counts{flex-wrap:nowrap}
+  .counts{margin-left:0}
+}
+.side .top{display:flex;align-items:flex-start;gap:8px}
+.side .top b{font:600 15px var(--q-sans);flex:1;min-width:0;overflow-wrap:anywhere}
+.side .x{all:unset;cursor:pointer;color:var(--q-muted);font:16px/1 var(--q-mono);padding:2px 6px;border-radius:5px}
+.side .x:hover{background:var(--q-sunken);color:var(--q-fg)}
+.side .x:focus-visible{outline:2px solid var(--q-accent)}
+.side h3{font:600 10.5px var(--q-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--q-muted);margin:16px 0 6px}
+.chip{display:inline-block;font:600 10.5px var(--q-mono);color:var(--c);border:1px solid var(--c);border-radius:999px;padding:0 7px;margin-top:3px;background:color-mix(in srgb,var(--c) 10%,var(--q-surface));white-space:nowrap}
+.kv{display:grid;grid-template-columns:72px 1fr;gap:2px 8px;margin-top:10px}
+.kv>span{color:var(--q-muted)}
+.kv>div{min-width:0;overflow-wrap:anywhere}
+.lnk{all:unset;cursor:pointer;color:var(--c,var(--q-fg));overflow-wrap:anywhere}
+.lnk:hover{text-decoration:underline}
+.lnk:focus-visible,.bar:focus-visible,.call .r:focus-visible{outline:2px solid var(--q-accent);outline-offset:1px}
+.list{margin:0;padding:0;list-style:none}
+.list li{padding:1px 0;overflow-wrap:anywhere}
+.bar{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;cursor:pointer;padding:2px 4px;border-radius:5px}
+.bar:hover,.bar.on{background:var(--q-sunken)}
+.bar .l{width:130px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c)}
+.bar .t{flex:1;height:7px;background:var(--q-sunken);border-radius:4px;overflow:hidden}
+.bar .t i{display:block;height:100%;background:var(--c);border-radius:4px}
+.bar em{font-style:normal;color:var(--q-muted);min-width:28px;text-align:right}
+.note{color:var(--q-muted);font-style:italic;margin:6px 0}
+pre.txt{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:280px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:6px 8px;font:11.5px/1.45 var(--q-mono)}
+details.fold{margin-top:6px}
+details.fold summary{cursor:pointer;color:var(--q-muted);font:600 10.5px var(--q-mono);text-transform:uppercase;letter-spacing:.06em}
+details.fold.sec{margin:16px 0 0}
+details.fold.sec[open]>summary{margin-bottom:6px}
+/* Markdown preview of prompts and results: sanitized HTML, the raw text one click away. */
+.mdwrap{position:relative;margin:4px 0}
+.mdwrap .mode{position:absolute;top:4px;right:6px;z-index:1;display:inline-flex;overflow:hidden;font:600 10px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px}
+.mdwrap .mode button{all:unset;cursor:pointer;color:var(--q-muted);padding:0 6px}
+.mdwrap .mode button+button{border-left:1px solid var(--q-line)}
+.mdwrap .mode button:hover{color:var(--q-fg)}
+.mdwrap .mode button[aria-pressed="true"]{background:var(--q-fg);color:var(--q-surface);cursor:default}
+.mdwrap .mode button:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
+.mdwrap pre.txt{margin:0;padding-right:76px}
+.md{max-height:420px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:6px 76px 6px 10px;font:13px/1.55 var(--q-sans);overflow-wrap:anywhere}
+.md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{font:600 13.5px/1.35 var(--q-sans);margin:12px 0 4px;color:var(--q-fg);text-transform:none;letter-spacing:0}
+.md h1{font-size:16px}.md h2{font-size:15px}.md h3{font-size:14px}
+.md p,.md ul,.md ol,.md blockquote,.md table,.md pre{margin:6px 0}
+.md ul,.md ol{padding-left:20px}
+.md li{margin:1px 0}
+.md code{font:11.5px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px;padding:0 4px}
+.md pre{background:var(--q-surface);border:1px solid var(--q-line);border-radius:5px;padding:6px 8px;overflow:auto;white-space:pre}
+.md pre code{border:0;padding:0;background:none}
+.md blockquote{border-left:3px solid var(--q-line);padding-left:10px;color:var(--q-muted)}
+.md table{border-collapse:collapse;display:block;overflow-x:auto;font-size:12px}
+.md th,.md td{border:1px solid var(--q-line);padding:2px 6px;text-align:left}
+.md th{background:var(--q-surface)}
+.md a{color:var(--q-accent)}
+.md hr{border:0;border-top:1px solid var(--q-line);margin:10px 0}
+.md img{max-width:100%}
+.side .x[aria-pressed="true"].pin{color:var(--q-accent)}
+.call{border-top:1px solid var(--q-line)}
+.call .r{display:flex;gap:8px;align-items:baseline;padding:4px 2px;cursor:pointer}
+.call .r:hover{background:var(--q-sunken)}
+.call .r .tm{color:var(--q-muted);flex:none}
+.call .r .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call .r .n small{color:var(--q-muted);margin-left:6px;font-size:11px}
+.call .r .d{color:var(--q-muted);flex:none}
+.call .r .go{all:unset;cursor:pointer;flex:none;color:var(--c,var(--q-accent));font-size:11px}
+.call .r .go:hover{text-decoration:underline}
+.call .r .go:focus-visible{outline:2px solid var(--q-accent);outline-offset:1px}
+.spawned{margin:4px 0;color:var(--q-muted)}
+.call .body{padding:0 2px 8px}
+.call .body h4{margin:6px 0 0;font:600 10px var(--q-mono);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em}
+.ok{color:var(--q-ok)} .bad{color:var(--q-bad)} .run{color:var(--q-accent)}
+.legend{display:flex;gap:12px;font:11px var(--q-mono);color:var(--q-muted);flex-wrap:wrap}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c)}
+.call.focus>.r{background:color-mix(in srgb,var(--q-accent) 12%,transparent)}
+/* Graph | Timeline switch in the header. */
+.seg{display:inline-flex;border:1px solid var(--q-line);border-radius:7px;overflow:hidden}
+.seg button{all:unset;cursor:pointer;font:600 12px var(--q-mono);padding:3px 10px;color:var(--q-muted)}
+.seg button+button{border-left:1px solid var(--q-line)}
+.seg button[aria-pressed="true"]{background:var(--q-fg);color:var(--q-surface)}
+.seg button:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
+/* Timeline: a toolbar, then one scroller holding a sticky axis row and sticky lane labels. */
+.tl{display:flex;flex-direction:column;height:100%}
+.tl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 10px;border-bottom:1px solid var(--q-line);background:var(--q-surface);font:12px var(--q-mono)}
+.tl-bar button{all:unset;cursor:pointer;border:1px solid var(--q-line);border-radius:6px;padding:1px 9px;font:600 12px var(--q-mono);color:var(--q-fg);background:var(--q-surface)}
+.tl-bar button:hover{background:var(--q-sunken)}
+.tl-bar button[aria-pressed="true"]{background:color-mix(in srgb,var(--q-accent) 14%,var(--q-surface));border-color:var(--q-accent);color:var(--q-accent)}
+.tl-bar button:focus-visible{outline:2px solid var(--q-accent)}
+.tl-bar .info{color:var(--q-muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-scroll{flex:1;min-height:0;overflow:auto;position:relative}
+.tl-axis{position:sticky;top:0;z-index:4;display:flex;height:26px;background:var(--q-surface);border-bottom:1px solid var(--q-line)}
+.tl-corner{position:sticky;left:0;z-index:5;flex:none;background:var(--q-surface);border-right:1px solid var(--q-line);font:600 10.5px var(--q-mono);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px}
+.tl-ticks{position:relative;flex:none;height:100%;overflow:hidden}
+.tl-tick{position:absolute;bottom:0;height:7px;border-left:1px solid var(--q-muted)}
+.tl-tick span{position:absolute;bottom:7px;left:3px;font:10.5px var(--q-mono);color:var(--q-muted);white-space:nowrap}
+.tl-brklab{position:absolute;top:0;bottom:0;display:grid;place-items:center;cursor:help;font:10px var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:visible}
+.tl-body{display:flex;position:relative}
+.tl-labels{position:sticky;left:0;z-index:3;flex:none;background:var(--q-surface);border-right:1px solid var(--q-line)}
+.tl-lab{all:unset;box-sizing:border-box;display:block;width:100%;cursor:pointer;padding:3px 8px;border-bottom:1px solid var(--q-line);overflow:hidden}
+.tl-lab:hover{background:var(--q-sunken)}
+.tl-lab.on{background:color-mix(in srgb,var(--k) 14%,var(--q-surface));box-shadow:inset 3px 0 0 var(--k)}
+.tl-lab:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
+.tl-lab b{display:block;font:600 12.5px/1.3 var(--q-sans);color:var(--k);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-lab small{display:block;font:10.5px/1.3 var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-canvas{position:relative;z-index:0;flex:none;overflow:hidden}
+.tl-row{position:absolute;left:0;right:0;border-bottom:1px solid var(--q-line)}
+.tl-row.on{background:color-mix(in srgb,var(--k) 7%,transparent)}
+.tl-life{position:absolute;height:3px;border-radius:2px;background:var(--k);opacity:.55}
+.tl-brk{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--q-muted) 18%,transparent) 0 3px,transparent 3px 7px);border-left:1px dashed var(--q-line);border-right:1px dashed var(--q-line);z-index:1;pointer-events:none}
+.tb{position:absolute;height:12px;border-radius:3px;background:var(--c);cursor:pointer;z-index:2}
+.tb:hover{filter:brightness(1.15);z-index:3}
+.tb.err{box-shadow:0 0 0 1.5px var(--q-bad);background:color-mix(in srgb,var(--c) 55%,var(--q-surface))}
+.tb.run{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.35) 0 4px,transparent 4px 8px);background-size:11.3px 11.3px;animation:tlrun 1s linear infinite}
+.tb.hit{outline:1px solid var(--q-fg);outline-offset:1px}
+.tb.sel{outline:2.5px solid var(--q-accent);outline-offset:2px;z-index:4}
+@keyframes tlrun{to{background-position:11.3px 0}}
+@media (prefers-reduced-motion: reduce){.tb.run{animation:none}}
+.tl-prompt{position:absolute;width:9px;height:9px;margin-left:-4.5px;transform:rotate(45deg);background:var(--q-surface);border:1.5px solid var(--q-accent);z-index:3;cursor:help}
+.tl-now{position:absolute;top:0;bottom:0;width:0;border-left:1.5px solid var(--q-ok);z-index:3;pointer-events:none}
+.tl-links{position:absolute;left:0;top:0;pointer-events:none;z-index:1;overflow:visible}
+.tl-tip{position:fixed;z-index:20;pointer-events:none;max-width:420px;background:var(--q-surface);border:1px solid var(--q-line);border-radius:6px;padding:5px 8px;font:11.5px/1.45 var(--q-mono);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.tl-tip b{font-weight:600}
+.tl-tip div{overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<header>
+  <h1><img src="icon.svg" alt="">q-graph</h1>
+  <span id="views"></span>
+  <span class="live off" id="live">● connecting</span>
+  <span class="legend"><span><i style="--c:var(--q-k-main)"></i>main</span><span><i style="--c:var(--q-k-sub)"></i>subagent</span><span><i style="--c:var(--q-k-team)"></i>teammate</span><span><i style="--c:var(--q-k-tool)"></i>tool</span><span><i style="--c:var(--q-k-skill)"></i>skill</span><span><i style="--c:var(--q-k-mcp)"></i>mcp</span><span><i style="--c:var(--q-k-rule)"></i>rule</span></span>
+  <span class="counts" id="counts"></span>
+</header>
+<div id="app"><div class="empty">Waiting for the session's first snapshot…</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/umd/index.js" integrity="sha384-lA1w00Vex5qXDv4/xYJO/e8SCjfdlNghbTP+s+2zl37rCEAC7trsSRpYrv/JQy5y" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js" integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a" crossorigin="anonymous"></script>
+<script>
+(function () {
+  const app = document.getElementById('app')
+  if (!window.React || !window.ReactDOM || !window.ReactFlow) {
+    app.innerHTML = '<div class="empty">Could not load React Flow from the CDN (cdnjs, jsDelivr). The viewer needs internet access for its scripts; the data stays on this machine.</div>'
+    return
+  }
+  const h = React.createElement
+  const RF = window.ReactFlow
+  const token = new URLSearchParams(location.search).get('k') || ''
+
+  const KIND = { main: '--q-k-main', subagent: '--q-k-sub', teammate: '--q-k-team' }
+  const kvar = k => 'var(' + (KIND[k] || '--q-muted') + ')'
+  const ASK = new Set(['AskUserQuestion', 'ExitPlanMode'])
+  const GLOW_MS = 1200
+  const STATUS = { pending: ['· starting', 'var(--q-muted)'], waiting: ['⏸ waiting', 'var(--q-muted)'], idle: ['○ idle', 'var(--q-muted)'], completed: ['✓ done', 'var(--q-ok)'], failed: ['✗ failed', 'var(--q-bad)'], killed: ['■ stopped', 'var(--q-muted)'], lost: ['? lost', 'var(--q-muted)'] }
+  const fmtTok = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n || 0)))
+  const fmtTime = ms => { const s = Math.max(0, Math.floor(ms / 1000)); if (s < 60) return s + 's'; const m = Math.floor(s / 60); return m < 60 ? m + 'm' + String(s % 60).padStart(2, '0') : Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') }
+  const shortModel = m => ((/\b(opus|sonnet|haiku|fable)\b/i.exec(m || '') || [])[1] || (m || '').replace(/^claude-/, '').replace(/-\d{8}$/, '')).toLowerCase()
+  const since = (a, now) => (a.startedAt > 0 ? fmtTime((a.endedAt ?? now) - a.startedAt) : '')
+  // Any ask tool still in flight, not just the latest call (an agent can run tools in parallel).
+  const needsYou = a => a.kind !== 'main' && (Array.isArray(a.inFlight) ? a.inFlight.some(c => ASK.has(c.tool)) : !!(a.currentTool && ASK.has(a.currentTool)))
+  // An agent's uses (lib/graph.ts useOf, agentUses): a tool, `skill:<name>`, `mcp:<server>`, `rule:<path>`.
+  const USE_VAR = { tool: 'var(--q-k-tool)', skill: 'var(--q-k-skill)', mcp: 'var(--q-k-mcp)', rule: 'var(--q-k-rule)' }
+  const USE_TOKEN = { tool: '--q-k-tool', skill: '--q-k-skill', mcp: '--q-k-mcp', rule: '--q-k-rule' }
+  // Canvas colours cannot use var(); read the live token (the page re-renders when the colour scheme flips).
+  const cssVar = name => (name ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '')
+  const useOf = key => {
+    const i = key.indexOf(':'), p = i > 0 ? key.slice(0, i) : ''
+    if (p === 'skill' || p === 'mcp') return { kind: p, label: key.slice(i + 1) }
+    if (p === 'rule') return { kind: 'rule', label: key.slice(i + 1).split(/[\\/]/).pop() }
+    return { kind: 'tool', label: key }
+  }
+  const useHot = (a, key, now) => a.currentUse === key || now - ((a.toolAt || {})[key] ?? -Infinity) < GLOW_MS
+  /** Every use a card lists, in first-use order: none is folded away. */
+  const usesOf = (a, now) => Object.entries(a.tools || {}).map(([key, calls]) => ({ key, ...useOf(key), calls, at: (a.toolAt || {})[key] || 0, hot: useHot(a, key, now) }))
+  const useText = u => (u.kind === 'tool' || u.kind === 'mcp' || u.calls > 1) && u.kind !== 'rule' ? u.label + ' ×' + u.calls : u.label
+  const harnessLines = hz => {
+    const list = xs => (xs.length ? ': ' + xs.join(', ') : '')
+    const base = p => p.split(/[\\/]/).pop()
+    const hooks = Object.entries(hz.hooks || {})
+    return [
+      ['rules', 'var(--q-k-rule)', hz.rules.length + list(hz.rules.map(base))],
+      ['hooks', 'var(--q-warn)', hooks.reduce((n, e) => n + e[1], 0) + list(hooks.map(e => e[0] + ' ' + e[1]))],
+      ['skills', 'var(--q-k-skill)', String(hz.skills)],
+      ['mcp', 'var(--q-k-mcp)', hz.mcpServers.length + list(hz.mcpServers)],
+      ['agents', 'var(--q-k-sub)', String(hz.agents)],
+    ]
+  }
+
+  const firstLine = (t, max) => { const l = (t || '').split('\n')[0].trim(); return l.length > max ? l.slice(0, max - 1) + '…' : l }
+  /** Tokens for a card: "—" while a live agent has reported none yet, nothing for a finished one with none. */
+  const tokText = a => (a.tokens ? fmtTok(a.tokens) + ' tok' : a.status === 'running' || a.status === 'pending' ? '— tok' : '')
+  /** How many of an agent's children are still working (so an idle parent is waiting, not idle). */
+  const liveKids = (g, id) => childrenOf(g, id).filter(c => LIVE.has(g.agents[c].status)).length
+  const waitingText = n => 'waiting on ' + n + (n === 1 ? ' agent' : ' agents')
+  /** A path as the person knows it: repo-relative under the project, else ~ for home. The root comes from a project rule's .claude/rules path. */
+  const HOME_RE = /^(\/Users\/[^/]+|\/home\/[^/]+)/
+  const shortPath = (hz, p) => {
+    const home = ((HOME_RE.exec(p) || [])[1]) || ''
+    const root = ((hz && hz.rules) || []).map(r => (/^(.*)\/\.claude\/rules\//.exec(r) || [])[1]).find(r => r && r !== home && r.startsWith(home || '/'))
+    if (root && p.startsWith(root + '/')) return p.slice(root.length + 1)
+    return home && p.startsWith(home + '/') ? '~' + p.slice(home.length) : p
+  }
+
+  // Left-to-right tree: one column per depth; each agent takes a band of rows (its card, then its
+  // uses), its first child level with it; the harness card on top.
+  const COL = 300, ROW = 92, USE_ROW = 30, USE_X = 26, HARNESS_H = 190
+  function layout(g, now, keep) {
+    const kids = new Map()
+    for (const id of g.order) {
+      const a = g.agents[id]
+      if (!a || id === 'main' || (keep && !keep.has(id))) continue
+      const p = a.parentId && g.agents[a.parentId] ? a.parentId : 'main'
+      kids.set(p, [...(kids.get(p) || []), id])
+    }
+    const pos = new Map()
+    let cursor = g.harness ? HARNESS_H : 0
+    const seen = new Set()
+    const place = (id, depth) => {
+      seen.add(id)
+      const y = cursor
+      pos.set(id, { x: depth * COL, y })
+      const a = g.agents[id]
+      const uses = a ? usesOf(a, now) : []
+      const rows = uses.length
+      // Relative to the agent's card: a use node is a child of its card, so the two move together.
+      uses.forEach((use, i) => pos.set('use:' + id + ':' + use.key, { x: USE_X, y: ROW - 14 + i * USE_ROW }))
+      for (const k of (kids.get(id) || []).filter(k => !seen.has(k))) place(k, depth + 1)
+      cursor = Math.max(cursor, y + ROW + rows * USE_ROW + (rows ? 10 : 0))
+    }
+    place('main', 0)
+    if (g.harness) pos.set('harness', { x: 0, y: 0 })
+    return pos
+  }
+
+  function Agent({ data, selected }) {
+    const a = data.a, now = data.now
+    const ask = needsYou(a)
+    const st = ask ? ['⚠ needs you', 'var(--q-warn)'] : a.status === 'running' ? ['● ' + (a.currentTool || 'running'), kvar(a.kind)]
+      : a.status === 'idle' && data.waiting ? ['⏸ ' + waitingText(data.waiting), 'var(--q-muted)'] : STATUS[a.status] || ['', '']
+    const cls = 'qn ' + a.status + (ask ? ' ask' : '') + (selected ? ' sel' : '')
+    const task = firstLine(a.description, 90)
+    return h('div', { className: cls, style: { '--k': kvar(a.kind) }, role: 'group', 'aria-label': a.kind + ' ' + a.label + ', ' + (ask ? 'needs you' : a.status === 'idle' && data.waiting ? waitingText(data.waiting) : a.status), title: [a.label + ' · ' + (shortModel(a.model) || a.kind), a.description].filter(Boolean).join('\n') },
+      h(RF.Handle, { type: 'target', position: RF.Position.Left }),
+      h('div', { className: 'h' }, h('b', null, a.label), h('i', null, since(a, now))),
+      task ? h('div', { className: 't' }, task) : null,
+      h('div', { className: 's' }, h('span', { style: { color: st[1] } }, st[0]), h('em', null, [a.status === 'idle' && data.waiting ? '' : shortModel(a.model), tokText(a)].filter(Boolean).join(' · '))),
+      h(RF.Handle, { type: 'source', position: RF.Position.Right, id: 'r' }),
+      h(RF.Handle, { type: 'source', position: RF.Position.Bottom, id: 'u', style: { left: 14 } }))
+  }
+  function Use({ data, selected }) {
+    const u = data.u
+    return h('div', { className: 'qt' + (u.hot ? ' hot' : '') + (selected ? ' sel' : ''), style: { '--c': USE_VAR[u.kind] }, title: u.key, role: 'group', 'aria-label': u.kind + ' ' + u.label + ', ' + u.calls + (u.calls === 1 ? ' call' : ' calls') },
+      h(RF.Handle, { type: 'target', position: RF.Position.Left }),
+      u.kind === 'tool' ? null : h('small', null, u.kind), useText(u))
+  }
+  function HarnessCard({ data }) {
+    return h('div', { className: 'qh', role: 'group', 'aria-label': 'harness: configured and loaded rules, hooks, skills, MCP servers and agents' },
+      h('b', null, 'harness', h('span', null, 'configured · loaded')),
+      harnessLines(data.harness).map(([name, color, rest]) => h('div', { key: name, title: name + ' ' + rest }, h('i', { style: { '--c': color } }, name), ' ' + rest)))
+  }
+  function Flow(p) {
+    const d = p.data || {}
+    // Tree edges are orthogonal; message edges (dashed) stay curved so they read as a different relation.
+    const [path] = d.dashed ? RF.getBezierPath(p) : RF.getSmoothStepPath({ ...p, borderRadius: 8 })
+    return h(React.Fragment, null,
+      h(RF.BaseEdge, { path, style: { stroke: d.active ? d.color : 'var(--q-line)', strokeWidth: d.active ? 2.4 : 1.4, strokeDasharray: d.dashed ? '5 4' : undefined, opacity: d.faint && !d.active ? 0.6 : 1 } }),
+      d.active ? h('circle', { r: 5, style: { fill: d.color } }, h('animateMotion', { dur: '0.9s', repeatCount: 'indefinite', path })) : null)
+  }
+  const nodeTypes = { agent: Agent, use: Use, harness: HarnessCard }
+  const edgeTypes = { flow: Flow }
+
+  /** `keep`: the agent ids to draw (the Working filter), or null for all of them. */
+  function build(g, now, moved, keep) {
+    const pos = layout(g, now, keep)
+    const nodes = [], edges = []
+    if (g.harness) nodes.push({ id: 'harness', type: 'harness', position: moved.get('harness') || pos.get('harness'), data: { harness: g.harness } })
+    for (const id of g.order) {
+      const a = g.agents[id]
+      if (!a || !pos.has(id)) continue
+      nodes.push({ id, type: 'agent', position: moved.get(id) || pos.get(id), data: { a, now, waiting: a.status === 'idle' ? liveKids(g, id) : 0 } })
+      if (a.parentId && g.agents[a.parentId]) edges.push({ id: a.parentId + '>' + id, source: a.parentId, sourceHandle: 'r', target: id, type: 'flow', data: { active: a.status === 'running', color: kvar(a.kind) } })
+      // Each agent's own uses hang under its card, one edge each: two agents on Bash are two nodes.
+      for (const use of usesOf(a, now)) {
+        const nid = 'use:' + id + ':' + use.key
+        nodes.push({ id: nid, type: 'use', parentNode: id, draggable: false, position: pos.get(nid), data: { u: use } })
+        edges.push({ id: id + '>' + nid, source: id, sourceHandle: 'u', target: nid, type: 'flow', data: { active: use.hot, color: USE_VAR[use.kind], faint: true } })
+      }
+    }
+    for (const m of g.messages || []) {
+      if (!pos.has(m.from) || !pos.has(m.to)) continue
+      const isTree = g.agents[m.to]?.parentId === m.from || g.agents[m.from]?.parentId === m.to
+      if (!isTree) edges.push({ id: 'msg:' + m.from + '>' + m.to, source: m.from, sourceHandle: 'r', target: m.to, type: 'flow', data: { dashed: true, color: 'var(--q-k-team)' } })
+    }
+    return { nodes, edges }
+  }
+
+  // ---- Detail sidebar: what happened inside the selected node, read on demand from GET /detail ----
+
+  const LIVE = new Set(['running', 'pending'])
+  /**
+   * The Working filter: main, every agent still at work (running, starting, waiting on a message, or
+   * needing you), and their ancestors so the tree stays connected. Finished, idle, stopped and lost agents drop out.
+   */
+  const workingIds = g => {
+    const keep = new Set(['main'])
+    for (const id of g.order) {
+      const a = g.agents[id]
+      if (!a || id === 'main' || !(LIVE.has(a.status) || a.status === 'waiting' || needsYou(a))) continue
+      for (let cur = id; cur && !keep.has(cur); cur = g.agents[cur] ? parentOf(g, g.agents[cur]) : null) keep.add(cur)
+    }
+    return keep
+  }
+  const REFRESH_MS = 2000
+  /** `use:<agentId>:<useKey>`: agent ids never hold a colon, so the first one after the prefix splits them. */
+  const parseUseId = id => { const rest = id.slice(4), i = rest.indexOf(':'); return i < 0 ? null : { owner: rest.slice(0, i), key: rest.slice(i + 1) } }
+  const parentOf = (g, a) => (a.parentId && g.agents[a.parentId] ? a.parentId : 'main')
+  const childrenOf = (g, id) => g.order.filter(c => c !== 'main' && g.agents[c] && parentOf(g, g.agents[c]) === id)
+  const clock = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour12: false }) }
+  const fmtDur = ms => (ms == null ? '' : ms < 1000 ? Math.round(ms) + 'ms' : ms < 60000 ? (ms / 1000).toFixed(1) + 's' : fmtTime(ms))
+  const str = v => (typeof v === 'string' ? v : '')
+  /** The call's tool as the graph names its use: `srv · tool` for MCP, the skill name for Skill. */
+  const callLabel = c => {
+    const m = /^mcp__(.+?)__(.+)$/.exec(c.tool)
+    if (m) return { kind: 'mcp', label: m[1] + ' · ' + m[2] }
+    if (c.tool === 'Skill' && str((c.input || {}).skill)) return { kind: 'skill', label: c.input.skill }
+    return { kind: 'tool', label: c.tool }
+  }
+  /** A one-line hint of what the call was about. */
+  const callHint = c => {
+    const i = c.input || {}
+    if (c.tool === 'Bash') return str(i.command).split('\n')[0]
+    if (str(i.file_path)) return i.file_path.split(/[\\/]/).pop()
+    return str(i.pattern) || str(i.description) || str(i.query) || str(i.url) || ''
+  }
+  /** The one input field that matters for this tool (a command, a path, a pattern), else null. */
+  const inputField = c => {
+    const i = c.input || {}
+    if (c.tool === 'Bash' && str(i.command)) return i.command
+    if (/^(Read|Edit|Write|MultiEdit|NotebookEdit)$/.test(c.tool) && str(i.file_path)) return i.file_path
+    if (c.tool === 'Grep' && str(i.pattern)) return i.pattern
+    return null
+  }
+  /** What the expanded row shows as input: the one field that matters, else the whole input as JSON. */
+  const inputText = c => {
+    const f = inputField(c)
+    if (f != null) return f
+    try { return JSON.stringify(c.input, null, 2) } catch (e) { return String(c.input) }
+  }
+  /** A code span or fence longer than any backtick run inside `s`, so the content cannot close it. */
+  const ticks = (s, min) => '`'.repeat(Math.max(min, ...(s.match(/`+/g) || ['']).map(r => r.length + 1)))
+  const codeSpan = s => { const t = ticks(s, 1); return t + ' ' + s + ' ' + t }
+  const fence = (s, lang) => { const t = ticks(s, 3); return t + (lang || '') + '\n' + s + '\n' + t }
+  /** A JSON input as markdown: each field bold, long strings as markdown, short values as code, objects as JSON. */
+  const inputMd = c => {
+    const i = c.input
+    if (!i || typeof i !== 'object' || Array.isArray(i) || !Object.keys(i).length) return null
+    return Object.entries(i).map(([k, v]) => {
+      if (typeof v === 'string') return v.includes('\n') || v.length > 80 ? '**' + k + '**\n\n' + v : '**' + k + '** ' + codeSpan(v)
+      if (v && typeof v === 'object') return '**' + k + '**\n\n' + fence(JSON.stringify(v, null, 2), 'json')
+      return '**' + k + '** ' + codeSpan(String(v))
+    }).join('\n\n')
+  }
+  /**
+   * Whether text reads as markdown: at least two kinds of markdown syntax (heading, fence, table, list,
+   * bold, link, quote). Read output (line-numbered) and plain logs fail it; a `cat README.md` passes.
+   */
+  const MD_SIGNS = [/^#{1,6} \S/m, /^\s*(```|~~~)/m, /^\s*\|?\s*:?-{3,}:?\s*\|/m, /^\s*([-*+]|\d+\.) \S/m, /\*\*[^*\n]+\*\*/, /\[[^\]\n]+\]\([^)\s]+\)/, /^> \S/m]
+  const looksMd = text => { const t = text.slice(0, 20000); return MD_SIGNS.filter(r => r.test(t)).length >= 2 }
+
+  // Markdown preview: marked renders, DOMPurify strips scripts and handlers. Without either library, raw text.
+  const MD_OK = !!(window.marked && window.DOMPurify)
+  if (MD_OK) {
+    DOMPurify.addHook('afterSanitizeAttributes', n => { if (n.tagName === 'A') { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer') } })
+  }
+  // Transcript text is untrusted: no tag or attribute that could load a remote resource or submit data.
+  const PURIFY = { FORBID_TAGS: ['img', 'image', 'picture', 'source', 'video', 'audio', 'track', 'iframe', 'object', 'embed', 'style', 'link', 'base', 'form', 'input', 'button', 'textarea', 'select'], FORBID_ATTR: ['style', 'srcset', 'src', 'action', 'formaction'] }
+  const mdHtml = text => DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }), PURIFY)
+  const MD_KEY = 'q-graph.md'
+  /**
+   * A text block with a raw/md toggle. With `md` (prompts, results, text that looks like markdown) it is
+   * rendered by default and the toggle is kept per browser; otherwise it starts raw and the toggle is this
+   * block's only. `source` is the markdown to render when it differs from the raw text (a JSON input).
+   */
+  function Md({ text, source, className, md = true }) {
+    const [raw, setRaw] = React.useState(() => !MD_OK || !md || loadPref(MD_KEY, 'md') === 'raw')
+    const html = React.useMemo(() => (raw ? '' : mdHtml(source == null ? text : source)), [text, source, raw])
+    const flip = () => { const v = !raw; setRaw(v); if (md) savePref(MD_KEY, v ? 'raw' : 'md') }
+    return h('div', { className: 'mdwrap' },
+      MD_OK ? h('span', { className: 'mode', role: 'group', 'aria-label': 'Display mode' },
+        h('button', { title: 'Show as markdown', 'aria-pressed': !raw, onClick: () => raw && flip() }, 'md'),
+        h('button', { title: 'Show raw text', 'aria-pressed': raw, onClick: () => !raw && flip() }, 'raw')) : null,
+      raw ? h('pre', { className: 'txt' + (className ? ' ' + className : '') }, text)
+        : h('div', { className: 'md' + (className ? ' ' + className : ''), dangerouslySetInnerHTML: { __html: html } }))
+  }
+  const isSpawnTool = c => c.tool === 'Agent' || c.tool === 'Task'
+
+  /**
+   * Fetches `detail?...&<query>` for the selection: at once when the query changes, then, while `live`,
+   * at most every REFRESH_MS on snapshot updates (trailing, so the update that ends a run is not lost).
+   * Out-of-order answers are dropped by a sequence number.
+   */
+  function useDetail(query, live, snap) {
+    const [st, setSt] = React.useState({ query: null, data: null, loading: false })
+    const seq = React.useRef(0), last = React.useRef(0), timer = React.useRef(null), prev = React.useRef({ query: null, live: false })
+    React.useEffect(() => () => clearTimeout(timer.current), [])
+    React.useEffect(() => {
+      const was = prev.current
+      prev.current = { query, live }
+      if (!query) { clearTimeout(timer.current); timer.current = null; return }
+      const go = () => {
+        timer.current = null
+        last.current = Date.now()
+        const my = ++seq.current
+        setSt(s => (s.query === query ? { ...s, loading: true } : { query, data: null, loading: true }))
+        fetch('detail?k=' + encodeURIComponent(token) + '&' + query)
+          .then(r => r.json().catch(() => ({ error: 'HTTP ' + r.status })).then(d => (r.ok ? d : { calls: [], ...d, error: d.error || 'HTTP ' + r.status })))
+          .catch(e => ({ calls: [], error: String((e && e.message) || e) }))
+          .then(data => { if (my === seq.current) setSt({ query, data, loading: false }) })
+      }
+      if (was.query !== query) { clearTimeout(timer.current); go(); return }
+      if (!live && !was.live) return
+      const wait = REFRESH_MS - (Date.now() - last.current)
+      if (wait <= 0) { clearTimeout(timer.current); go() } else if (!timer.current) timer.current = setTimeout(go, wait)
+    }, [query, live, snap])
+    return st.query === query ? st : { query, data: null, loading: !!query }
+  }
+
+  /** The sidebar's width controls, read by every detail view's header. */
+  const SideCtx = React.createContext({ wide: false, toggleWide: () => {}, pinned: false, togglePin: () => {} })
+  const Head = ({ title, chip, color, onClose }) => {
+    const { wide, toggleWide, pinned, togglePin } = React.useContext(SideCtx)
+    return h('div', { className: 'top' },
+      h('b', null, title),
+      chip ? h('span', { className: 'chip', style: { '--c': color } }, chip) : null,
+      h('button', { className: 'x pin', title: pinned ? 'Unpin: hide the sidebar when nothing is selected' : 'Pin: keep the sidebar open, showing main when nothing is selected', 'aria-label': pinned ? 'Unpin sidebar' : 'Pin sidebar', 'aria-pressed': pinned, onClick: togglePin }, pinned ? '◉' : '○'),
+      h('button', { className: 'x wide', title: wide ? 'Shrink sidebar' : 'Expand sidebar', 'aria-label': wide ? 'Shrink sidebar' : 'Expand sidebar', 'aria-pressed': wide, onClick: toggleWide }, wide ? '⤡' : '⤢'),
+      h('button', { className: 'x', title: 'Close (Esc)', 'aria-label': 'Close', onClick: onClose }, '×'))
+  }
+  const KV = ({ rows }) => h('div', { className: 'kv' }, rows.filter(Boolean).flatMap(r => [h('span', { key: r[0] + 'k' }, r[0]), h('div', { key: r[0] + 'v' }, r[1])]))
+  /** Timeline lanes by agent id: the sidebar's fallback for agents the graph never saw (they ran before the viewer). */
+  const LaneCtx = React.createContext(new Map())
+  /** The agent as the graph knows it, else a stand-in built from its timeline lane, else null. */
+  const agentOf = (g, lanes, id) => g.agents[id] || laneAgent(lanes.get(id))
+  function laneAgent(l) {
+    if (!l) return null
+    const tools = {}
+    for (const c of l.calls) if (c.useKey) tools[c.useKey] = (tools[c.useKey] || 0) + 1
+    const ms = iso => (iso ? Date.parse(iso) || 0 : 0)
+    const running = l.calls.some(c => c.endedAt == null)
+    return { id: l.id, parentId: l.parentId, kind: l.kind, type: l.kind === 'main' ? 'main' : l.label, label: l.label, model: l.model || '', description: l.description || '',
+      status: running ? 'running' : 'ended', startedAt: ms(l.startedAt), endedAt: running ? null : ms(l.endedAt) || null, tokens: null, toolCalls: l.calls.length + (l.truncated || 0),
+      tools, toolAt: {}, currentTool: null, currentUse: null, fromLane: true }
+  }
+  const AgentLink = ({ g, id, onSelect }) => {
+    const a = agentOf(g, React.useContext(LaneCtx), id)
+    if (!a) return h('span', null, id)
+    return h('button', { className: 'lnk', style: { '--c': kvar(a.kind) }, onClick: e => { e.stopPropagation(); onSelect(id) } }, a.label)
+  }
+
+  /** The agent an Agent call started: its own id, else the timeline lane it spawned, else the one agent with the same task. */
+  const spawnChild = (g, lanes, c) => {
+    if (c.agentId) return c.agentId
+    for (const l of lanes.values()) if (l.spawnCallId === c.id) return l.id
+    const d = str((c.input || {}).description)
+    const same = d ? g.order.filter(id => g.agents[id] && id !== 'main' && g.agents[id].description === d) : []
+    return same.length === 1 ? same[0] : null
+  }
+  const ASYNC_RE = /^Async agent launched successfully/i
+
+  function Calls({ g, detail, open, toggle, onSelect, empty, focus }) {
+    const lanes = React.useContext(LaneCtx)
+    const calls = (detail && detail.calls) || []
+    const box = React.useRef(null), done = React.useRef(null)
+    // Scroll the focused call into view once per focus request, as soon as its row exists.
+    React.useEffect(() => {
+      if (!focus || done.current === focus.n || !box.current) return
+      const el = Array.from(box.current.querySelectorAll('[data-call]')).find(e => e.getAttribute('data-call') === focus.id)
+      if (!el) return
+      done.current = focus.n
+      el.scrollIntoView({ block: 'nearest' })
+    })
+    if (!calls.length) return h('div', { className: 'note' }, empty)
+    return h('div', { ref: box }, calls.map(c => {
+      const lab = callLabel(c), isOpen = open.has(c.id), running = c.endedAt == null && c.output == null
+      const spawn = isSpawnTool(c), child = spawn ? spawnChild(g, lanes, c) : null, childA = child && agentOf(g, lanes, child)
+      // An Agent call names its child; with no child known yet, the agent type or the task stands in.
+      const stand = str((c.input || {}).subagent_type) || str((c.input || {}).description)
+      const hint = spawn && !childA && stand ? '' : callHint(c)
+      const go = e => { e.stopPropagation(); onSelect(child) }
+      return h('div', { key: c.id, className: 'call' + (focus && focus.id === c.id ? ' focus' : ''), 'data-call': c.id },
+        h('div', { className: 'r', role: 'button', tabIndex: 0, 'aria-expanded': isOpen, onClick: () => toggle(c.id), onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(c.id) } } },
+          h('span', { className: 'tm' }, clock(c.startedAt)),
+          h('span', { className: 'n', style: { color: USE_VAR[lab.kind] } },
+            spawn ? lab.label + ' → ' + (childA ? childA.label : stand || '…') : lab.label,
+            hint ? h('small', null, hint) : null),
+          childA ? h('button', { className: 'go', style: { '--c': kvar(childA.kind) }, title: 'Open ' + childA.label, onClick: go, onKeyDown: e => e.stopPropagation() }, '→ child') : null,
+          h('span', { className: 'd' }, fmtDur(c.durationMs)),
+          running ? h('span', { className: 'run', title: 'running' }, '…') : c.isError ? h('span', { className: 'bad', title: 'error' }, '✗') : h('span', { className: 'ok', title: 'ok' }, '✓')),
+        isOpen ? h('div', { className: 'body' },
+          h('h4', null, 'input'), h(CallInput, { c }),
+          h('h4', null, 'output'), running ? h('div', { className: 'note' }, 'running…')
+            : c.output == null || c.output === '' ? h('pre', { className: 'txt' }, '(no output)')
+              : spawn && ASYNC_RE.test(c.output) ? h(Spawned, { child: childA, text: c.output })
+              : h(Md, { text: c.output, className: c.isError ? 'bad' : '', md: !c.isError && (isSpawnTool(c) || looksMd(c.output)) })) : null)
+    }))
+  }
+
+  /** An async spawn's launch boilerplate as one line; the raw text stays one click away. */
+  function Spawned({ child, text }) {
+    return h(React.Fragment, null,
+      h('div', { className: 'spawned' }, 'spawned → ', child ? h('b', null, child.label) : 'agent'),
+      h('details', { className: 'fold' }, h('summary', null, 'raw'), h('pre', { className: 'txt' }, text)))
+  }
+
+  /**
+   * A call's input. A spawn's prompt is markdown; a one-field input (a command, a path) stays verbatim;
+   * any other input is JSON with an md view that lists its fields, rendered first when a field reads as markdown.
+   */
+  function CallInput({ c }) {
+    const i = c.input || {}
+    if (isSpawnTool(c) && str(i.prompt)) return h(Md, { text: i.prompt })
+    const source = inputField(c) == null ? inputMd(c) : null
+    if (source == null) return h('pre', { className: 'txt' }, inputText(c))
+    return h(Md, { text: inputText(c), source, md: Object.values(i).some(v => typeof v === 'string' && looksMd(v)) })
+  }
+
+  const CALLS_KEY = 'q-graph.calls'
+  /**
+   * The calls section as a fold like prompt and result: open by default, the choice kept per browser
+   * (it holds across selections and live refreshes). A timeline click on a call opens it again.
+   */
+  function CallsFold({ title, focus, children }) {
+    const [shown, setShown] = React.useState(() => loadPref(CALLS_KEY, 'open') !== 'closed')
+    const set = v => { setShown(v); savePref(CALLS_KEY, v ? 'open' : 'closed') }
+    React.useEffect(() => { if (focus) set(true) }, [focus])
+    return h('details', { className: 'fold sec', open: shown, onToggle: e => { if (e.currentTarget.open !== shown) set(e.currentTarget.open) } },
+      h('summary', null, title), shown ? children : null)
+  }
+
+  /** The fetched part: loading, the error note, then whatever `children` renders from the detail. */
+  function Fetched({ st, children }) {
+    const d = st.data
+    return h(React.Fragment, null,
+      !d && st.loading ? h('div', { className: 'note' }, 'loading…') : null,
+      d && d.error ? h('div', { className: 'note' }, d.error) : null,
+      d ? children(d) : null)
+  }
+
+  function HarnessDetail({ hz, onClose }) {
+    const hooks = Object.entries(hz.hooks || {})
+    const list = (xs, render) => (xs.length ? h('ul', { className: 'list' }, xs.map((x, i) => h('li', { key: i }, render ? render(x) : x))) : h('div', { className: 'note' }, 'none'))
+    return h(React.Fragment, null,
+      h(Head, { title: 'harness', chip: 'configured · loaded', color: 'var(--q-muted)', onClose }),
+      h('h3', { style: { color: 'var(--q-k-rule)' } }, 'rules · ' + hz.rules.length), list(hz.rules, p => h('span', { title: p }, shortPath(hz, p))),
+      h('h3', { style: { color: 'var(--q-warn)' } }, 'hooks · ' + hooks.reduce((n, e) => n + e[1], 0)), list(hooks, e => e[0] + ' × ' + e[1]),
+      h('h3', { style: { color: 'var(--q-k-mcp)' } }, 'mcp servers · ' + hz.mcpServers.length), list(hz.mcpServers),
+      h(KV, { rows: [['skills', String(hz.skills)], ['agents', String(hz.agents)]] }))
+  }
+
+  function AgentDetail({ g, a, now, st, open, toggle, onSelect, onClose, focus }) {
+    const lanes = React.useContext(LaneCtx)
+    const ask = needsYou(a)
+    const uses = usesOf(a, now)
+    const max = Math.max(1, ...uses.map(u => u.calls))
+    const kids = childrenOf(g, a.id)
+    const waiting = a.fromLane ? 0 : liveKids(g, a.id)
+    return h(React.Fragment, null,
+      h(Head, { title: a.label, chip: a.kind, color: kvar(a.kind), onClose }),
+      h(KV, { rows: [
+        ['type', a.type], ['model', shortModel(a.model) || '—'],
+        ['status', ask ? 'needs you (' + a.currentTool + ')' : a.status + (a.status === 'running' && a.currentTool ? ' · ' + a.currentTool : '') + (a.status === 'idle' && waiting ? ' · ' + waitingText(waiting) : '')],
+        ['time', since(a, now) || '—'], ['tokens', a.tokens == null ? '—' : !a.tokens && LIVE.has(a.status) ? '— (pending)' : fmtTok(a.tokens)], ['calls', String(a.toolCalls || 0)],
+        a.parentId && agentOf(g, lanes, a.parentId) ? ['parent', h(AgentLink, { g, id: a.parentId, onSelect })] : null,
+        a.description ? ['task', a.description] : null,
+      ] }),
+      uses.length ? h(React.Fragment, null, h('h3', null, 'uses'),
+        uses.map(u => h('button', { key: u.key, className: 'bar' + (u.hot ? ' on' : ''), style: { '--c': USE_VAR[u.kind] }, title: u.key, onClick: () => onSelect('use:' + a.id + ':' + u.key) },
+          h('span', { className: 'l' }, (u.kind === 'tool' ? '' : u.kind + ' ') + u.label),
+          h('span', { className: 't' }, h('i', { style: { width: Math.max(4, (u.calls / max) * 100) + '%' } })),
+          h('em', null, '×' + u.calls)))) : null,
+      kids.length ? h(React.Fragment, null, h('h3', null, 'agents · ' + kids.length),
+        h('ul', { className: 'list' }, kids.map(id => { const k = g.agents[id]; return h('li', { key: id }, h(AgentLink, { g, id, onSelect }), h('span', { style: { color: 'var(--q-muted)' } }, '  ' + (k.status || ''))) }))) : null,
+      h(Fetched, { st }, d => h(React.Fragment, null,
+        d.agent && d.agent.prompt ? h('details', { className: 'fold' }, h('summary', null, 'prompt'), h(Md, { text: d.agent.prompt })) : null,
+        d.agent && d.agent.result ? h('details', { className: 'fold' }, h('summary', null, 'result'), h(Md, { text: d.agent.result })) : null,
+        h(CallsFold, { focus, title: 'calls' + (d.agent && d.agent.toolCalls > (d.calls || []).length ? ' · latest ' + d.calls.length + ' of ' + d.agent.toolCalls : d.calls && d.calls.length ? ' · ' + d.calls.length : '') },
+          h(Calls, { g, detail: d, open, toggle, onSelect, focus, empty: d.error ? '' : 'no tool calls yet' })))))
+  }
+
+  function UseDetail({ g, owner, u, st, open, toggle, onSelect, onClose, focus }) {
+    const head = h(Head, { title: u.label, chip: u.kind, color: USE_VAR[u.kind], onClose })
+    const by = ['agent', h(AgentLink, { g, id: owner.id, onSelect })]
+    if (u.kind === 'rule') return h(React.Fragment, null, head, h(KV, { rows: [['path', h('span', { title: u.key.slice('rule:'.length) }, shortPath(g.harness, u.key.slice('rule:'.length)))], ['loaded by', by[1]]] }))
+    return h(React.Fragment, null, head,
+      h(KV, { rows: [by, ['calls', u.calls == null ? '—' : String(u.calls)], ['key', u.key]] }),
+      h(Fetched, { st }, d => h(React.Fragment, null,
+        h(CallsFold, { focus, title: 'calls' + (d.calls && d.calls.length ? ' · ' + d.calls.length : '') },
+          h(Calls, { g, detail: d, open, toggle, onSelect, focus, empty: d.error ? '' : 'no calls found' })))))
+  }
+
+  /** Resolves the selection against the live snapshot; renders nothing when the node is gone. */
+  function Sidebar({ snap, sel, now, onSelect, onClose, width, onResize, focus, pinned, togglePin }) {
+    const g = snap.graph
+    const lanes = React.useContext(LaneCtx)
+    const [open, setOpen] = React.useState(() => new Set())
+    const toggle = id => setOpen(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+    // A block clicked in the timeline opens its call row.
+    React.useEffect(() => { if (focus) setOpen(s => (s.has(focus.id) ? s : new Set(s).add(focus.id))) }, [focus])
+    // The graph is the first source; a timeline lane stands in for an agent or use the graph never saw.
+    const isLive = a => LIVE.has(a.status) || (a.fromLane && a.status === 'running')
+    let view = null, query = null, live = false
+    if (sel === 'harness' && g.harness) view = { type: 'harness' }
+    else if (sel && sel.startsWith('use:')) {
+      const p = parseUseId(sel), owner = p && agentOf(g, lanes, p.owner)
+      if (owner) {
+        const lane = lanes.get(owner.id)
+        const counted = owner.tools && p.key in owner.tools ? owner.tools[p.key] : lane ? lane.calls.filter(c => c.useKey === p.key).length : null
+        const u = { key: p.key, ...useOf(p.key), calls: counted }
+        view = { type: 'use', owner, u }
+        if (u.kind !== 'rule') { query = 'agent=' + encodeURIComponent(owner.id) + '&use=' + encodeURIComponent(p.key); live = isLive(owner) }
+      }
+    } else if (sel) {
+      const a = agentOf(g, lanes, sel)
+      if (a) {
+        view = { type: 'agent', a }
+        query = 'agent=' + encodeURIComponent(a.id)
+        live = isLive(a)
+      }
+    }
+    const st = useDetail(query, live, snap)
+    if (!view) return null
+    const common = { g, st, open, toggle, onSelect, onClose, focus }
+    return h(SidePanel, { width, onResize, pinned, togglePin },
+      view.type === 'harness' ? h(HarnessDetail, { hz: g.harness, onClose })
+        : view.type === 'agent' ? h(AgentDetail, { key: sel, a: view.a, now, ...common })
+          : h(UseDetail, { key: sel, owner: view.owner, u: view.u, ...common }))
+  }
+
+  // Sidebar width: dragged, or toggled between the normal width and WIDE_SHARE of the window; kept per browser.
+  const SIDE_W = 360, SIDE_MIN = 280, CANVAS_MIN = 240, WIDE_SHARE = 0.6, W_KEY = 'q-graph.sideW'
+  const clampW = w => Math.round(Math.max(SIDE_MIN, Math.min(w, window.innerWidth - CANVAS_MIN)))
+  const loadW = () => { try { const v = Number(localStorage.getItem(W_KEY)); return v > 0 ? v : SIDE_W } catch (e) { return SIDE_W } }
+  const saveW = w => { try { localStorage.setItem(W_KEY, String(w)) } catch (e) { /* private window: width resets */ } }
+  const wideW = () => clampW(window.innerWidth * WIDE_SHARE)
+
+  function SidePanel({ width, onResize, pinned, togglePin, children }) {
+    const [drag, setDrag] = React.useState(false)
+    const w = clampW(width)
+    const [tall, setTall] = React.useState(false)
+    const narrow = window.innerWidth < 760
+    const wide = narrow ? tall : w >= wideW() - 8
+    const toggleWide = () => (narrow ? setTall(v => !v) : onResize(wide ? SIDE_W : wideW()))
+    const onPointerDown = e => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      const el = e.currentTarget
+      el.setPointerCapture(e.pointerId)
+      setDrag(true)
+      const move = ev => onResize(clampW(window.innerWidth - ev.clientX), true)
+      const up = ev => {
+        el.removeEventListener('pointermove', move)
+        el.removeEventListener('pointerup', up)
+        el.removeEventListener('pointercancel', up)
+        setDrag(false)
+        onResize(clampW(window.innerWidth - ev.clientX))
+      }
+      el.addEventListener('pointermove', move)
+      el.addEventListener('pointerup', up)
+      el.addEventListener('pointercancel', up)
+    }
+    const onKeyDown = e => {
+      const step = e.shiftKey ? 96 : 24
+      if (e.key === 'ArrowLeft') { e.preventDefault(); onResize(clampW(w + step)) }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); onResize(clampW(w - step)) }
+      else if (e.key === 'Enter') { e.preventDefault(); toggleWide() }
+    }
+    return h('aside', { className: 'side' + (drag ? ' drag' : '') + (narrow && tall ? ' tall' : ''), 'aria-label': 'Node detail', style: { '--side-w': w + 'px' } },
+      h('div', { className: 'grip', role: 'separator', 'aria-orientation': 'vertical', 'aria-label': 'Resize sidebar', 'aria-valuenow': w, 'aria-valuemin': SIDE_MIN, 'aria-valuemax': clampW(Infinity), tabIndex: 0, title: 'Drag to resize · double-click to expand', onPointerDown, onDoubleClick: toggleWide, onKeyDown }),
+      h(SideCtx.Provider, { value: { wide, toggleWide, pinned, togglePin } }, h('div', { className: 'scroll' }, children)))
+  }
+
+  // ---- Timeline: every agent of the session as a lane over time, read from GET /timeline ----
+
+  const IDLE_MS = 60000, IDLE_PAD = 4000, BREAK_PX = 76, PAD_L = 14, PAD_R = 56, AXIS_H = 26
+  const ROW_H = 16, LANE_TOP = 10, LANE_BOT = 6, LANE_MIN = 36, BLOCK_MIN = 3, MAX_W = 8e6, MAX_PPS = 2000, MIN_PPS = 1e-4
+  const VIEW_KEY = 'q-graph.view', GAP_KEY = 'q-graph.tl.compress', PIN_KEY = 'q-graph.pin', WORK_KEY = 'q-graph.working'
+  const loadPref = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v } catch (e) { return d } }
+  const savePref = (k, v) => { try { localStorage.setItem(k, v) } catch (e) { /* private window: the choice resets */ } }
+  const msOf = iso => { const t = typeof iso === 'string' ? Date.parse(iso) : NaN; return isNaN(t) ? null : t }
+  const LANE_LIVE = new Set(['running', 'pending', 'waiting'])
+  /** Live: the graph says its agent runs (or waits), or its last call has not ended. */
+  const laneLive = (g, l) => {
+    const a = g && g.agents[l.id]
+    if (a && LANE_LIVE.has(a.status)) return true
+    const c = l.calls[l.calls.length - 1]
+    return !!c && c.e == null
+  }
+  const isSpawn = c => (c.tool === 'Agent' || c.tool === 'Task')
+  const fmtGap = ms => { const m = Math.round(ms / 60000); return m < 1 ? Math.round(ms / 1000) + 's' : m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') }
+  const TICKS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200].map(s => s * 1000)
+  const hhmm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+
+  /**
+   * Fetches `timeline?k=` while `active`: at once, then on snapshot updates and, while a lane is live, on a
+   * timer; never more often than every REFRESH_MS. Out-of-order answers are dropped by a sequence number.
+   */
+  const STALE_SERVER = 'This viewer was started before the timeline existed. Run /q-graph web stop, then /q-graph web (or press ↗ open in browser).'
+  function useTimeline(active, snap) {
+    const [data, setData] = React.useState(null)
+    const seq = React.useRef(0), last = React.useRef(0), timer = React.useRef(null)
+    const go = () => {
+      clearTimeout(timer.current); timer.current = null
+      last.current = Date.now()
+      const my = ++seq.current
+      fetch('timeline?k=' + encodeURIComponent(token))
+        .then(r => (r.status === 404 ? { error: STALE_SERVER } : r.json().catch(() => ({ error: 'HTTP ' + r.status })).then(d => (r.ok ? d : { ...d, error: (d && d.error) || 'HTTP ' + r.status }))))
+        .catch(e => ({ error: String((e && e.message) || e) }))
+        .then(d => { if (my === seq.current) setData(d && typeof d === 'object' ? d : { error: 'bad answer' }) })
+    }
+    const soon = () => {
+      if (timer.current) return
+      const wait = REFRESH_MS - (Date.now() - last.current)
+      if (wait <= 0) go(); else timer.current = setTimeout(go, wait)
+    }
+    const goRef = React.useRef(soon)
+    goRef.current = soon
+    React.useEffect(() => {
+      if (active) { go(); return }
+      clearTimeout(timer.current); timer.current = null; seq.current++
+    }, [active])
+    React.useEffect(() => { if (active && data) soon() }, [snap])
+    const model = React.useMemo(() => buildModel(data), [data])
+    const g = snap && snap.graph
+    const liveIds = model ? model.lanes.filter(l => laneLive(g, l)).map(l => l.id).join('\n') : ''
+    React.useEffect(() => {
+      if (!active || !liveIds) return
+      const id = setInterval(() => goRef.current(), 500)
+      return () => clearInterval(id)
+    }, [active, !!liveIds])
+    React.useEffect(() => () => clearTimeout(timer.current), [])
+    return { model, liveIds }
+  }
+
+  /** Times as numbers, calls packed into sub-rows, lanes stacked, and the merged spans of activity. */
+  function buildModel(data) {
+    if (!data) return null
+    const lanes = [], byId = new Map(), callById = new Map()
+    let y = 0
+    for (const raw of Array.isArray(data.lanes) ? data.lanes : []) {
+      if (!raw || typeof raw.id !== 'string') continue
+      const calls = (Array.isArray(raw.calls) ? raw.calls : [])
+        .map(c => ({ ...c, s: msOf(c.startedAt), e: msOf(c.endedAt) })).filter(c => c.s != null).sort((a, b) => a.s - b.s)
+      const prompts = (Array.isArray(raw.prompts) ? raw.prompts : []).map(p => ({ text: str(p.text), s: msOf(p.at) })).filter(p => p.s != null)
+      // Greedy packing in time: a call takes the first sub-row that is free when it starts; a running call keeps its row.
+      const ends = []
+      for (const c of calls) {
+        let r = ends.findIndex(e => e <= c.s)
+        if (r < 0) { r = ends.length; ends.push(0) }
+        ends[r] = c.e == null ? Infinity : Math.max(c.e, c.s + 1)
+        c.row = r
+        callById.set(c.id, c)
+      }
+      const rows = Math.max(1, ends.length)
+      const lane = { ...raw, calls, prompts, s: msOf(raw.startedAt), e: msOf(raw.endedAt), rows, y, h: Math.max(LANE_MIN, LANE_TOP + rows * ROW_H + LANE_BOT) }
+      if (lane.s == null && calls.length) lane.s = calls[0].s
+      y += lane.h
+      lanes.push(lane); byId.set(lane.id, lane)
+    }
+    // Activity: every call, prompt and lane start or end. A running call counts up to its lane's last record here;
+    // while live, the span up to now is added per frame.
+    const iv = []
+    for (const l of lanes) {
+      if (l.s != null) iv.push([l.s, l.s])
+      if (l.e != null) iv.push([l.e, l.e])
+      for (const c of l.calls) iv.push([c.s, c.e != null ? c.e : Math.max(c.s, l.e || c.s)])
+      for (const p of l.prompts) iv.push([p.s, p.s])
+    }
+    const spans = mergeSpans(iv)
+    return { error: typeof data.error === 'string' ? data.error : null, lanes, byId, callById, height: y, spans, serverNow: msOf(data.now),
+      calls: lanes.reduce((n, l) => n + l.calls.length, 0), truncated: lanes.reduce((n, l) => n + (l.truncated || 0), 0) }
+  }
+  /** Sorted, merged [start, end] spans; spans closer than IDLE_MS stay one. */
+  function mergeSpans(iv) {
+    iv.sort((a, b) => a[0] - b[0])
+    const out = []
+    for (const [a, b] of iv) {
+      const lastSpan = out[out.length - 1]
+      if (lastSpan && a - lastSpan[1] <= IDLE_MS) lastSpan[1] = Math.max(lastSpan[1], b)
+      else out.push([a, b])
+    }
+    return out
+  }
+
+  /**
+   * The time scale: segments of real time at `pps` pixels per second, and idle gaps squeezed into BREAK_PX
+   * each. X maps a time to an x in the lanes' area; T maps it back.
+   */
+  function timeSegments(model, now, live, compress) {
+    let spans = model.spans
+    if (live) {
+      let from = now
+      for (const l of model.lanes) if (live.has(l.id)) for (const c of l.calls) if (c.e == null && c.s < from) from = c.s
+      spans = mergeSpans([...spans.map(s => s.slice()), [from, now]])
+    }
+    if (!spans.length) return [{ t0: now - 60000, t1: now, brk: false }]
+    const t0 = spans[0][0], t1 = Math.max(spans[spans.length - 1][1], t0 + 1000)
+    if (!compress) return [{ t0, t1, brk: false }]
+    const segs = []
+    let at = t0
+    for (let i = 1; i < spans.length; i++) {
+      const a = spans[i - 1][1] + IDLE_PAD, b = spans[i][0] - IDLE_PAD
+      if (b - a < IDLE_MS - 2 * IDLE_PAD) continue
+      segs.push({ t0: at, t1: a, brk: false }, { t0: a, t1: b, brk: true })
+      at = b
+    }
+    segs.push({ t0: at, t1, brk: false })
+    return segs
+  }
+  const realSec = segs => segs.reduce((n, s) => n + (s.brk ? 0 : (s.t1 - s.t0) / 1000), 0)
+  /** A break never draws wider than its real span would: compression only ever narrows. */
+  const segWidth = (sg, pps) => { const real = ((sg.t1 - sg.t0) / 1000) * pps; return sg.brk ? Math.min(BREAK_PX, real) : real }
+  /** The pps at which all segments fill `avail` pixels (widths grow with pps, so bisect). */
+  const fitPpsOf = (segs, avail, sec) => {
+    let lo = MIN_PPS, hi = clampPps(MAX_PPS, sec)
+    for (let i = 0; i < 50; i++) { const m = Math.sqrt(lo * hi); if (segs.reduce((n, sg) => n + segWidth(sg, m), 0) > avail) hi = m; else lo = m }
+    return lo
+  }
+  const clampPps = (p, sec) => Math.max(MIN_PPS, Math.min(p, MAX_PPS, MAX_W / Math.max(sec, 0.001)))
+  function makeScale(segs, pps) {
+    let x = PAD_L
+    const out = segs.map(sg => { const w = segWidth(sg, pps); const r = { ...sg, x0: x, w }; x += w; return r })
+    const end = x
+    const at = t => { let lo = 0, hi = out.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (out[m].t0 <= t) lo = m; else hi = m - 1 } return out[lo] }
+    const X = t => {
+      const sg = at(t)
+      if (t <= sg.t0) return sg.x0 - ((sg.t0 - t) / 1000) * pps
+      if (t >= sg.t1) return sg.x0 + sg.w + ((t - sg.t1) / 1000) * pps
+      return sg.brk ? sg.x0 + ((t - sg.t0) / (sg.t1 - sg.t0)) * sg.w : sg.x0 + ((t - sg.t0) / 1000) * pps
+    }
+    const T = px => {
+      let sg = out[0]
+      for (const s of out) if (s.x0 <= px) sg = s
+      if (sg.brk && px <= sg.x0 + sg.w) return sg.t0 + ((px - sg.x0) / sg.w) * (sg.t1 - sg.t0)
+      return sg.t0 + ((px - sg.x0) / pps) * 1000
+    }
+    return { segs: out, width: end + PAD_R, X, T, pps }
+  }
+
+  /** The hover card; it owns its state so moving the mouse re-renders only this. */
+  function Tip({ api }) {
+    const [tip, setTip] = React.useState(null)
+    api.current = setTip
+    if (!tip) return null
+    const left = Math.min(tip.x + 14, window.innerWidth - 300), top = tip.y + 16 > window.innerHeight - 90 ? tip.y - 80 : tip.y + 16
+    return h('div', { className: 'tl-tip', style: { left: Math.max(4, left), top } }, tip.lines.map((l, i) => h('div', { key: i, style: l.c ? { color: l.c } : null }, i === 0 ? h('b', null, l.t) : l.t)))
+  }
+
+  const callColor = (c, byId) => {
+    if (isSpawn(c)) { const child = c.agentId && byId.get(c.agentId); return kvar(child ? child.kind : 'subagent') }
+    return USE_VAR[c.useKey ? useOf(c.useKey).kind : 'tool']
+  }
+  const callTitle = (c, byId) => {
+    if (isSpawn(c)) { const child = c.agentId && byId.get(c.agentId); return c.tool + ' → ' + (child ? child.label : c.agentId || 'starting') }
+    const m = /^mcp__(.+?)__(.+)$/.exec(c.tool)
+    if (m) return m[1] + ' · ' + m[2]
+    return c.useKey && c.useKey.startsWith('skill:') ? 'skill ' + c.useKey.slice(6) : c.tool
+  }
+
+  function Timeline({ model, liveIds, now, sel, focus, onPick, onSelect }) {
+    const scroller = React.useRef(null), tipApi = React.useRef(() => {})
+    const [narrow, setNarrow] = React.useState(() => window.innerWidth < 760)
+    const [box, setBox] = React.useState({ left: 0, w: 800 })
+    const [auto, setAuto] = React.useState(true)
+    const [pps, setPps] = React.useState(1)
+    const [follow, setFollow] = React.useState(false)
+    const [compress, setCompress] = React.useState(() => loadPref(GAP_KEY, '1') === '1')
+    const LW = narrow ? 120 : 220
+    const live = React.useMemo(() => new Set(liveIds ? liveIds.split('\n') : []), [liveIds])
+    const isLive = live.size > 0
+    const t = isLive ? Math.max(now, model.serverNow || 0) : 0
+
+    const segs = React.useMemo(() => timeSegments(model, t, isLive ? live : null, compress), [model, t, live, compress])
+    const sec = realSec(segs)
+    const visW = Math.max(60, box.w - LW)
+    const fitPps = React.useMemo(() => fitPpsOf(segs, Math.max(40, visW - PAD_L - PAD_R), sec), [segs, visW, sec])
+    const scale = makeScale(segs, auto ? fitPps : clampPps(pps, sec))
+    const sc = React.useRef(scale)
+    sc.current = scale
+    const pending = React.useRef(null), expect = React.useRef(null)
+
+    const setScroll = x => { const el = scroller.current; if (!el) return; expect.current = Math.max(0, Math.round(x)); el.scrollLeft = x }
+    const zoom = (f, clientX) => {
+      const el = scroller.current
+      if (!el) return
+      const cur = sc.current, rect = el.getBoundingClientRect()
+      const px = clientX == null ? visW / 2 : Math.max(0, Math.min(visW, clientX - rect.left - LW))
+      pending.current = { t: cur.T(el.scrollLeft + px), px }
+      setAuto(false)
+      setPps(clampPps(cur.pps * f, sec))
+    }
+    const zoomRef = React.useRef(zoom)
+    zoomRef.current = zoom
+
+    // Keep the time under the cursor in place after a zoom, and `now` in view while following.
+    React.useLayoutEffect(() => {
+      const el = scroller.current
+      if (!el) return
+      if (pending.current) { const p = pending.current; pending.current = null; setScroll(scale.X(p.t) - p.px) }
+      else if (follow && isLive) {
+        const nx = scale.X(t)
+        if (nx < el.scrollLeft + 20 || nx > el.scrollLeft + visW - 30) setScroll(nx - visW + 70)
+      }
+    })
+
+    React.useEffect(() => {
+      const el = scroller.current
+      if (!el) return
+      const ro = new ResizeObserver(() => setBox(b => (b.w === el.clientWidth ? b : { ...b, w: el.clientWidth })))
+      ro.observe(el)
+      setBox({ left: el.scrollLeft, w: el.clientWidth })
+      const mq = () => setNarrow(window.innerWidth < 760)
+      window.addEventListener('resize', mq)
+      // Native, non-passive: ctrl/cmd+wheel and trackpad pinch zoom here instead of zooming the page;
+      // a plain vertical wheel scrolls sideways when the lanes fit in height.
+      const wheel = e => {
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomRef.current(Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.004)), e.clientX); return }
+        if (el.scrollHeight <= el.clientHeight + 1 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); el.scrollLeft += e.deltaY * (e.deltaMode ? 32 : 1) }
+      }
+      let gs = 1
+      const gstart = e => { e.preventDefault(); gs = 1 }
+      const gchange = e => { e.preventDefault(); zoomRef.current(e.scale / gs, e.clientX); gs = e.scale }
+      el.addEventListener('wheel', wheel, { passive: false })
+      el.addEventListener('gesturestart', gstart)
+      el.addEventListener('gesturechange', gchange)
+      return () => { ro.disconnect(); window.removeEventListener('resize', mq); el.removeEventListener('wheel', wheel); el.removeEventListener('gesturestart', gstart); el.removeEventListener('gesturechange', gchange) }
+    }, [])
+
+    const raf = React.useRef(0)
+    const onScroll = () => {
+      const el = scroller.current
+      if (!el) return
+      const mine = expect.current != null && Math.abs(el.scrollLeft - expect.current) < 2
+      expect.current = null
+      // Scrolling away from `now` by hand ends following.
+      if (!mine && follow && isLive) { const nx = sc.current.X(t); if (nx < el.scrollLeft || nx > el.scrollLeft + visW) setFollow(false) }
+      tipApi.current(null)
+      if (raf.current) return
+      raf.current = requestAnimationFrame(() => { raf.current = 0; setBox(b => (b.left === el.scrollLeft ? b : { ...b, left: el.scrollLeft })) })
+    }
+    React.useEffect(() => () => cancelAnimationFrame(raf.current), [])
+
+    const { X, width, segs: ss } = scale
+    const lo = box.left - 300, hi = box.left + visW + 300
+    const selUse = sel && sel.startsWith('use:') ? parseUseId(sel) : null
+    const laneOn = l => sel === l.id || (selUse && selUse.owner === l.id)
+    const endOf = (l, c) => (c.e != null ? c.e : live.has(l.id) ? t : Math.max(c.s, l.e || c.s))
+
+    // Axis ticks, only in view, on real-time segments; labels never crowd each other.
+    const ticks = []
+    const step = TICKS.find(s => (s / 1000) * scale.pps >= 84) || TICKS[TICKS.length - 1]
+    let lastLab = -Infinity
+    const fmtTick = tt => (step < 60000 ? clock(new Date(tt).toISOString()) : hhmm(tt))
+    ss.forEach((sg, si) => {
+      if (sg.brk || sg.x0 > hi || sg.x0 + sg.w < lo) return
+      // Right after a break the clock jumps: say where it resumes.
+      if (si > 0 && ss[si - 1].brk && sg.x0 - lastLab > 64 && sg.w > 64) {
+        lastLab = sg.x0
+        ticks.push(h('div', { key: 'r' + sg.t0, className: 'tl-tick', style: { left: sg.x0 } }, h('span', null, fmtTick(sg.t0))))
+      }
+      const off = new Date(sg.t0).getTimezoneOffset() * 60000
+      for (let tt = Math.ceil((sg.t0 - off) / step) * step + off; tt <= sg.t1; tt += step) {
+        const x = X(tt)
+        if (x < lo) continue
+        if (x > hi) break
+        // A label right before a break would run into the break's own label.
+        const lab = x - lastLab > 64 && (sg === ss[ss.length - 1] || x < sg.x0 + sg.w - 58)
+        if (lab) lastLab = x
+        ticks.push(h('div', { key: tt, className: 'tl-tick', style: { left: x } }, lab ? h('span', null, fmtTick(tt)) : null))
+      }
+    })
+
+    const rows = [], blocks = [], marks = [], links = []
+    model.lanes.forEach((l, li) => {
+      const on = laneOn(l)
+      const k = kvar(l.kind)
+      rows.push(h('div', { key: l.id, className: 'tl-row' + (on ? ' on' : ''), style: { top: l.y, height: l.h, '--k': k } },
+        l.s != null ? h('div', { className: 'tl-life', style: { top: 4, left: X(l.s), width: Math.max(2, X(live.has(l.id) ? t : l.e || l.s) - X(l.s)) } }) : null))
+      l.calls.forEach((c, ci) => {
+        const x0 = X(c.s), x1 = X(endOf(l, c))
+        if (x1 < lo || x0 > hi) return
+        const running = c.e == null && live.has(l.id)
+        const cls = 'tb' + (c.isError ? ' err' : '') + (running ? ' run' : '') + (focus && focus.id === c.id ? ' sel' : selUse && selUse.owner === l.id && selUse.key === c.useKey ? ' hit' : '')
+        blocks.push(h('div', { key: c.id || li + ':' + ci, className: cls, 'data-t': 'c:' + li + ':' + ci, style: { left: x0, width: Math.max(BLOCK_MIN, x1 - x0), top: l.y + LANE_TOP + c.row * ROW_H, '--c': callColor(c, model.byId) } }))
+      })
+      l.prompts.forEach((p, pi) => {
+        const x = X(p.s)
+        if (x < lo || x > hi) return
+        marks.push(h('div', { key: 'p' + li + ':' + pi, className: 'tl-prompt', 'data-t': 'p:' + li + ':' + pi, style: { left: x, top: l.y + 1 } }))
+      })
+      // Spawn link: from the parent's Agent call down to where the child lane starts.
+      const parent = l.parentId && model.byId.get(l.parentId), call = l.spawnCallId && model.callById.get(l.spawnCallId)
+      if (parent && call) {
+        const x1 = X(call.s) + 1.5, y1 = parent.y + LANE_TOP + call.row * ROW_H + 12, x2 = X(l.s != null ? l.s : call.s), y2 = l.y + 5.5, my = (y1 + y2) / 2
+        links.push(h('path', { key: l.id, d: 'M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + my + ' ' + x2 + ' ' + my + ' ' + x2 + ' ' + y2, stroke: k, fill: 'none', strokeWidth: 1.3, opacity: 0.7 }),
+          h('circle', { key: l.id + 'o', cx: x2, cy: y2, r: 2.5, fill: k }))
+      }
+    })
+    const breaks = ss.filter(s => s.brk)
+
+    const onMove = e => {
+      const el = e.target.closest && e.target.closest('[data-t]')
+      if (!el) { tipApi.current(null); return }
+      const [kind, a, b] = el.getAttribute('data-t').split(':')
+      const l = model.lanes[+a]
+      if (!l) return
+      if (kind === 'p') { const p = l.prompts[+b]; tipApi.current({ x: e.clientX, y: e.clientY, lines: [{ t: 'prompt · ' + clock(new Date(p.s).toISOString()) }, { t: p.text }] }); return }
+      const c = l.calls[+b]
+      if (!c) return
+      const end = endOf(l, c), running = c.e == null && live.has(l.id)
+      const lines = [{ t: callTitle(c, model.byId), c: callColor(c, model.byId) }]
+      if (c.hint) lines.push({ t: c.hint })
+      lines.push({ t: clock(new Date(c.s).toISOString()) + ' · ' + (running ? 'running ' + fmtDur(end - c.s) : c.e == null ? 'no result' : fmtDur(end - c.s)) })
+      if (c.isError) lines.push({ t: '✗ error', c: 'var(--q-bad)' })
+      tipApi.current({ x: e.clientX, y: e.clientY, lines })
+    }
+    const onClick = e => {
+      const el = e.target.closest && e.target.closest('[data-t]')
+      if (!el) { onSelect(null); return }
+      const [kind, a, b] = el.getAttribute('data-t').split(':')
+      const l = model.lanes[+a]
+      if (kind === 'c' && l && l.calls[+b]) onPick(l, l.calls[+b])
+    }
+    const toggleCompress = () => setCompress(v => { savePref(GAP_KEY, v ? '0' : '1'); return !v })
+    const H = model.height, fullW = LW + width
+    const tb = (label, title, onClickB, pressed) => h('button', { title, 'aria-label': title, 'aria-pressed': pressed, onClick: onClickB }, label)
+
+    return h('div', { className: 'tl' },
+      h('div', { className: 'tl-bar' },
+        tb('−', 'Zoom out', () => zoom(1 / 1.6)), tb('+', 'Zoom in', () => zoom(1.6)), tb('Fit', 'Fit the whole session', () => { setAuto(true); setScroll(0) }, auto),
+        tb('Follow live', 'Keep now in view', () => setFollow(v => !v), follow),
+        tb('Compress idle', 'Squeeze spans over 60 s with no activity', toggleCompress, compress),
+        h('span', { className: 'info' }, model.lanes.length + ' agents (incl. main) · ' + model.calls + ' calls' + (model.truncated ? ' · ' + model.truncated + ' older not shown' : '') + (isLive ? ' · live' : ''))),
+      h('div', { className: 'tl-scroll', ref: scroller, onScroll, onMouseLeave: () => tipApi.current(null) },
+        h('div', { style: { width: fullW, minHeight: AXIS_H + H, position: 'relative' } },
+          h('div', { className: 'tl-axis', style: { width: fullW } },
+            h('div', { className: 'tl-corner', style: { width: LW } }, 'agents'),
+            h('div', { className: 'tl-ticks', style: { width } }, ticks,
+              breaks.map(s => { const txt = '⋯ ' + fmtGap(s.t1 - s.t0 + 2 * IDLE_PAD) + ' idle'; return h('div', { key: 'b' + s.t0, className: 'tl-brklab', title: txt, style: { left: s.x0, width: s.w } }, s.w >= 60 ? txt : '⋯') }))),
+          h('div', { className: 'tl-body', style: { width: fullW } },
+            h('div', { className: 'tl-labels', style: { width: LW } }, model.lanes.map(l => h('button', {
+              key: l.id, className: 'tl-lab' + (laneOn(l) ? ' on' : ''), title: l.label + (l.description ? ' — ' + l.description : ''),
+              style: { height: l.h, paddingLeft: 8 + Math.min(l.depth || 0, 8) * (narrow ? 8 : 14), '--k': kvar(l.kind) }, onClick: () => onSelect(l.id) },
+              h('b', null, (l.depth ? '└ ' : '') + l.label), h('small', null, l.description || shortModel(l.model) || l.kind)))),
+            h('div', { className: 'tl-canvas', style: { width, height: H }, onMouseMove: onMove, onClick },
+              rows,
+              breaks.map(s => h('div', { key: 'b' + s.t0, className: 'tl-brk', style: { left: s.x0, width: s.w } })),
+              h('svg', { className: 'tl-links', width, height: H }, links),
+              blocks, marks,
+              isLive ? h('div', { className: 'tl-now', style: { left: X(t) } }) : null)))),
+      h(Tip, { api: tipApi }))
+  }
+
+  function TimelineView({ model, ...rest }) {
+    if (!model) return h('div', { className: 'empty' }, 'Loading the timeline…')
+    if (model.error) return h('div', { className: 'empty' }, model.error)
+    if (!model.lanes.length) return h('div', { className: 'empty' }, 'No agent activity yet')
+    return h(Timeline, { model, ...rest })
+  }
+  const MemoTimeline = React.memo(TimelineView)
+
+  function ViewSwitch({ view, setView, working, setWorking, hidden }) {
+    const b = (v, label) => h('button', { 'aria-pressed': view === v, onClick: () => setView(v) }, label)
+    const f = (on, label, title) => h('button', { 'aria-pressed': working === on, title, onClick: () => setWorking(on) }, label)
+    return h(React.Fragment, null,
+      h('span', { className: 'seg', role: 'group', 'aria-label': 'View' }, b('graph', 'Graph'), b('timeline', 'Timeline')),
+      view === 'graph' ? h('span', { className: 'seg', role: 'group', 'aria-label': 'Agents shown', style: { marginLeft: 8 } },
+        f(false, 'All', 'Show every agent'),
+        f(true, 'Working' + (working && hidden ? ' · ' + hidden + ' hidden' : ''), 'Show only agents still at work, and the agents above them')) : null)
+  }
+
+  function App() {
+    const [snap, setSnap] = React.useState(null)
+    const [now, setNow] = React.useState(Date.now())
+    const [, setScheme] = React.useState(0)
+    React.useEffect(() => {
+      const mq = matchMedia('(prefers-color-scheme: dark)'), bump = () => setScheme(n => n + 1)
+      mq.addEventListener('change', bump)
+      return () => mq.removeEventListener('change', bump)
+    }, [])
+    const [sel, setSelOnly] = React.useState(null)
+    // focusCall: the call a timeline click asked the sidebar to open; `n` makes a repeat click scroll again.
+    const [focus, setFocus] = React.useState(null)
+    const nonce = React.useRef(0)
+    const select = React.useCallback((id, callId) => { setSelOnly(id); setFocus(callId ? { id: callId, n: ++nonce.current } : null) }, [])
+    const setSel = React.useCallback(id => select(id, null), [select])
+    const [view, setViewOnly] = React.useState(() => (loadPref(VIEW_KEY, 'graph') === 'timeline' ? 'timeline' : 'graph'))
+    const setView = v => { setViewOnly(v); savePref(VIEW_KEY, v); framed.current = false; if (v !== 'graph') rf.current = null }
+    // Working filter (remembered in this browser): hide agents that are done or idle. Re-frame on toggle, as the tree changes shape.
+    const [working, setWorkingOnly] = React.useState(() => loadPref(WORK_KEY, '0') === '1')
+    const setWorking = on => { setWorkingOnly(on); savePref(WORK_KEY, on ? '1' : '0'); framed.current = false }
+    const keep = React.useMemo(() => (snap && working ? workingIds(snap.graph) : null), [snap, working])
+    const hidden = keep ? snap.graph.order.filter(id => snap.graph.agents[id]).length - keep.size : 0
+    const tl = useTimeline(view === 'timeline', snap)
+    const lanes = tl.model ? tl.model.byId : EMPTY_LANES
+    const pick = React.useCallback((lane, c) => {
+      if (isSpawn(c) && c.agentId) select(c.agentId, null)
+      else if (c.useKey) select('use:' + lane.id + ':' + c.useKey, c.id)
+      else select(lane.id, c.id)
+    }, [select])
+    // Pinned (the default): with nothing selected the sidebar shows main instead of closing; kept per browser.
+    const [pinned, setPinned] = React.useState(() => loadPref(PIN_KEY, '1') === '1')
+    const togglePin = () => setPinned(p => { savePref(PIN_KEY, p ? '0' : '1'); return !p })
+    const shown = sel || (pinned ? 'main' : null)
+    // × closes for real: it unpins, so the sidebar stays shut until a node is clicked or the pin is set again.
+    const close = () => { setSel(null); if (pinned) togglePin() }
+    const [sideW, setSideW] = React.useState(loadW)
+    const resize = (w, dragging) => { setSideW(w); if (!dragging) saveW(w) }
+    const moved = React.useRef(new Map())
+    const [movedAny, setMovedAny] = React.useState(false)
+    const tidy = () => {
+      moved.current.clear(); setMovedAny(false)
+      if (snap) { const { nodes: fresh } = build(snap.graph, now, moved.current, keep); const at = new Map(fresh.map(n => [n.id, n.position])); setNodes(prev => prev.map(n => (at.has(n.id) ? { ...n, position: at.get(n.id) } : n))) }
+    }
+    const rf = React.useRef(null), canvas = React.useRef(null), framed = React.useRef(false)
+    const [ready, setReady] = React.useState(0)
+    const [nodes, setNodes, onNodesChange] = RF.useNodesState([])
+    const [edges, setEdges] = RF.useEdgesState([])
+
+    React.useEffect(() => {
+      const live = document.getElementById('live')
+      const es = new EventSource('events?k=' + encodeURIComponent(token))
+      es.onopen = () => { live.textContent = '● live'; live.className = 'live' }
+      es.onerror = () => { live.textContent = '● reconnecting (is the session still open?)'; live.className = 'live off' }
+      es.onmessage = ev => { try { setSnap(JSON.parse(ev.data)) } catch (e) { /* a torn write; the next one is whole */ } }
+      // The server says this page changed on disk: load the new one (the view, sidebar width and options are kept in localStorage).
+      es.addEventListener('reload', () => location.reload())
+      const tick = setInterval(() => setNow(Date.now()), 300)
+      const esc = e => { if (e.key === 'Escape') setSel(null) }
+      window.addEventListener('keydown', esc)
+      return () => { es.close(); clearInterval(tick); window.removeEventListener('keydown', esc) }
+    }, [])
+
+    React.useEffect(() => {
+      if (!snap) return
+      const built = build(snap.graph, now, moved.current, keep)
+      // Keep React Flow's own node objects (measured size, drag state) and refresh only their data;
+      // a node the person has not moved follows the layout as agents come and go. `sel` drives selection.
+      setNodes(prev => {
+        const old = new Map(prev.map(n => [n.id, n]))
+        return built.nodes.map(n => {
+          const was = old.get(n.id)
+          if (!was) return { ...n, selected: n.id === shown }
+          const position = moved.current.has(n.id) || was.dragging ? was.position : n.position
+          return { ...was, data: n.data, position, parentNode: n.parentNode, selected: n.id === shown }
+        })
+      })
+      setEdges(built.edges)
+      // Every count includes main, so the header, the Timeline toolbar and the token total agree.
+      const g = snap.graph, all = g.order.map(id => g.agents[id]).filter(Boolean)
+      const count = s => all.filter(a => a.status === s).length
+      const noTok = all.filter(a => !a.tokens && LIVE.has(a.status)).length
+      document.getElementById('counts').innerHTML =
+        '<span title="including main"><b>' + all.length + '</b> agents (incl. main)</span><span><b>' + count('running') + '</b> running</span><span><b>' + all.filter(needsYou).length + '</b> need you</span><span title="' + (noTok ? noTok + ' running agent(s) have not reported tokens yet' : 'all agents, main included') + '"><b>' + fmtTok(all.reduce((n, a) => n + (a.tokens || 0), 0)) + (noTok ? '+' : '') + '</b> tok</span>'
+    }, [snap, now, shown, keep])
+
+    // First view of the graph: top-left of the tree at a readable zoom (fit-view alone shrinks a tall tree to
+    // 7px text). Fit the width, but never below FRAME_MIN or above 1; the rest is a pan away.
+    React.useEffect(() => {
+      if (view !== 'graph' || framed.current || !rf.current || !canvas.current || !nodes.length) return
+      const raf = requestAnimationFrame(() => {
+        const inst = rf.current, el = canvas.current
+        if (!inst || !el || framed.current) return
+        framed.current = true
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity
+        for (const n of nodes) if (!n.parentNode) { x0 = Math.min(x0, n.position.x); y0 = Math.min(y0, n.position.y); x1 = Math.max(x1, n.position.x + (n.width || NODE_W[n.type] || 220)) }
+        const zoom = Math.max(FRAME_MIN, Math.min(1, (el.clientWidth - 2 * FRAME_PAD) / (x1 - x0)))
+        inst.setViewport({ x: FRAME_PAD - x0 * zoom, y: FRAME_PAD - y0 * zoom, zoom })
+      })
+      return () => cancelAnimationFrame(raf)
+    }, [ready, nodes.length, view])
+
+    // When the selection changes (the sidebar may have just narrowed the canvas), pan to the node only
+    // if it is out of view; otherwise leave the view alone.
+    React.useEffect(() => {
+      if (!shown || view !== 'graph') return
+      const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
+        const inst = rf.current, el = canvas.current, n = inst && inst.getNode(shown)
+        if (!n || !el) return
+        const { x, y, zoom } = inst.getViewport(), p = n.positionAbsolute || n.position, w = n.width || 0, ht = n.height || 0
+        const left = p.x * zoom + x, top = p.y * zoom + y
+        if (left >= 0 && top >= 0 && left + w * zoom <= el.clientWidth && top + ht * zoom <= el.clientHeight) return
+        inst.setCenter(p.x + w / 2, p.y + ht / 2, { zoom, duration: 250 })
+      }))
+      return () => cancelAnimationFrame(raf)
+    }, [shown, view])
+
+    if (!snap) return h('div', { className: 'empty' }, 'Waiting for the session\'s first snapshot…')
+    return h(LaneCtx.Provider, { value: lanes }, h('div', { className: 'row' },
+      ReactDOM.createPortal(h(ViewSwitch, { view, setView, working, setWorking, hidden }), document.getElementById('views')),
+      view === 'timeline' ? h('div', { className: 'canvas' }, h(MemoTimeline, { model: tl.model, liveIds: tl.liveIds, now: tl.liveIds ? now : 0, sel: shown, focus, onPick: pick, onSelect: setSel })) :
+      h('div', { className: 'canvas', ref: canvas },
+        h(RF.ReactFlow, {
+          nodes, edges, nodeTypes, edgeTypes, minZoom: 0.2, maxZoom: 2,
+          onInit: inst => { rf.current = inst; setReady(n => n + 1) },
+          onNodesChange: changes => {
+            for (const c of changes) if (c.type === 'position' && c.position && !c.id.startsWith('use:')) { moved.current.set(c.id, c.position); if (!movedAny) setMovedAny(true) }
+            // Selection belongs to `sel`; React Flow's own select changes would fight it.
+            onNodesChange(changes.filter(c => c.type !== 'select' && c.type !== 'remove'))
+          },
+          nodesDraggable: true, panOnDrag: true, zoomOnScroll: true, zoomOnPinch: true, selectNodesOnDrag: false,
+          deleteKeyCode: null, selectionKeyCode: null, multiSelectionKeyCode: null,
+          onNodeClick: (_, n) => setSel(n.id),
+          onPaneClick: () => setSel(null),
+          proOptions: { hideAttribution: true },
+        },
+          h(RF.Background, { gap: 22, size: 1.3, color: cssVar('--q-grid') }),
+          h(RF.Controls, { showInteractive: false },
+            // Tidy: drop every manual drag so all cards go back to the tree layout.
+            h(RF.ControlButton, { title: 'Tidy layout: put moved cards back in the tree', 'aria-label': 'Tidy layout', disabled: !movedAny, onClick: tidy }, '⟲')),
+          h(RF.MiniMap, { pannable: true, zoomable: true, nodeColor: n => cssVar(n.type === 'use' ? USE_TOKEN[n.data.u?.kind] : KIND[n.data.a?.kind]) || cssVar('--q-muted') }))),
+      shown ? h(Sidebar, { snap, sel: shown, now, focus, onSelect: setSel, onClose: close, width: sideW, onResize: resize, pinned, togglePin }) : null))
+  }
+  const EMPTY_LANES = new Map()
+  const FRAME_MIN = 0.9, FRAME_PAD = 16, NODE_W = { agent: 240, use: 184, harness: 300 }
+
+  app.innerHTML = ''
+  ReactDOM.createRoot(app).render(h(App))
+})()
+</script>
+</body>
+</html>

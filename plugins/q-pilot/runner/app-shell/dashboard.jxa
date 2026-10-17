@@ -1,0 +1,96 @@
+// Window of the q-pilot Dashboard: one NSWindow with a WKWebView on the dashboard URL. Compiled by app-window.mjs
+// (osacompile, stay-open applet). The URL is read from url.txt next to this app so a relaunch can point it elsewhere.
+ObjC.import('Cocoa')
+ObjC.import('WebKit')
+ObjC.import('stdlib')
+
+const HERE = ObjC.unwrap($.NSBundle.mainBundle.bundlePath)
+const DIR = HERE.replace(/\/[^/]*$/, '')
+const URL_FILE = DIR + '/url.txt'
+let win = null
+let view = null
+let current = ''
+
+function write(name, text) {
+  $.NSString.alloc.initWithUTF8String(text).writeToFileAtomicallyEncodingError(DIR + '/' + name, true, $.NSUTF8StringEncoding, null)
+}
+
+// An error here would otherwise open a modal dialog: write it where openAppWindow looks, and exit so it falls back.
+function fail(e) {
+  write('error.log', String(e && e.message || e) + '\n')
+  $.exit(1)
+}
+
+function readUrl() {
+  const s = $.NSString.stringWithContentsOfFileEncodingError(URL_FILE, $.NSUTF8StringEncoding, null)
+  return s.isNil() ? '' : ObjC.unwrap(s).trim()
+}
+
+function load(url) {
+  current = url
+  view.loadRequest($.NSURLRequest.requestWithURL($.NSURL.URLWithString(url)))
+}
+
+function run() {
+  try {
+    start()
+    write('ready', '1')
+  } catch (e) {
+    fail(e)
+  }
+}
+
+function start() {
+  const url = readUrl()
+  const size = readSize()
+  $.NSApplication.sharedApplication
+  $.NSApp.setActivationPolicy($.NSApplicationActivationPolicyRegular)
+  const iconPath = $.NSBundle.mainBundle.pathForResourceOfType('applet', 'icns')
+  if (!iconPath.isNil()) $.NSApp.applicationIconImage = $.NSImage.alloc.initWithContentsOfFile(iconPath)
+  win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(
+    $.NSMakeRect(0, 0, size[0], size[1]),
+    $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskMiniaturizable | $.NSWindowStyleMaskResizable,
+    $.NSBackingStoreBuffered, false)
+  win.title = 'q-pilot Dashboard'
+  win.releasedWhenClosed = false
+  win.center
+  win.setFrameAutosaveName('q-pilot-dashboard')
+  view = $.WKWebView.alloc.initWithFrameConfiguration(win.contentView.bounds, $.WKWebViewConfiguration.alloc.init)
+  view.autoresizingMask = $.NSViewWidthSizable | $.NSViewHeightSizable
+  win.contentView.addSubview(view)
+  if (url) load(url)
+  win.makeKeyAndOrderFront(null)
+  $.NSApp.activateIgnoringOtherApps(true)
+}
+
+function readSize() {
+  const s = $.NSString.stringWithContentsOfFileEncodingError(URL_FILE.replace(/url\.txt$/, 'size.txt'), $.NSUTF8StringEncoding, null)
+  const m = s.isNil() ? null : ObjC.unwrap(s).trim().match(/^(\d+)x(\d+)$/)
+  return m ? [Number(m[1]), Number(m[2])] : [1440, 900]
+}
+
+// Runs every second: follows a new URL, mirrors the page title, quits when the window is closed.
+function idle() {
+  try {
+    tick()
+  } catch (e) {
+    fail(e)
+  }
+  return 1
+}
+
+function tick() {
+  if (!win || !win.isVisible && !win.isMiniaturized) {
+    $.NSApp.terminate(null)
+    return
+  }
+  const url = readUrl()
+  if (url && url !== current) {
+    load(url)
+    win.makeKeyAndOrderFront(null)
+    $.NSApp.activateIgnoringOtherApps(true)
+  }
+  const t = view.title
+  if (!t.isNil() && ObjC.unwrap(t)) win.title = t
+  if (!$.NSFileManager.defaultManager.fileExistsAtPath(DIR + '/ready')) write('ready', '1')
+}

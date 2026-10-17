@@ -8,7 +8,27 @@
     {
       "name": "q-panel",
       "source": "./plugins/q-panel",
-      "description": "Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with a collapse toggle."
+      "description": "Draws each Bash call and each file change (Write, Edit, NotebookEdit) as a bordered panel, and frames the code blocks in replies with copy and collapse buttons."
+    },
+    {
+      "name": "q-graph",
+      "source": "./plugins/q-graph",
+      "description": "Shows the subagents and teammates of a session as a live graph: a roster band above the prompt, an alert when one waits for you, and a pane with the agent tree, what each agent used (tools, skills, MCP servers, rules) and the session's harness."
+    },
+    {
+      "name": "q-pilot",
+      "source": "./plugins/q-pilot",
+      "description": "Runs browser tasks and UI tests from a prompt, like jev-ultrafast: Claude writes the task, Jev (TypeSafe) picks every step, Playwright executes it, and a live inspector shows and pauses each decision. Tests are graded by code, never by Jev's DONE; a passing test can be saved as a flow that the stop gate replays with no model when Claude edits UI."
+    },
+    {
+      "name": "q-advisor",
+      "source": "./plugins/q-advisor",
+      "description": "Context advice at turn boundaries: focuses Claude Code's own autocompact on the plan, decisions and changed files, and suggests compacting, clearing for a new task or switching model, with Jev (Haiku fallback) making the judgement calls. Starts in shadow mode."
+    },
+    {
+      "name": "q-engine",
+      "source": "./plugins/q-engine",
+      "description": "A software engineering team as subagents (product manager, product owner, architect, engineer, database, debugger, reviewer, verifier) that hand work to each other through files, with /q-engine:feature and /q-engine:reproduce-bug workflows and coding-guideline, commit and Playwright CLI skills."
     }
   ]
 }

@@ -1,0 +1,20 @@
+node_modules/
+.DS_Store
+
+# Playwright output (traces may contain cookies and auth headers)
+playwright/.auth/
+test-results/
+playwright-report/
+blob-report/
+
+# q-pilot run output (screenshots, proposals); traces under .q-pilot/traces/ are committed
+.q-pilot/runs/
+# q-pilot personal settings (the team file .q-pilot/settings.json is committed)
+.q-pilot/settings.local.json
+
+# Mods are TypeScript loaded by the host; compiled .js next to the sources is never shipped
+plugins/*/hooks/**/*.js
+plugins/*/tests/**/*.js
+
+# claude plugin eval output
+plugins/*/evals/results/

@@ -1,0 +1,10 @@
+{
+  "flow": "checkout-coffee",
+  "version": 1,
+  "recordedAt": "2026-10-15T10:00:00.000Z",
+  "steps": [
+    { "op": "click", "role": "link", "name": "Buy coffee beans", "scope": "Products", "url": "/" },
+    { "op": "fill", "role": "textbox", "name": "Email", "scope": "pay", "fixture": "email", "url": "/checkout.html?item=coffee" },
+    { "op": "click", "role": "button", "name": "Place order", "scope": "pay", "url": "/checkout.html?item=coffee" }
+  ]
+}

@@ -1,0 +1,65 @@
+/* GENERATED from shared/ui/q-theme.css by scripts/sync-ui.mjs — do not edit */
+/* q-harness design tokens. Source of truth: shared/ui/q-theme.css; plugins hold generated copies (scripts/sync-ui.mjs).
+   Theme: light by default, dark by prefers-color-scheme; [data-theme="light"|"dark"] on <html> forces one. */
+:root{
+  /* Sans for all prose and UI; mono only for data (ids, selectors, actions, numbers in tables). */
+  --q-sans:system-ui,-apple-system,"Segoe UI Variable Text","Segoe UI",Roboto,"Helvetica Neue",Arial,"Ubuntu","Droid Sans",sans-serif;
+  --q-mono:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --q-header-h:40px; --q-fs-ui:13px; --q-fs-cap:11px;
+  --q-fs-2xs:10px; --q-fs-xs:11px; --q-fs-sm:12px; --q-fs-md:13px; --q-fs-lg:14px; --q-fs-xl:16px; --q-fs-2xl:18px;
+  --q-lh-tight:1.25; --q-lh-ui:1.45; --q-lh-prose:1.55;
+  --q-fw-normal:400; --q-fw-medium:500; --q-fw-strong:600;
+  /* Uppercase captions (section titles, field labels): one tracking for all of them. */
+  --q-track-cap:.06em;
+  --q-r-xs:3px; --q-r-sm:4px; --q-r-md:6px; --q-r-lg:9px; --q-r-pill:999px;
+  --q-bg:#f6f7f9; --q-surface:#ffffff; --q-sunken:#f1f2f5; --q-raised:#ffffff;
+  --q-fg:#161a21; --q-fg-2:#3c4350; --q-muted:#636b7a; --q-faint:#9aa0ac;
+  --q-line:#e2e5ea; --q-line-2:#d3d7de; --q-grid:#d9dde3;
+  --q-accent:#2c50c0; --q-accent-fg:#ffffff; --q-accent-soft:#e9eefc; --q-accent-line:#b8c6f2;
+  --q-ok:#1a7f43; --q-ok-soft:#e7f5ec; --q-ok-line:#b3dfc2;
+  --q-warn:#a35a00; --q-warn-soft:#fdf2e0; --q-warn-line:#f0d09a;
+  --q-bad:#c42b2b; --q-bad-soft:#fdeceb; --q-bad-line:#f3bdba;
+  --q-held:#7a3bd6; --q-held-soft:#f2ecfd; --q-held-line:#d5c3f7;
+  /* live = recording; interactive = a human is in control */
+  --q-live:#d92d20; --q-live-soft:#fdeceb; --q-live-line:#f5b9b4;
+  --q-interactive:#c2560a; --q-interactive-soft:#fdeee0; --q-interactive-line:#f2c39b;
+  --q-k-main:#2c50c0; --q-k-sub:#177f65; --q-k-team:#b8268a; --q-k-tool:#7a4a14; --q-k-skill:#6a1fa8; --q-k-mcp:#1e7194; --q-k-rule:#5a8012;
+  --q-shadow-1:0 1px 2px rgba(16,24,40,.06); --q-shadow-2:0 4px 14px rgba(16,24,40,.12);
+  --q-focus:0 0 0 2px var(--q-surface),0 0 0 4px var(--q-accent);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --q-bg:#0f1115; --q-surface:#17191e; --q-sunken:#121418; --q-raised:#1d2026;
+    --q-fg:#e6e8ec; --q-fg-2:#c2c7d0; --q-muted:#8d94a1; --q-faint:#5f6571;
+    --q-line:#262a31; --q-line-2:#323740; --q-grid:#262b33;
+    --q-accent:#89a2f8; --q-accent-fg:#0b1020; --q-accent-soft:#1a2442; --q-accent-line:#34487f;
+    --q-ok:#4cc77f; --q-ok-soft:#10261a; --q-ok-line:#1f4a31;
+    --q-warn:#e8a33d; --q-warn-soft:#2b2010; --q-warn-line:#57401a;
+    --q-bad:#f2685f; --q-bad-soft:#2c1414; --q-bad-line:#5a2624;
+    --q-held:#b49cff; --q-held-soft:#221a3b; --q-held-line:#42357a;
+    --q-live:#ff6a5e; --q-live-soft:#2e1514; --q-live-line:#6a2b27;
+    --q-interactive:#ff9a4d; --q-interactive-soft:#2d1b0e; --q-interactive-line:#68401c;
+    --q-k-main:#89a2f8; --q-k-sub:#5ee0cc; --q-k-team:#ee6aa6; --q-k-tool:#e9ac4a; --q-k-skill:#bf7cf4; --q-k-mcp:#65bfda; --q-k-rule:#b4dc84;
+    --q-shadow-1:0 1px 2px rgba(0,0,0,.4); --q-shadow-2:0 4px 14px rgba(0,0,0,.5);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --q-bg:#0f1115; --q-surface:#17191e; --q-sunken:#121418; --q-raised:#1d2026;
+  --q-fg:#e6e8ec; --q-fg-2:#c2c7d0; --q-muted:#8d94a1; --q-faint:#5f6571;
+  --q-line:#262a31; --q-line-2:#323740; --q-grid:#262b33;
+  --q-accent:#89a2f8; --q-accent-fg:#0b1020; --q-accent-soft:#1a2442; --q-accent-line:#34487f;
+  --q-ok:#4cc77f; --q-ok-soft:#10261a; --q-ok-line:#1f4a31;
+  --q-warn:#e8a33d; --q-warn-soft:#2b2010; --q-warn-line:#57401a;
+  --q-bad:#f2685f; --q-bad-soft:#2c1414; --q-bad-line:#5a2624;
+  --q-held:#b49cff; --q-held-soft:#221a3b; --q-held-line:#42357a;
+  --q-live:#ff6a5e; --q-live-soft:#2e1514; --q-live-line:#6a2b27;
+  --q-interactive:#ff9a4d; --q-interactive-soft:#2d1b0e; --q-interactive-line:#68401c;
+  --q-k-main:#89a2f8; --q-k-sub:#5ee0cc; --q-k-team:#ee6aa6; --q-k-tool:#e9ac4a; --q-k-skill:#bf7cf4; --q-k-mcp:#65bfda; --q-k-rule:#b4dc84;
+  --q-shadow-1:0 1px 2px rgba(0,0,0,.4); --q-shadow-2:0 4px 14px rgba(0,0,0,.5);
+  color-scheme:dark;
+}
+/* Base type for every q-harness page. Tabular digits keep live numbers (timers, %, ms) from changing width. */
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;font-variant-numeric:tabular-nums;font-kerning:normal}
+code,kbd,pre,samp{font-family:var(--q-mono)}

@@ -1,0 +1,17 @@
+q-engine
+Copyright (c) 2026 phuquocchamp. Licensed under the MIT License (see LICENSE).
+
+This plugin includes material adapted from third-party projects:
+
+skills/playwright-cli/
+  Adapted from the playwright-cli skill in the Microsoft Playwright CLI project,
+  https://github.com/microsoft/playwright-cli
+  Copyright (c) Microsoft Corporation.
+  Licensed under the Apache License, Version 2.0 (see skills/playwright-cli/LICENSE).
+  Modified: description, allowed-tools, scope, installation and credential guidance.
+
+skills/swe-core/
+  Adapted from the "Karpathy guidelines" CLAUDE.md by forrestchang,
+  https://github.com/forrestchang/andrej-karpathy-skills
+  Licensed under the MIT License.
+  Modified: subagent note and a comments section.
