@@ -27,6 +27,12 @@ const MAX_STALE_END = 2
 const BUDGET_EXTRA = 15
 /** Green checks are looked at again after this long before they end a run (a page still settling). */
 const CHECKS_AGAIN_MS = 300
+/**
+ * A DONE whose checks are red, with no helper to fix it, is refused once: DONE is not offered for NO_DONE_STEPS
+ * steps so Jev finishes the form (arXiv: the sort chosen, "Go" never clicked). It would grade `fail` anyway.
+ */
+const MAX_FALSE_DONE = 1
+const NO_DONE_STEPS = 3
 /** Box rescue: at most this many per run, and only above these (Box confidence, Noul "visible at all"). */
 const MAX_RESCUE = 3
 const BOX_MIN = 0.5
@@ -121,8 +127,11 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     }
     return false
   }
-  const out = (end, error, by = 'jev') => {
+  // `hard`: a stop by a person or Claude. Any other blocked end after a refused DONE (falseDones) stays the DONE it
+  // was, so the red checks grade `fail`: holding DONE back must never turn an app bug into `blocked`.
+  const out = (end, error, by = 'jev', hard = false) => {
     context.off('page', onPage)
+    if (end === 'blocked' && falseDones && !hard) return { end: 'done', error: null, heldDone: error, steps, diverged: [], decisions, page, by }
     return { end, error, steps, diverged: [], decisions, page, by }
   }
   const keys = Object.keys(fixtures)
@@ -130,6 +139,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
   let last = null, banned = new Set(), idle = 0, idlePassive = 0, filled = null, suggested = false
   let fills = new Map(), keyFills = new Map(), sigs = [], low = 0, staleEnds = 0
   let lastClick = null, sameClicks = 0
+  let falseDones = 0, noDoneUntil = 0
   /** After Claude hands the run back: Jev starts with a clean slate of loop counters. */
   const reset = () => {
     banned = new Set()
@@ -185,7 +195,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
       const off = guard?.check(page)
       if (off) return { end: out('blocked', off) }
       if (answer.then === 'done') return { end: out('done', null, 'claude') }
-      if (answer.then === 'stop') return { end: out('blocked', `stopped by Claude${answer.note ? `: ${answer.note}` : ''}`) }
+      if (answer.then === 'stop') return { end: out('blocked', `stopped by Claude${answer.note ? `: ${answer.note}` : ''}`, 'jev', true) }
       if (answer.then === 'resume') {
         reset()
         return { resume: true }
@@ -323,7 +333,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
         if (inspector) {
           await inspector.observed(page, snap, steps.length + 1)
           const g = await inspector.gate('predict')
-          if (g.stop) return out('blocked', g.stop)
+          if (g.stop) return out('blocked', g.stop, 'jev', true)
           if (g.waited) {
             snap = await observe(page)
             fp = fingerprint(snap)
@@ -339,17 +349,19 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
         snap.actions = snap.actions.filter(a => a.kind !== 'fill' || offerKeys.some(k => (fills.get(fillKey(a, k)) ?? 0) < MAX_SAME_FILL))
         if (sameClicks >= MAX_SAME_CLICK) snap.actions = snap.actions.filter(a => a.kind !== 'click' || clickKey(a) !== lastClick)
         // Vision as set now (the inspector may switch it during the run); never with a secret fixture.
+        // A held-back DONE is offered again as soon as the checks are green.
+        if (noDoneUntil > steps.length && checkDone && !(await checkDone(page)).length) noDoneUntil = 0
         const eyes = vision.mode !== 'off' && seeing() ? { mode: vision.mode, model: vision.model, shot: async () => {
           const s = await shotOf(page)
           return s && { data_base64: s.data_base64, format: s.format }
         } } : null
-        const d = await decide(jev, { goal: flow.goal, snap, history, fixtureKeys: keys, offerKeys, fixtures, secrets, canPress, canEscape: escapable(snap), vision: eyes })
+        const d = await decide(jev, { goal: flow.goal, snap, history, fixtureKeys: keys, offerKeys, fixtures, secrets, canPress, canEscape: escapable(snap), canEnd: steps.length >= noDoneUntil, vision: eyes })
         const ran = d.end ? null : toStep(snap, d.action, d.fixture)
         decisions.push({ step: steps.length + 1, url: redact(snap.url, secrets), chose: d.end ?? redact(describe(ran), secrets), p: d.p, ...d.detail })
         if (inspector) {
           inspector.decided(d.detail, d.end ?? redact(describe(ran), secrets), d.p)
           const g = await inspector.gate('execute')
-          if (g.stop) return out('blocked', g.stop)
+          if (g.stop) return out('blocked', g.stop, 'jev', true)
           // Held: run the decision only on the page it was made for.
           if (g.waited && fp !== null && fingerprint(await observe(page)) !== fp) {
             inspector.stale()
@@ -384,6 +396,16 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
               const h = await escalate('confirm_done', { why: 'Jev chose DONE; confirm on the page that every requirement is met (then: done), or act and hand back' }, snap)
               if (h?.end) return h.end
               if (h) continue
+            }
+            if (checkDone && falseDones < MAX_FALSE_DONE) {
+              const red = await checkDone(page)
+              if (red.length) {
+                falseDones++
+                noDoneUntil = steps.length + NO_DONE_STEPS
+                decisions.at(-1).refused = `DONE with ${red.length} red check(s): not offered for ${NO_DONE_STEPS} steps`
+                console.error(`[q-pilot] DONE with ${red.length} red check(s); Jev goes on for ${NO_DONE_STEPS} more steps`)
+                continue
+              }
             }
             return out('done', null)
           }

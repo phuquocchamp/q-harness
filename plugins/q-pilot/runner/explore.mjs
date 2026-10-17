@@ -83,8 +83,9 @@ export async function runExplore(ctx, spec) {
       let loopDeadline = Math.min(ctx.deadline, Date.now() + spec.budget.seconds * 1000)
       const helper = ctx.makeHelper?.({ goal: spec.goal, secrets, fixtureKeys: Object.keys(fixtures), confirmDone: !spec.checks.length, onWait: ms => (loopDeadline += ms, ctx.extend?.(ms), inspector?.extend?.(ms)) }) ?? null
       inspector?.start({ name: spec.name, goal: spec.goal, deadline: loopDeadline, secrets })
-      // With a helper: the checks are tried on Jev's DONE, so a red one reaches Claude while the browser is open.
-      const checkDone = helper && spec.checks.length
+      // The checks are tried on Jev's DONE: a red one reaches Claude (with a helper) while the browser is open, or
+      // without one Jev is sent on for a few steps once.
+      const checkDone = spec.checks.length
         ? async p => (await runChecks(p, spec.checks, { secrets, timeoutMs: 1500 })).filter(c => !c.ok).map(({ check, actual }) => redactDeep({ check, actual }, secrets))
         : null
       // A task whose checks pin a business value (at least one strong check) ends as soon as they are green: an

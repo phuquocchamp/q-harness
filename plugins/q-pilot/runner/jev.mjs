@@ -129,7 +129,7 @@ const CONTROL = { scroll_down: 'SCROLL_DOWN', scroll_up: 'SCROLL_UP', wait: 'WAI
  * Throws JevError for transport problems and invalid answers; the caller turns that into `blocked`.
  * `secrets` (fixture values) are redacted from everything sent.
  */
-export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offerKeys = fixtureKeys, fixtures = {}, secrets, stepToReplace, canPress = false, canEscape = false, vision = null }) {
+export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offerKeys = fixtureKeys, fixtures = {}, secrets, stepToReplace, canPress = false, canEscape = false, canEnd = true, vision = null }) {
   // Jev sees fixture keys, never values, so it cannot tell that a field already holds the requested value (jev-ultrafast's
   // text helper sees the goal instead). Code compares and names the fixture a field already holds.
   const holds = a => (a.kind === 'select' ? null : fixtureKeys.find(k => fixtures[k] !== undefined && String(a.value ?? '').trim() !== '' && same(a.value, fixtures[k])) ?? null)
@@ -171,7 +171,8 @@ export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offe
   const operations = {}
   for (const op of Object.keys(targets)) operations[op] = OP_TEXT[op]
   for (const op of Object.keys(controls)) operations[op] = OP_TEXT[op]
-  operations.DONE = OP_TEXT.DONE
+  // canEnd false: DONE is not offered (a DONE whose checks were red, held back for a few steps).
+  if (canEnd) operations.DONE = OP_TEXT.DONE
   operations.BLOCKED = OP_TEXT.BLOCKED
 
   const rules = stepToReplace

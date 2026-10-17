@@ -10,7 +10,7 @@
 
 A passing test can be saved as a flow plus a recorded trace. Saved flows replay with no model call, heal a drifted step with one Jev request, and run as a stop gate when a turn changes UI files.
 
-**Version** 0.10.1 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
+**Version** 0.10.2 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
 
 ## What it ships
 
@@ -102,7 +102,7 @@ Jev is fast (about 0.3 s a step) but has no memory of the goal beyond its last t
 | `jev_blocked` | Jev chose BLOCKED |
 | `low_confidence` | 3 decisions in a row below p 0.25 |
 | `human_needed` | A bot wall covers the page: a CAPTCHA iframe (DataDome, Cloudflare, hCaptcha, reCAPTCHA challenge, Arkose), an in-page CAPTCHA (AWS WAF's `awswaf-captcha` on Traveloka), or a challenge page. Claude asks you to solve it in the run's window. |
-| `checks_red` | Jev chose DONE but a check of the task is red (a search with the wrong date): Claude can still fix it while the browser is open |
+| `checks_red` | Jev chose DONE but a check of the task is red (a search with the wrong date): Claude can still fix it while the browser is open. With no helper request left, the first such DONE is refused instead: DONE is not offered for 3 steps (or until the checks turn green), so Jev can finish the form (arXiv: the sort picked, "Go" not clicked). If the run then ends any other way than a stop, it still ends as that DONE, so a real bug still grades `fail`. |
 | `confirm_done` | Jev chose DONE and the task has no checks: Claude checks the page before it stands |
 | `budget` | The step budget is spent |
 

@@ -177,3 +177,21 @@ test('with checksMet, a run ends as done by checks once they are green, though J
     await page.close()
   }
 })
+
+test('a DONE with red checks and no helper is refused once: DONE is held back and Jev finishes the form', async () => {
+  const page = await browser.newPage()
+  // arXiv's shape: pick the sort, then "Go" applies it. Jev says DONE before Go; with DONE held back it clicks Go.
+  const stub = stubJev(({ questions }) => (questions.operation.criteria.DONE ? { op: 'DONE' } : { op: 'CLICK', label: 'Go' }))
+  try {
+    await page.setContent('<p id=r>relevance</p><button onclick="r.textContent = \'oldest first\'">Go</button>')
+    const checkDone = async p => ((await p.locator('#r').textContent()) === 'oldest first' ? [] : [{ check: { text: 'oldest first' }, actual: null }])
+    const r = await pilot(page, { flow: { id: 't', start: '/', goal: 'g', budget: { steps: 10 } }, fixtures: {}, jev: createJev({ apiKey: 'k' }), deadline: Date.now() + 20000, checkDone })
+    assert.equal(r.end, 'done')
+    assert.deepEqual(r.steps.map(s => s.name), ['Go'])
+    assert.match(r.decisions[0].refused, /DONE with 1 red check/)
+    assert.equal(await page.locator('#r').textContent(), 'oldest first')
+  } finally {
+    stub.restore()
+    await page.close()
+  }
+})
