@@ -602,11 +602,6 @@ claude plugin validate ./plugins/q-pilot
 claude plugin test ./plugins/q-pilot        # mod tests (tests/*.test.ts)
 node --test plugins/q-pilot/runner/*.test.mjs   # runner and export tests
 Q_PILOT_LIVE=1 node --test plugins/q-pilot/runner/live.test.mjs   # real Jev calls (needs TYPESAFE_API_KEY)
-
-# model evals (evals/): does Claude call pilot_test with business checks, and skip it for non-UI work?
-# Real model calls (about $0.20 for one run of each case); --scaffold seeds each case's workspace.
-claude plugin eval ./plugins/q-pilot --runs 1 --ablation none --scaffold \
-  --allow-tools mcp__q-pilot__pilot_test mcp__q-pilot__pilot_status Edit --max-cost-usd 3
 ```
 
 The export test also runs an exported spec with `playwright test` against a copy of `examples/demo-app`. It is skipped when Playwright is not installed there.
