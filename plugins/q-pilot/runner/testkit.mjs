@@ -81,6 +81,11 @@ export function stubJev(policy, { noul = 0.5, delayMs = 0, box = null } = {}) {
       answers.operation = answer(Object.keys(body.questions.operation.criteria), d.op)
       for (const [name, q] of Object.entries(body.questions)) {
         if (name === 'operation') continue
+        // Cross-check questions (goal_met, stuck): the policy's value by name, else `noul`.
+        if (q.type === 'noul') {
+          answers[name] = { type: 'noul', noul: d[name] ?? noul }
+          continue
+        }
         const ids = Object.keys(q.criteria)
         if (name === 'fixture') answers.fixture = answer(ids, d.fixture ?? ids[0])
         else answers[name] = answer(ids, ids.find(k => d.label && q.criteria[k].element.includes(`] ${d.label}`)) ?? ids[0])

@@ -10,7 +10,7 @@
 
 A passing test can be saved as a flow plus a recorded trace. Saved flows replay with no model call, heal a drifted step with one Jev request, and run as a stop gate when a turn changes UI files.
 
-**Version** 0.10.2 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
+**Version** 0.11.0 · **Author** phuquocchamp · Design reports (artifacts): [flows and replay](https://claude.ai/artifact/4xGkHn6HugVUsyJcEQtyYS), [prompt mode](https://claude.ai/artifact/5UZPbG3UKDTQqRrUmEfnC4)
 
 ## What it ships
 
@@ -76,8 +76,9 @@ Claude turns the request into a task: where it starts, a goal that says when to 
 |-------|---------|
 | `url` | Full `http`/`https` URL where the task starts. Omit it to start on the configured app (`baseURL` from `q-pilot.config.json` plus `start`). |
 | `goal` | The whole task in plain words, with a stop condition and what not to do |
-| `fixtures` | Values Jev may type: a literal, or `"$env:E2E_NAME"` for a secret |
+| `fixtures` | Values Jev may type: a literal, `"$env:E2E_NAME"` for a secret, or a [typed fixture](#typed-fixtures) `{ "value", "type": "date", "aliases" }` |
 | `checks` | Optional, the same closed set as `pilot_test`. With checks, the run is graded like a test. Write the stop condition as a strong check (text only the finished page shows): the run then ends as soon as it is reached. |
+| `plan` | Optional, for a goal of several steps: 2 to 8 sub-goals `{ "do": "…", "until"?: <check> }`. Jev is asked about the current step only, with the whole goal beside it; a step ends when its `until` check is green, or when Jev says DONE on a step without one (a DONE on a step whose `until` is red is refused). Loop detection starts again on each step. |
 | `name`, `softChecks`, `budget` | As for a test; `budget` defaults to 40 steps and 180 seconds |
 
 | Outcome | When |
@@ -88,6 +89,23 @@ Claude turns the request into a task: where it starts, a goal that says when to 
 | `env`, `error` | As for a test |
 
 A task with checks that passes can be saved with `/q-pilot flows save`, like a test. A `done` task cannot: nothing showed that it worked.
+
+#### Typed fixtures
+
+A fixture may be an object instead of a string, so Claude does not have to guess how the site wants a value written:
+
+```json
+"fixtures": {
+  "to":   { "value": "Da Nang", "aliases": ["DAD", "Danang", "Đà Nẵng"] },
+  "date": { "value": "2026-10-20", "type": "date" }
+}
+```
+
+- **`type: "date"`**: `value` is written `YYYY-MM-DD`. When Jev types it, code writes it the way the field asks: ISO for a native date input, else the pattern in its placeholder, label or `pattern` attribute (`DD/MM/YYYY` gives `20/10/2026`, `mm-dd-yyyy` gives `10-20-2026`). A field that says nothing gets the value as written.
+- **`aliases`** (at most 5): when an autocomplete field (a combobox, or a field with `aria-autocomplete`, `list` or `autocomplete="off"`) shows no suggestion for the value, the aliases are typed in its place, in order, until one brings up a suggestion. An airport list that knows "Danang (DAD)" but not "Da Nang" is reached through `DAD` or `Danang`.
+- Jev still sees only the key. A field that holds the value in any of these forms (`20/10/2026`, `Danang (DAD)`) is reported as `holds_fixture`, and `recent_actions` says what was actually typed. Traces keep the key; replay types the same way. Secrets stay plain `"$env:NAME"` strings.
+
+On the lab page `examples/demo-app/src/flights.html` (an airport list that matches "Danang" and IATA codes, a `DD/MM/YYYY` date field), Jev alone (no helper, vision off) passed 3 of 3 runs with typed fixtures and 0 of 8 with the same task's plain strings (5 on 0.10.2, 3 with this change) (`"Da Nang"`, `"October 20, 2026"`), measured 18/10/2026.
 
 #### When Jev is stuck: help requests
 
@@ -349,7 +367,7 @@ A flow is a goal, fixtures and a `verify` block. Jev records the path once into 
 |-------|---------|
 | `start` | Path where the flow begins |
 | `goal` | What a user wants to do, in plain words. Jev reads it. |
-| `fixtures` | Values the flow may type. A string, or `"$env:NAME"`, read from the runner's environment at run time. `NAME` must start with `E2E_` or `Q_PILOT_` (`TYPESAFE_API_KEY` never), or the flow is invalid (`error`): a cloned repo must not read arbitrary secrets from your environment. A missing variable gives outcome `env`. |
+| `fixtures` | Values the flow may type. A string, a [typed fixture](#typed-fixtures), or `"$env:NAME"`, read from the runner's environment at run time. `NAME` must start with `E2E_` or `Q_PILOT_` (`TYPESAFE_API_KEY` never), or the flow is invalid (`error`): a cloned repo must not read arbitrary secrets from your environment. A missing variable gives outcome `env`. |
 | `verify` | The checks that decide pass or fail (below) |
 | `covers` | Globs of source files whose change selects this flow |
 | `tags` | `smoke` flows run when UI code changed and nothing matched |
@@ -373,6 +391,7 @@ Every check has exactly one target and at most one expectation. An unknown key m
 | `text` | Trimmed text content equals this |
 | `contains` | Text content contains this |
 | `value` | Input value equals this (for `label`) |
+| `checked` | `true` or `false`: a checkbox, radio or switch (`aria-checked` included) is on or off |
 | `visible` | `true` (the default) or `false` |
 
 ### Traces and runs
@@ -446,7 +465,7 @@ The band above the prompt shows `pilot ✗ 1 of 3 flows: checkout app-bug` while
 
 Bare `/q-pilot` prints one line of state and a pointer to `dashboard`; `/q-pilot help` lists the commands above. The flow commands used to be top-level (`/q-pilot save`, `run`, `record`, `accept`, `export`, `status`); those names still work as aliases.
 
-The runner takes the same commands directly: `node runner/pilot.mjs <task|explore|save|run|record|accept|export|list> --root <projectDir>`. `task` and `explore` take the spec as `--spec-json '<json>'`; `task` also takes `--inspect` or `--inspect-pause`, `--inspect-port N`, `--linger` (keep the single-run inspector up after the result; only without a Dashboard), `--vision off|gated|always`, `--vision-model jev-1.13.0|jev-1.14.0`, `--box`, `--ask-via-mod` (the single-run inspector's Ask goes through the mod), `--session-model <id>` and `--settings-sources '<json>'` (the resolved settings and their scopes, for the Dashboard's chips; set by the mod). `--session-kind task|test|gate|flow` (set by the mod). `dash-server.mjs` takes `--window app|tab` (set by the mod from `dashboardWindow`) names what started a run in the Dashboard. A runner finds the Dashboard through `Q_PILOT_DASH_FILE` (the path of `.q-pilot/dashboard/server.json`, set by the mod); without it, `--inspect` serves the single-run inspector as before, and `--help` (help requests through the run folder, see [When Jev is stuck](#when-jev-is-stuck-help-requests)). It prints one line of result JSON last on stdout, and progress on stderr.
+The runner takes the same commands directly: `node runner/pilot.mjs <task|explore|save|run|record|accept|export|list> --root <projectDir>`. `task` and `explore` take the spec as `--spec-json '<json>'`; `task` also takes `--inspect` or `--inspect-pause`, `--inspect-port N`, `--linger` (keep the single-run inspector up after the result; only without a Dashboard), `--vision off|gated|always`, `--vision-model jev-1.13.0|jev-1.14.0`, `--box`, `--cross-check` (an experiment, off by default: two yes/no questions, "goal met?" and "stuck?", in every Jev request; a DONE on a task without checks is held back once when "goal met?" is below 0.5, and an action that repeats one of the last 4 is refused while "stuck?" is 0.7 or more. On the Google Flights airline task it passed 4 of 11 runs against 8 of 11 without it, and failed runs took up to 66 Jev calls), `--ask-via-mod` (the single-run inspector's Ask goes through the mod), `--session-model <id>` and `--settings-sources '<json>'` (the resolved settings and their scopes, for the Dashboard's chips; set by the mod). `--session-kind task|test|gate|flow` (set by the mod). `dash-server.mjs` takes `--window app|tab` (set by the mod from `dashboardWindow`) names what started a run in the Dashboard. A runner finds the Dashboard through `Q_PILOT_DASH_FILE` (the path of `.q-pilot/dashboard/server.json`, set by the mod); without it, `--inspect` serves the single-run inspector as before, and `--help` (help requests through the run folder, see [When Jev is stuck](#when-jev-is-stuck-help-requests)). It prints one line of result JSON last on stdout, and progress on stderr.
 
 ## Settings
 
@@ -550,7 +569,7 @@ Jev is called to drive prompt-mode tests, to record, and to heal a step. Replay 
 | With vision on: the viewport screenshot, on the steps that use it (never in a run that types a secret) | |
 | Page URL and title | `$env:` fixture values (secrets): only their key names, `[secret]` in the action history |
 | Visible page text (up to 6000 characters) | Cookies, `Authorization`/Bearer values, `password=` pairs, JWTs |
-| Interactive elements: index, role, label, value, state (checked, selected, expanded, pressed, current), scope, the fixture key a field holds, allowed operations | The exact resolved fixture values, even when they appear on the page |
+| Interactive elements: index, role, label, value, state (checked, selected, expanded, pressed, current), scope, the fixture key a field holds, allowed operations | Secret (`$env:`) fixture values, even when they appear on the page |
 | Fixture key names, the last 10 actions (with whether each changed the page, and the literal text typed, as jev-ultrafast sends it), and for a heal the missed step | The `checks` and `verify` blocks |
 | Soft-check questions, with the final page state | |
 
@@ -569,7 +588,7 @@ Page text and element values are redacted before sending. Traces and proposals s
 - A control covered by an overlay is not offered to Jev: the snapshot drops an element whose centre is covered by another one. In the PoC, arXiv's search from the home page ended `blocked` this way, while `/search/` passed. Start on the route that has the control, or add a step that opens it.
 - There is no Haiku fallback. Without Jev, prompt mode ends as `blocked`, a missed step in a saved flow ends as `blocked` (`jev unavailable`), and an untraced flow as `untraced`. Replay of existing traces needs no model.
 - Soft checks are model judgement and never decide the outcome.
-- A task can only type the fixtures Claude wrote before the run; there is no text model choosing words mid-run. A field that needs a value nobody foresaw ends the task as `blocked`.
+- A task can only type the fixtures Claude wrote before the run (in the field's date format, or as one of their aliases, for typed fixtures); there is no text model choosing words mid-run. A field that needs a value nobody foresaw ends the task as `blocked`.
 - A task without checks proves nothing: `done` only means Jev said so.
 - The stop gate does not run prompt-mode tests, only saved flows.
 - The DOM snapshot does not see shadow roots, iframes, canvas, file uploads or popup tabs.

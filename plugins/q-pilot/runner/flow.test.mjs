@@ -51,8 +51,8 @@ test('verify checks: every valid shape passes', () => {
 test('$env: fixtures resolve from env; a missing one is reported by name', () => {
   const flow = validateFlow({ ...good(), fixtures: { email: 'x@y.z', password: '$env:E2E_PASSWORD' } }, 'a-b')
   // Only values from the environment are secret; a literal is plain test data.
-  assert.deepEqual(resolveFixtures(flow, { E2E_PASSWORD: 's3cret!' }), { values: { email: 'x@y.z', password: 's3cret!' }, missing: [], secrets: ['s3cret!'] })
-  assert.deepEqual(resolveFixtures(flow, {}), { values: { email: 'x@y.z' }, missing: ['E2E_PASSWORD'], secrets: [] })
+  assert.deepEqual(resolveFixtures(flow, { E2E_PASSWORD: 's3cret!' }), { values: { email: 'x@y.z', password: 's3cret!' }, missing: [], secrets: ['s3cret!'], forms: {} })
+  assert.deepEqual(resolveFixtures(flow, {}), { values: { email: 'x@y.z' }, missing: ['E2E_PASSWORD'], secrets: [], forms: {} })
 })
 
 test('config: baseURL is required, server needs command and url', () => {

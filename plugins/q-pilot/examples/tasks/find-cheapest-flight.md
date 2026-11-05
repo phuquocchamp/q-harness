@@ -1,5 +1,5 @@
 /q-pilot task "Find the cheapest one-way Vietnam Airlines economy ticket for 1 adult
-from Ho Chi Minh City (SGN) to Da Nang (DAD), any departure date from 20 to 30 October 2026.
+from Ho Chi Minh City (SGN) to Da Nang (DAD), any departure date from 20/10 to 30/10/2026.
 
 Approach:
 - Use Google Flight

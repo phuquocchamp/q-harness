@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flight search</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+  label { display: block; margin-top: 12px; font-weight: 600; }
+  .field { position: relative; }
+  input { width: 100%; padding: 8px; font-size: 15px; box-sizing: border-box; }
+  ul[role=listbox] { position: absolute; z-index: 2; left: 0; right: 0; margin: 0; padding: 0; list-style: none; background: #fff; border: 1px solid #999; }
+  li[role=option] { padding: 6px 8px; cursor: pointer; }
+  li[role=option]:hover { background: #eef; }
+  button { margin-top: 16px; padding: 8px 16px; font-size: 15px; }
+  [role=alert] { color: #b00; margin-top: 12px; }
+</style>
+</head>
+<body>
+<h1>Flight search</h1>
+<!-- A lab page for typed fixtures: the airport list matches only "Danang" (one word) or the IATA code, and the date
+     field takes DD/MM/YYYY only, like many booking sites. Nothing is submitted anywhere. -->
+<form id="search" novalidate>
+  <div class="field">
+    <label for="from">From</label>
+    <input id="from" role="combobox" aria-autocomplete="list" aria-controls="from-list" aria-expanded="false" autocomplete="off">
+    <ul id="from-list" role="listbox" hidden></ul>
+  </div>
+  <div class="field">
+    <label for="to">To</label>
+    <input id="to" role="combobox" aria-autocomplete="list" aria-controls="to-list" aria-expanded="false" autocomplete="off">
+    <ul id="to-list" role="listbox" hidden></ul>
+  </div>
+  <label for="date">Departure date</label>
+  <input id="date" placeholder="DD/MM/YYYY" autocomplete="off">
+  <button type="submit">Search flights</button>
+  <div id="error" role="alert"></div>
+</form>
+<section id="results" hidden>
+  <h2>Results</h2>
+  <p role="status" id="summary"></p>
+  <ul id="flights"></ul>
+</section>
+<script>
+  const AIRPORTS = [
+    { code: 'SGN', name: 'Ho Chi Minh City' }, { code: 'HAN', name: 'Hanoi' }, { code: 'DAD', name: 'Danang' },
+    { code: 'PQC', name: 'Phu Quoc' }, { code: 'CXR', name: 'Nha Trang (Cam Ranh)' }, { code: 'HPH', name: 'Hai Phong' },
+  ]
+  const chosen = {}
+  for (const id of ['from', 'to']) {
+    const input = document.getElementById(id), list = document.getElementById(`${id}-list`)
+    const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false') }
+    input.addEventListener('input', () => {
+      delete chosen[id]
+      const q = input.value.trim().toLowerCase()
+      const hits = q ? AIRPORTS.filter(a => a.code.toLowerCase().startsWith(q) || a.name.toLowerCase().includes(q)) : []
+      list.replaceChildren(...hits.map(a => {
+        const li = document.createElement('li')
+        li.setAttribute('role', 'option')
+        li.textContent = `${a.name} (${a.code})`
+        li.addEventListener('click', () => { chosen[id] = a; input.value = li.textContent; close() })
+        return li
+      }))
+      list.hidden = !hits.length
+      input.setAttribute('aria-expanded', String(Boolean(hits.length)))
+    })
+  }
+  document.getElementById('search').addEventListener('submit', e => {
+    e.preventDefault()
+    const error = document.getElementById('error')
+    const date = document.getElementById('date').value.trim()
+    if (!chosen.from || !chosen.to) return (error.textContent = 'Choose both airports from the suggestion list.')
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(date)
+    if (!m || +m[1] < 1 || +m[1] > 31 || +m[2] < 1 || +m[2] > 12) return (error.textContent = 'Enter the departure date as DD/MM/YYYY.')
+    error.textContent = ''
+    document.getElementById('summary').textContent = `3 flights ${chosen.from.code} → ${chosen.to.code} on ${date}`
+    document.getElementById('flights').replaceChildren(...['07:05', '12:40', '19:15'].map(t => Object.assign(document.createElement('li'), { textContent: `${t} · VN 1${t.slice(0, 2)}` })))
+    document.getElementById('results').hidden = false
+  })
+</script>
+</body>
+</html>

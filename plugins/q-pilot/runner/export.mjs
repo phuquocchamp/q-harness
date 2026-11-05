@@ -14,7 +14,9 @@ function fixtureValue(flow, step) {
   if (!Object.hasOwn(fixtures, step.fixture)) {
     throw new Error(`export: step "${step.name}" uses fixture "${step.fixture}", which flow "${flow.id}" does not define`)
   }
-  const value = fixtures[step.fixture]
+  // A typed fixture exports its value as written: the spec does not re-derive the field's date format or aliases.
+  const raw = fixtures[step.fixture]
+  const value = raw && typeof raw === 'object' ? raw.value : raw
   const env = typeof value === 'string' ? /^\$env:(.+)$/.exec(value) : null
   return env ? `${envRef(env[1])}!` : str(value)
 }
@@ -40,7 +42,7 @@ function stepLines(flow, step) {
 }
 
 const TARGETS = ['url', 'title', 'role', 'testid', 'label', 'text']
-const EXPECTATIONS = ['contains', 'value', 'visible']
+const EXPECTATIONS = ['contains', 'value', 'checked', 'visible']
 
 function checkLine(check) {
   const opts = '{ timeout: 2000 }'
@@ -80,6 +82,8 @@ function checkLine(check) {
       return `await expect(${locator}).toContainText(${str(check.contains)}, ${opts})`
     case 'value':
       return `await expect(${locator}).toHaveValue(${str(check.value)}, ${opts})`
+    case 'checked':
+      return `await expect(${locator}).toBeChecked({ checked: ${check.checked}, timeout: 2000 })`
     default: {
       const visible = ownsText || !('visible' in check) || check.visible !== false
       return `await expect(${locator}).${visible ? 'toBeVisible' : 'toBeHidden'}(${opts})`

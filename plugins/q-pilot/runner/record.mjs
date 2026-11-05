@@ -6,6 +6,7 @@ import { perform, toStep, describe, onLogin, canPressEnter, trackNetwork } from 
 import { askBox, chooseAction, JevError } from './jev.mjs'
 import { redact } from './redact.mjs'
 import { traced } from './driver.mjs'
+import { runChecks } from './verify.mjs'
 
 const MAX_IDLE = 3 // CLICK, TYPE_TEXT, SELECT, PRESS_ENTER that changed nothing
 const MAX_IDLE_PASSIVE = 10 // WAIT and scroll have their own allowance: waiting for a slow page is legitimate
@@ -33,6 +34,15 @@ const CHECKS_AGAIN_MS = 300
  */
 const MAX_FALSE_DONE = 1
 const NO_DONE_STEPS = 3
+/**
+ * Cross-checks (jev.mjs): a DONE on a task with no checks is held back once when Jev's own "goal met?" answer is
+ * below GOAL_VETO; an action that repeats one of the last REPEAT_WINDOW actions is refused while "stuck?" is at
+ * least STUCK_P (Google Flights: "Select all airlines" toggled on and off).
+ */
+const GOAL_VETO = 0.5
+const MAX_GOAL_VETO = 1
+const STUCK_P = 0.7
+const REPEAT_WINDOW = 4
 /** Box rescue: at most this many per run, and only above these (Box confidence, Noul "visible at all"). */
 const MAX_RESCUE = 3
 const BOX_MIN = 0.5
@@ -104,7 +114,7 @@ const escapable = snap => snap.actions.some(a => a.expanded === 'true' || a.role
  * never executed. `helper` (optional, task mode): asks Claude where Jev is stuck. `deadline` may be a number or a
  * function (it moves while Claude is asked). `by` is 'claude' when Claude ended the run with DONE.
  */
-export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath, deadline, guard, inspector = null, helper = null, checkDone = null, checksMet = null, vision = visionDefaults(), tracer = null }) {
+export async function pilot(page, { flow, fixtures, forms = {}, secrets = [], jev, loginPath, deadline, guard, inspector = null, helper = null, checkDone = null, checksMet = null, vision = visionDefaults(), tracer = null, crossCheck = false }) {
   const steps = [], history = []
   const until = typeof deadline === 'function' ? deadline : () => deadline
   // Every Jev decision as Jev saw it (redacted elements, both probability heads): written next to the run for debugging.
@@ -131,15 +141,29 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
   // was, so the red checks grade `fail`: holding DONE back must never turn an app bug into `blocked`.
   const out = (end, error, by = 'jev', hard = false) => {
     context.off('page', onPage)
-    if (end === 'blocked' && falseDones && !hard) return { end: 'done', error: null, heldDone: error, steps, diverged: [], decisions, page, by }
+    if (end === 'blocked' && (falseDones || goalVetoes) && !hard) return { end: 'done', error: null, heldDone: error, steps, diverged: [], decisions, page, by }
     return { end, error, steps, diverged: [], decisions, page, by }
+  }
+  // A task's plan (flow.plan, task mode): Jev is asked about the current step only, with the whole task beside it.
+  // A step ends when its `until` check is green, or when Jev says DONE on a step without one.
+  const plan = flow.plan ?? null
+  let at = 0
+  const lastStep = () => !plan || at >= plan.length - 1
+  const goalNow = () => (plan ? `${plan[at].do}\n(Step ${at + 1} of ${plan.length} of this task: ${flow.goal} Earlier steps are done: do only this step now.)` : flow.goal)
+  const reached = async () => Boolean(plan?.[at]?.until) && (await runChecks(page, [plan[at].until], { secrets, timeoutMs: 0 }))[0].ok
+  const advance = why => {
+    at++
+    sigs = []
+    noDoneUntil = 0
+    console.error(`[q-pilot] plan step ${at} done (${why}); now step ${at + 1}: ${redact(plan[at].do, secrets)}`)
+    decisions.push({ step: steps.length + 1, url: redact(page.url(), secrets), chose: `plan step ${at + 1} of ${plan.length}`, why })
   }
   const keys = Object.keys(fixtures)
   // An action that changed nothing is removed from the candidates until the page changes.
   let last = null, banned = new Set(), idle = 0, idlePassive = 0, filled = null, suggested = false
   let fills = new Map(), keyFills = new Map(), sigs = [], low = 0, staleEnds = 0
   let lastClick = null, sameClicks = 0
-  let falseDones = 0, noDoneUntil = 0
+  let falseDones = 0, noDoneUntil = 0, goalVetoes = 0
   /** After Claude hands the run back: Jev starts with a clean slate of loop counters. */
   const reset = () => {
     banned = new Set()
@@ -155,10 +179,11 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
   /** Trace group title: step number, role and name of the target, p and source; never a typed value. */
   const titleOf = (snap, action, fixture, p, by) => `Step ${steps.length + 1} · ${redact(describe(toStep(snap, action, fixture)), secrets)} · p ${p.toFixed(2)} · ${by}`
   /** `extra`: latencyMs, and the model that chose the action (with vision: true when Jev saw the screenshot). */
-  const record = (snap, action, fixture, p, by, { latencyMs = null, model = null, vision = false } = {}) => {
+  const record = (snap, action, fixture, p, by, { latencyMs = null, model = null, vision = false, typed } = {}) => {
     const ran = toStep(snap, action, fixture)
     steps.push({ ...ran, by, p: +p.toFixed(3) })
-    const text = action.kind === 'fill' ? fixtures[fixture] ?? action.text : undefined
+    // What was typed: a typed fixture may have gone in as a date format or an alias, not its value.
+    const text = action.kind === 'fill' ? typed ?? fixtures[fixture] ?? action.text : undefined
     // Like jev-ultrafast, the history says what was typed (never a secret), so Jev can match it to a suggestion.
     history.push({
       action: redact(describe(ran), secrets), kind: action.kind, fixture: ran.fixture,
@@ -218,7 +243,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     if (!shot) return false
     let r
     try {
-      r = await askBox(jev, { goal: flow.goal, history, shot: { data_base64: shot.data_base64, format: shot.format }, secrets })
+      r = await askBox(jev, { goal: goalNow(), history, shot: { data_base64: shot.data_base64, format: shot.format }, secrets })
     } catch (e) {
       if (!(e instanceof JevError)) throw e
       console.error(`[q-pilot] box rescue failed: ${e.message}`)
@@ -262,12 +287,13 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
     }
     const value = act.op === 'fill' ? (act.fixture ? fixtures[act.fixture] : act.text) : undefined
     if (act.op === 'fill' && value === undefined) return { ok: false, op: act.op, index: act.index, error: `unknown fixture "${act.fixture}"` }
+    let done
     try {
-      await traced(tracer, titleOf(snap, action, act.fixture, 1, 'claude'), () => perform(page, action, value))
+      done = await traced(tracer, titleOf(snap, action, act.fixture, 1, 'claude'), () => perform(page, action, value, act.fixture ? forms[act.fixture] : null))
     } catch (e) {
       return { ok: false, op: act.op, index: act.index, error: redact(e.message.split('\n')[0], secrets) }
     }
-    record(snap, action, act.fixture, 1, 'claude')
+    record(snap, action, act.fixture, 1, 'claude', { typed: done?.typed })
     return { ok: true, op: act.op, index: act.index }
   }
 
@@ -294,6 +320,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
           await traced(tracer, `Step ${steps.length + 1} · checks green · done`, () => {})
           return out('done', null, 'checks')
         }
+        while (!lastStep() && (await reached())) advance('until is green')
         let snap = await observeSettled(page, until)
         let fp = fingerprint(snap)
         if (last && fp !== null) {
@@ -355,7 +382,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
           const s = await shotOf(page)
           return s && { data_base64: s.data_base64, format: s.format }
         } } : null
-        const d = await decide(jev, { goal: flow.goal, snap, history, fixtureKeys: keys, offerKeys, fixtures, secrets, canPress, canEscape: escapable(snap), canEnd: steps.length >= noDoneUntil, vision: eyes })
+        const d = await decide(jev, { goal: goalNow(), snap, history, fixtureKeys: keys, offerKeys, fixtures, forms, secrets, canPress, canEscape: escapable(snap), canEnd: steps.length >= noDoneUntil, vision: eyes, crossCheck })
         const ran = d.end ? null : toStep(snap, d.action, d.fixture)
         decisions.push({ step: steps.length + 1, url: redact(snap.url, secrets), chose: d.end ?? redact(describe(ran), secrets), p: d.p, ...d.detail })
         if (inspector) {
@@ -380,7 +407,26 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
           await traced(tracer, `Step ${steps.length + 1} · ${d.end} · p ${d.p.toFixed(2)} · jev`, () => {})
           // The decision that ends (or would end) the run gets its own row in the inspector's trail.
           inspector?.acted({ step: steps.length + 1, action: d.end, p: d.p, by: 'jev', end: true, ...jevMeta(d.detail) })
+          if (d.end === 'DONE' && !lastStep()) {
+            // DONE on a step that is not the last: the step is over, unless its own check says otherwise.
+            if (plan[at].until && !(await reached())) {
+              noDoneUntil = steps.length + 2
+              decisions.at(-1).refused = `DONE on plan step ${at + 1}, but its until check is red`
+              continue
+            }
+            advance('Jev chose DONE')
+            continue
+          }
           if (d.end === 'DONE') {
+            // No checks to try: Jev's own "goal met?" answer, asked in the same request, may hold the DONE back once.
+            const met = d.detail?.goalMet
+            if (!checkDone && met != null && met < GOAL_VETO && goalVetoes < MAX_GOAL_VETO) {
+              goalVetoes++
+              noDoneUntil = steps.length + NO_DONE_STEPS
+              decisions.at(-1).refused = `DONE while "goal met?" is p ${met.toFixed(2)}: not offered for ${NO_DONE_STEPS} steps`
+              console.error(`[q-pilot] DONE with goal met p ${met.toFixed(2)}; Jev goes on for ${NO_DONE_STEPS} more steps`)
+              continue
+            }
             // With checks, a DONE whose checks are red goes to Claude first (the search ran with a wrong date):
             // still fixable while the browser is open, a dead `fail` once the run ends.
             if (helper?.left() && checkDone) {
@@ -426,6 +472,18 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
           }
           continue
         }
+        // "Stuck?" is high and Jev picks an action it ran a moment ago: refused like an action that changed nothing.
+        const stuckP = d.detail?.stuck
+        if (stuckP != null && stuckP >= STUCK_P && keyOf(d.action) && history.slice(-REPEAT_WINDOW).some(h => h.action === redact(describe(ran), secrets))) {
+          banned.add(keyOf(d.action))
+          decisions.at(-1).refused = `repeats a recent action while "stuck?" is p ${stuckP.toFixed(2)}`
+          if (++idle >= MAX_IDLE) {
+            const h = await stuckAt('stuck', { why: `Jev keeps repeating recent actions (stuck p ${stuckP.toFixed(2)})` }, snap)
+            if (h?.end) return h.end
+            if (!h) return out('blocked', `no progress: Jev keeps repeating recent actions (stuck p ${stuckP.toFixed(2)})`)
+          }
+          continue
+        }
         low = d.p < LOW_P ? low + 1 : 0
         if (low >= MAX_LOW && (helper?.left() || (vision.box && seeing() && rescues < MAX_RESCUE))) {
           low = 0
@@ -435,7 +493,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
         }
         let r
         try {
-          r = await traced(tracer, titleOf(snap, d.action, d.fixture, d.p, 'jev'), () => perform(page, d.action, fixtures[d.fixture]))
+          r = await traced(tracer, titleOf(snap, d.action, d.fixture, d.p, 'jev'), () => perform(page, d.action, fixtures[d.fixture], forms[d.fixture]))
           if (await takeTab()) filled = null
           else if (d.action.kind === 'click' && fp !== null && fingerprint(await observe(page)) === fp) {
             await page.waitForTimeout(RETRY_CLICK_MS)
@@ -443,7 +501,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
             if (await takeTab()) filled = null
             else if (fingerprint(await observe(page)) === fp) {
               console.error(`[q-pilot] ${redact(describe(ran), secrets)} changed nothing; clicking once more`)
-              await perform(page, d.action, fixtures[d.fixture])
+              r = await perform(page, d.action, fixtures[d.fixture], forms[d.fixture])
             }
           }
         } catch (e) {
@@ -467,7 +525,7 @@ export async function pilot(page, { flow, fixtures, secrets = [], jev, loginPath
           fills.set(fillKey(d.action, d.fixture), (fills.get(fillKey(d.action, d.fixture)) ?? 0) + 1)
           keyFills.set(d.fixture, (keyFills.get(d.fixture) ?? 0) + 1)
         }
-        record(snap, d.action, d.fixture, d.p, 'jev', jevMeta(d.detail))
+        record(snap, d.action, d.fixture, d.p, 'jev', { ...jevMeta(d.detail), typed: r?.typed })
         if (!PASSIVE.has(d.action.kind)) {
           // The path (not the query) and the action: a cycle through the same pages with the same actions is a loop
           // even when every step changes the page (Traveloka: fill → search → back, 20 times).

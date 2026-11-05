@@ -1,6 +1,7 @@
 // Loading and validating q-pilot.config.json and flow files; resolving $env: fixtures.
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { formsOf, isIsoDate, MAX_ALIASES } from './typed.mjs'
 
 export class ConfigError extends Error {}
 
@@ -10,7 +11,7 @@ const ENV_NAME = /^(E2E_|Q_PILOT_)\w+$/
 const START = /^\/(?![/\\])/
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
 const TARGETS = ['url', 'title', 'role', 'testid', 'label']
-const EXPECTATIONS = ['text', 'contains', 'value', 'visible']
+const EXPECTATIONS = ['text', 'contains', 'value', 'visible', 'checked']
 const CHECK_KEYS = new Set([...TARGETS, ...EXPECTATIONS, 'name'])
 
 const readJson = (file, what) => {
@@ -69,7 +70,7 @@ export function validateCheck(check, at = 'check') {
   if (exps.length > 1) throw new ConfigError(`${at}: more than one expectation (${exps.join(', ')})`)
   if ((targets[0] === 'url' || targets[0] === 'title') && exps.length) throw new ConfigError(`${at}: "${targets[0]}" takes no expectation`)
   for (const k of Object.keys(check)) {
-    if (k === 'visible' ? typeof check[k] !== 'boolean' : typeof check[k] !== 'string') throw new ConfigError(`${at}: "${k}" has the wrong type`)
+    if (k === 'visible' || k === 'checked' ? typeof check[k] !== 'boolean' : typeof check[k] !== 'string') throw new ConfigError(`${at}: "${k}" has the wrong type`)
   }
   if ('url' in check) {
     try { new RegExp(check.url) } catch { throw new ConfigError(`${at}: "url" is not a valid regex`) }
@@ -77,11 +78,22 @@ export function validateCheck(check, at = 'check') {
   return check
 }
 
+/** A typed fixture: { value, type?: "date", aliases?: [...] }. A secret stays a plain "$env:" string. */
+function validateTyped(k, v) {
+  for (const key of Object.keys(v)) if (!['value', 'type', 'aliases'].includes(key)) throw new ConfigError(`fixture "${k}": unknown key "${key}" (value, type, aliases)`)
+  if (typeof v.value !== 'string' || !v.value) throw new ConfigError(`fixture "${k}": value must be a non-empty string`)
+  if (v.value.startsWith('$env:')) throw new ConfigError(`fixture "${k}": a secret is a plain "$env:NAME" string, not a typed fixture`)
+  if (v.type !== undefined && v.type !== 'date') throw new ConfigError(`fixture "${k}": type must be "date"`)
+  if (v.type === 'date' && !isIsoDate(v.value)) throw new ConfigError(`fixture "${k}": a date value is written YYYY-MM-DD (got "${v.value}")`)
+  if (v.aliases !== undefined && (!isStrArr(v.aliases) || v.aliases.length > MAX_ALIASES || v.aliases.some(a => !a))) throw new ConfigError(`fixture "${k}": aliases must be at most ${MAX_ALIASES} non-empty strings`)
+}
+
 function validateFixtures(raw) {
   const fixtures = raw ?? {}
-  if (!isObj(fixtures) || !Object.values(fixtures).every(v => typeof v === 'string')) throw new ConfigError('fixtures must map names to strings')
+  if (!isObj(fixtures) || !Object.values(fixtures).every(v => typeof v === 'string' || isObj(v))) throw new ConfigError('fixtures must map names to strings or typed fixtures { value, type, aliases }')
   for (const [k, v] of Object.entries(fixtures)) {
-    if (v.startsWith('$env:') && !ENV_NAME.test(v.slice(5))) throw new ConfigError(`fixture "${k}": $env: names must start with E2E_ or Q_PILOT_ (got "${v.slice(5)}")`)
+    if (isObj(v)) validateTyped(k, v)
+    else if (v.startsWith('$env:') && !ENV_NAME.test(v.slice(5))) throw new ConfigError(`fixture "${k}": $env: names must start with E2E_ or Q_PILOT_ (got "${v.slice(5)}")`)
   }
   return fixtures
 }
@@ -111,6 +123,18 @@ export function loadConfigOptional(root, env = process.env) {
  * the baseURL, its path and query the start); without it, baseURL and start work as in a prompt-mode spec. Checks are
  * optional: with none, the outcome only says whether Jev reported DONE.
  */
+/** A task's plan: 2 to MAX_PLAN steps { do, until? }, each a sub-goal in plain words and an optional check that ends it. */
+export const MAX_PLAN = 8
+function validatePlan(raw) {
+  if (raw === undefined) return null
+  if (!Array.isArray(raw) || raw.length < 2 || raw.length > MAX_PLAN) throw new ConfigError(`task.plan must be an array of 2 to ${MAX_PLAN} steps`)
+  return raw.map((s, i) => {
+    if (!isObj(s) || typeof s.do !== 'string' || !s.do.trim() || s.do.length > 300) throw new ConfigError(`plan[${i}].do must be a sub-goal of at most 300 characters`)
+    for (const k of Object.keys(s)) if (k !== 'do' && k !== 'until') throw new ConfigError(`plan[${i}]: unknown key "${k}" (do, until)`)
+    return s.until === undefined ? { do: s.do } : { do: s.do, until: validateCheck(s.until, `plan[${i}].until`) }
+  })
+}
+
 export function validateTask(spec, config, env) {
   if (!isObj(spec)) throw new ConfigError('task must be an object')
   const name = spec.name ?? 'task'
@@ -139,7 +163,8 @@ export function validateTask(spec, config, env) {
   if (!isStrArr(soft) || soft.length > 5) throw new ConfigError('task.softChecks must be at most 5 strings')
   const b = spec.budget ?? {}
   for (const k of ['steps', 'seconds']) if (b[k] !== undefined && !(b[k] > 0)) throw new ConfigError(`task.budget.${k} must be positive`)
-  return { name, baseURL, start, goal: spec.goal, fixtures, checks, softChecks: soft, budget: { steps: 40, seconds: 180, ...b }, task: true }
+  const plan = validatePlan(spec.plan)
+  return { name, baseURL, start, goal: spec.goal, fixtures, checks, softChecks: soft, budget: { steps: 40, seconds: 180, ...b }, task: true, ...(plan && { plan }) }
 }
 
 /** Prompt-mode spec. baseURL falls back to `config`; returns the normalized spec. */
@@ -183,13 +208,15 @@ export function flowIds(root, cfg) {
  * secrets: only values from the environment are secret, a literal fixture is plain test data.
  */
 export function resolveFixtures(flow, env) {
-  const values = {}, missing = [], secrets = []
+  // A typed fixture's value goes into `values` like a plain one; `forms` keeps its type and aliases, by key.
+  const values = {}, missing = [], secrets = [], forms = formsOf(flow.fixtures)
   for (const [k, v] of Object.entries(flow.fixtures)) {
-    if (v.startsWith('$env:')) {
+    if (isObj(v)) values[k] = v.value
+    else if (v.startsWith('$env:')) {
       const name = v.slice(5)
       if (env[name]) secrets.push((values[k] = env[name]))
       else missing.push(name)
     } else values[k] = v
   }
-  return { values, missing, secrets }
+  return { values, missing, secrets, forms }
 }

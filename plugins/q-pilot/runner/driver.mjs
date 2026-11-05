@@ -173,24 +173,32 @@ export async function openSession({ browser, cdp }, { baseURL, storageState, tra
     context = await browser.newContext({ baseURL, viewport, ...(storageState && { storageState }) })
     own = true
   }
-  let tracing = false, page
+  let tracing = false, page, adopted = false
   try {
     if (traceFile && own) {
       tracing = await context.tracing.start({ screenshots: true, snapshots: true, ...(title && { title }) }).then(() => true, () => false)
     }
     page = await context.newPage()
   } catch (e) {
-    // E.g. an endpoint that refuses new tabs: leave nothing running behind.
-    if (tracing) await context.tracing.stop().catch(() => {})
-    if (own) await context.close().catch(() => {})
-    throw e
+    // An Electron app refuses new tabs: drive its own window instead, never navigate or close it.
+    const existing = !own && context.pages().find(p => !p.url().startsWith('devtools://'))
+    if (existing) {
+      page = existing
+      adopted = true
+    } else {
+      // E.g. an endpoint that refuses new tabs: leave nothing running behind.
+      if (tracing) await context.tracing.stop().catch(() => {})
+      if (own) await context.close().catch(() => {})
+      throw e
+    }
   }
   const pageErrors = []
   const push = text => { if (pageErrors.length < MAX_PAGE_ERRORS) pageErrors.push(String(text).split('\n')[0].slice(0, 200)) }
   page.on('pageerror', e => push(`pageerror: ${e.message}`))
   page.on('console', m => { if (m.type() === 'error') push(`console: ${m.text()}`) })
   // A CDP tab has no baseURL: resolve relative starts against it ourselves.
-  if (!own) {
+  if (adopted) page.goto = async () => null
+  else if (!own) {
     const goto = page.goto.bind(page)
     page.goto = (url, opts) => goto(new URL(url, baseURL).href, opts)
   }
@@ -210,7 +218,7 @@ export async function openSession({ browser, cdp }, { baseURL, storageState, tra
         kept = await context.tracing.stop(keepTrace ? { path: traceFile } : undefined).then(() => (keepTrace ? traceFile : null), () => null)
       }
       if (own) await context.close().catch(() => {})
-      else await page.close().catch(() => {})
+      else if (!adopted) await page.close().catch(() => {})
       return kept
     },
   }

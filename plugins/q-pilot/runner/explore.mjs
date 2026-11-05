@@ -34,7 +34,7 @@ export function sessionName(spec, secrets = []) {
  */
 export async function runExplore(ctx, spec) {
   const t0 = Date.now()
-  const jev0 = { calls: ctx.jev.calls, ms: ctx.jev.ms.length }
+  const jev0 = { calls: ctx.jev.calls, ms: ctx.jev.ms.length, tokens: ctx.jev.tokens?.length ?? 0 }
   const res = { ...blankEntry(spec.name, 'error'), baseURL: spec.baseURL }
   let secrets = []
   const done = (outcome, error = null) => {
@@ -43,10 +43,11 @@ export async function runExplore(ctx, spec) {
     res.durationMs = Date.now() - t0
     res.jevCalls = ctx.jev.calls - jev0.calls
     res.jevMs = ctx.jev.ms.slice(jev0.ms)
+    res.jevTokens = (ctx.jev.tokens ?? []).slice(jev0.tokens).reduce((s, n) => s + n, 0)
     return res
   }
   try {
-    const { values: fixtures, missing, secrets: secret } = resolveFixtures(spec, ctx.env)
+    const { values: fixtures, missing, secrets: secret, forms } = resolveFixtures(spec, ctx.env)
     if (missing.length) return done('env', `missing environment variable ${missing.join(', ')} for fixtures`)
     secrets = secret
     // A DONE Claude confirmed on the page (task mode with a helper) is noted by doneBy; the warning stays: no check ran.
@@ -78,7 +79,7 @@ export async function runExplore(ctx, spec) {
         const consent = await dismissConsent(page)
         if (consent) console.error(`[q-pilot] closed a consent banner: ${redact(consent, secrets)}`)
       }
-      const flow = { id: spec.name, start: spec.start, goal: spec.goal, budget: spec.budget }
+      const flow = { id: spec.name, start: spec.start, goal: spec.goal, budget: spec.budget, ...(spec.plan && { plan: spec.plan }) }
       // The loop's deadline moves with the command's while Claude is asked for help (ctx.extend).
       let loopDeadline = Math.min(ctx.deadline, Date.now() + spec.budget.seconds * 1000)
       const helper = ctx.makeHelper?.({ goal: spec.goal, secrets, fixtureKeys: Object.keys(fixtures), confirmDone: !spec.checks.length, onWait: ms => (loopDeadline += ms, ctx.extend?.(ms), inspector?.extend?.(ms)) }) ?? null
@@ -94,7 +95,7 @@ export async function runExplore(ctx, spec) {
         ? async p => (await runChecks(p, spec.checks, { secrets, timeoutMs: 0 })).every(c => c.ok)
         : null
       // Vision settings are one object shared with the inspector, which may change them during the run.
-      const r = await pilot(page, { flow, fixtures, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector, helper, checkDone, checksMet, tracer: session, ...(ctx.vision && { vision: ctx.vision }) })
+      const r = await pilot(page, { flow, fixtures, forms, secrets, jev: ctx.jev, loginPath: ctx.cfg?.loginPath, deadline: () => loopDeadline, guard, inspector, helper, checkDone, checksMet, tracer: session, crossCheck: Boolean(ctx.crossCheck), ...(ctx.vision && { vision: ctx.vision }) })
       if (helper) res.helpRequests = helper.used()
       if (r.by === 'claude' || r.by === 'checks') res.doneBy = r.by
       if (r.decisions?.length) {

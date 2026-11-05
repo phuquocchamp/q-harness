@@ -20,7 +20,7 @@ import { saveViaMod } from './settings-save.mjs'
 import { visionDefaults } from './record.mjs'
 import { spawn } from 'node:child_process'
 
-const FLAGS = { all: true, 'no-jev': true, inspect: true, 'inspect-pause': true, help: true, linger: true, 'ask-via-mod': true, box: true, dashboard: true, 'keep-trace': true }
+const FLAGS = { all: true, 'no-jev': true, inspect: true, 'inspect-pause': true, help: true, linger: true, 'ask-via-mod': true, box: true, dashboard: true, 'keep-trace': true, 'cross-check': true }
 /** Legacy inspector only: with a dashboard open, the final state stays on screen this long before the browser closes. */
 const HOLD_MS = 3000
 export const SESSION_KINDS = ['task', 'test', 'gate', 'flow']
@@ -174,6 +174,9 @@ async function runCommand(command, opts, root, cfg, env, spec) {
       // A legacy inspector that stays up for review (or --keep-trace) keeps the run's Playwright trace whatever the outcome.
       keepTrace: linger || Boolean(opts['keep-trace']),
       vision,
+      // --cross-check: Jev's goal-met and stuck cross-checks in every task and test decision. Off by default: on the
+      // Google Flights airline task they did not help (4 of 11 passes with them, 8 of 11 without, 18/10/2026).
+      crossCheck: Boolean(opts['cross-check']),
       get deadline() { return deadline },
       extend: ms => {
         deadline += ms
