@@ -1,5 +1,5 @@
 // q-graph: records every agent loop of the session (main, subagents, teammates) from the hooks,
-// shows the live ones in a band above the prompt, warns when one waits for the person, and draws
+// shows a `q-graph` button above the prompt while agents run, warns when one waits for the person, and draws
 // the whole tree in a pane: a terminal Raster with box-drawing edges, a dot on each running edge,
 // under each agent what it used (tools, skills, MCP servers, rules), and the session's harness.
 // Every hook and every helper that takes `$` lives in this file (the engine follows `$` only within
@@ -13,12 +13,9 @@ import {
   MAIN,
   describeAgents,
   emptyGraph,
-  formatElapsed,
-  formatTokens,
   harnessFrom,
   harnessLines,
   hasLiveAgents,
-  needsYou,
   RECENT_MS,
   ASK_TOOLS,
   messageSent,
@@ -41,9 +38,6 @@ import { DEFAULT_SETTINGS, USAGE, parseToggle, pickSettings, showSettings, unkno
 
 const graph = atom({ plugin: 'q-graph', key: 'graph' } as const, emptyGraph() as SessionGraph)
 const settings = atom({ plugin: 'q-graph', key: 'settings' } as const, DEFAULT_SETTINGS as GraphSettings)
-const webUrl = atom({ plugin: 'q-graph', key: 'webUrl' } as const, null as string | null)
-/** The band lists every agent on wrapped rows instead of what fits one row (its `+N more` button). */
-const bandAll = atom({ plugin: 'q-graph', key: 'bandAll' } as const, false as boolean)
 
 const PANE = 'q-graph'
 const SETTINGS_KEY = 'settings'
@@ -60,12 +54,7 @@ const RUNTIMES = ['node', 'bun']
 /** The system's "open this URL" commands, tried in order: macOS, Linux, Windows. */
 const OPENERS = [['open'], ['xdg-open'], ['cmd', '/c', 'start', '""']]
 
-// Kinds need hex (the theme has no kind colours): mid-luminance, readable on light and dark terminals.
-// Status uses the host theme's keys, so it follows the terminal theme.
-const KIND_HEX = { main: '#3969de', subagent: '#1f966f', teammate: '#a72f83' } as const
-const STATUS_COLOR: Partial<Record<NodeStatus, ThemeKey>> = { completed: 'success', failed: 'error' }
 const WARN_COLOR: ThemeKey = 'warning'
-const SPINNER = '◐◓◑◒'
 
 async function saveSettings($: EngineInterface, next: GraphSettings) {
   await update($, settings, () => next)
@@ -74,19 +63,6 @@ async function saveSettings($: EngineInterface, next: GraphSettings) {
 
 function openPane($: EngineInterface) {
   return $.ui.open({ id: PANE, title: 'q-graph' })
-}
-
-/** The one-line state of an agent in the band. */
-const bandStatus = (a: AgentNode, now: number) => {
-  if (needsYou(a)) return `⚠ needs you ${formatElapsed(now - (a.waitingSince ?? now))}`
-  if (a.status === 'running') return `${SPINNER[Math.floor(now / 1000) % SPINNER.length]} ${a.currentTool ?? formatElapsed(now - a.startedAt)}`
-  if (a.status === 'waiting') return '⏸ waiting'
-  if (a.status === 'completed') return `✓ ${formatElapsed((a.endedAt ?? now) - a.startedAt)}`
-  if (a.status === 'failed') return '✗ failed'
-  if (a.status === 'idle') return '○ idle'
-  if (a.status === 'killed') return '■ stopped'
-  if (a.status === 'lost') return '? lost'
-  return '· starting'
 }
 
 // Module timers: a reload starts them over, and the engine cancels the old ones with the module.
@@ -323,7 +299,6 @@ async function stopViewer($: EngineInterface) {
   lastSnapshot = ''
   transcriptMiss = null
   if (was) await was.child.return(undefined as never).catch(() => undefined)
-  await update($, webUrl, () => null)
 }
 
 /**
@@ -364,7 +339,6 @@ async function launchViewer($: EngineInterface): Promise<string | { error: strin
     const url = `http://127.0.0.1:${ready.port}/?k=${ready.token}`
     const mine: Viewer = { url, file: ready.file, child: started }
     viewer = mine
-    await update($, webUrl, () => url)
     await writeSnapshot($).catch(() => undefined)
     webWriter?.cancel()
     webWriter = $.clock.every(WEB_MS, () => void writeSnapshot($).catch(() => undefined))
@@ -409,8 +383,6 @@ export const register: Register = on => {
     } catch {
       // Defaults stand when the store cannot be read.
     }
-    // A reload ends the old module's viewer process with it; a live viewer of this module stays.
-    await update($, webUrl, () => viewer?.url ?? null).catch(() => undefined)
     await $.command.register({
       name: 'q-graph',
       description: 'Show the subagents and teammates of this session as a live graph',
@@ -591,42 +563,12 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const cfg = await read($, settings)
     if (!cfg.band || e.props.hasSurvey) return next(e)
-    const g = await read($, graph)
-    const now = await $.clock.now()
-    const agents = rosterAgents(g, now)
-    if (agents.length === 0) return next(e)
-
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const all = await read($, bandAll)
-    const room = Math.max(20, e.props.bodyColumns - 12)
-    const chips: { a: AgentNode; label: string; status: string }[] = []
-    let width = 0
-    for (const a of agents) {
-      const status = bandStatus(a, now)
-      const tokens = a.tokens ? ` ${formatTokens(a.tokens)}` : ''
-      const chip = { a, label: a.label, status: status + tokens }
-      const w = chip.label.length + chip.status.length + 4
-      // Folded, the band keeps to one row; unfolded, every agent is listed and the row wraps.
-      if (!all && width + w > room && chips.length > 0) break
-      chips.push(chip)
-      width += w
-    }
-    const more = agents.length - chips.length
-    const setAll = (expand: boolean) => void update($, bandAll, () => expand).catch(() => undefined)
-
+    // Claude Code lists the running agents itself: the band only adds the button that opens the pane.
+    if (rosterAgents(await read($, graph), await $.clock.now()).length === 0) return next(e)
+    const { Box, Button } = $.ui.resolve(e)
     return (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {chips.map(c => (
-          <Text key={`chip-${c.a.id}`} wrap="truncate">
-            <Text color={KIND_HEX[c.a.kind]}>{c.label}</Text>{' '}
-            <Text color={needsYou(c.a) ? WARN_COLOR : STATUS_COLOR[c.a.status]} dimColor={!needsYou(c.a) && !STATUS_COLOR[c.a.status]}>
-              {c.status}
-            </Text>
-          </Text>
-        ))}
-        {more > 0 && <Button key="band-all" label={`+${more} more`} onPress={() => setAll(true)} />}
-        {all && width > room && <Button key="band-fold" label="show less" onPress={() => setAll(false)} />}
-        <Button key="open-graph" label="graph" onPress={() => void openPane($)} />
+      <Box flexDirection="row">
+        <Button key="open-graph" label="q-graph" onPress={() => void openPane($)} />
       </Box>
     )
   })
@@ -637,17 +579,9 @@ export const register: Register = on => {
     const g = await read($, graph)
     const now = await $.clock.now()
     const { Box, Text } = $.ui.resolve(e)
-    const summary = (() => {
-      const all = g.order.map(id => g.agents[id]).filter((a): a is AgentNode => !!a && a.kind !== 'main')
-      const count = (s: NodeStatus) => all.filter(a => a.status === s).length
-      const tokens = all.reduce((n, a) => n + a.tokens, 0)
-      return `${all.length} agents · ${count('running')} running · ${all.filter(needsYou).length} need you · ${formatTokens(tokens)} tok`
-    })()
 
     if (e.surface === 'terminal') {
-      const { Raster, Link } = $.ui.resolve(e)
-      const url = await read($, webUrl)
-      const { Button } = $.ui.resolve(e)
+      const { Raster, Button } = $.ui.resolve(e)
       paneRoom = Math.max(40, e.props.bodyColumns)
       const layout = layoutGraph(g, paneRoom)
       // One Raster holds at most 256 rows: a taller tree is drawn as several, stacked.
@@ -657,10 +591,8 @@ export const register: Register = on => {
       const openWeb = () => void openInBrowser($).catch(() => undefined)
       return (
         <Box flexDirection="column" gap={1}>
-          <Box flexDirection="row" gap={2}>
-            <Text dimColor>{summary}</Text>
+          <Box flexDirection="row">
             <Button key="open-web" label="↗ open in browser" onPress={openWeb} />
-            {url && <Link href={url} label={url} />}
           </Box>
           <Box flexDirection="column">
             {tiles.map((t, i) => (
@@ -682,7 +614,6 @@ export const register: Register = on => {
     const lines = harness ? [...describeAgents(g, now), harness] : describeAgents(g, now)
     return (
       <Box flexDirection="column">
-        <Text dimColor>{summary}</Text>
         {lines.map((line, i) => (
           <Text key={`line-${i}`} wrap="truncate">
             {line}

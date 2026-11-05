@@ -37,13 +37,14 @@ test('/q-graph web starts the viewer, prints its link and writes the graph for i
   expect((await run($, 'web')).text).toBe(r.text)
   expect(argvs).toHaveLength(1)
 
-  // The pane links to it while it runs.
+  // The pane offers the open button, not the raw link: the link carries the token and wraps badly.
   const pane = { title: 'q-graph', isFocused: false, bodyColumns: 100, placement: 'dock' }
   const ui = await $.ui.mount({ plugin: 'q-graph', surface: 'terminal', component: 'Pane', requestId: 'q-graph', props: pane } as Parameters<typeof $.ui.mount>[0])
-  expect(await ui.find({ type: 'Link' })).toBeDefined()
+  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', key: 'open-web' })).toBeDefined()
   await ui.unmount()
 
-  // When the process exits, the link goes away.
+  // When the process exits, the button stays: it starts the viewer again.
   release()
   await host.clock.advance(0)
   const after = await $.ui.mount({ plugin: 'q-graph', surface: 'terminal', component: 'Pane', requestId: 'q-graph', props: pane } as Parameters<typeof $.ui.mount>[0])

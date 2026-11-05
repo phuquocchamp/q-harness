@@ -13,7 +13,7 @@
     {
       "name": "q-graph",
       "source": "./plugins/q-graph",
-      "description": "Shows the subagents and teammates of a session as a live graph: a roster band above the prompt, an alert when one waits for you, and a pane with the agent tree, what each agent used (tools, skills, MCP servers, rules) and the session's harness."
+      "description": "Shows the subagents and teammates of a session as a live graph: a `q-graph` button above the prompt, an alert when one waits for you, and a pane with the agent tree, what each agent used (tools, skills, MCP servers, rules) and the session's harness."
     },
     {
       "name": "q-pilot",

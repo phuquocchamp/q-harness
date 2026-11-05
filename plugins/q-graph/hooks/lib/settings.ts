@@ -37,7 +37,7 @@ export const USAGE = [
   '  web stop                 stop the live browser viewer',
   '  close                    close it',
   '  status                   one line per agent of this session',
-  '  band on|off              the roster band above the prompt',
+  '  band on|off              the q-graph button above the prompt',
   '  notify on|off            a notification when an agent waits for you or fails',
   '  config                   show the settings',
   '  help                     this text',

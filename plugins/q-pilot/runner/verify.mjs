@@ -28,10 +28,15 @@ export async function checkOnce(page, c) {
   if (n > 1) return { ok: false, actual: `ambiguous: ${n} elements match` }
   const el = all.first()
   const target = ['role', 'testid', 'label'].some(k => k in c)
-  const exp = !target ? 'visible' : ['text', 'contains', 'value'].find(k => k in c) ?? 'visible'
+  const exp = !target ? 'visible' : ['text', 'contains', 'value', 'checked'].find(k => k in c) ?? 'visible'
   if (exp === 'visible') {
     const shown = await el.isVisible()
     return { ok: shown === (c.visible ?? true), actual: shown ? 'visible' : 'hidden' }
+  }
+  // A checkbox, radio or switch (aria-checked included): on or off.
+  if (exp === 'checked') {
+    const actual = await el.isChecked({ timeout: 500 }).catch(() => null)
+    return { ok: actual === c.checked, actual }
   }
   if (exp === 'value') {
     const actual = await el.inputValue({ timeout: 500 }).catch(() => null)

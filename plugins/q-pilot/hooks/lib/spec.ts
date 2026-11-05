@@ -24,7 +24,7 @@ export function validateSpec(input: Record<string, unknown>): { spec: Spec } | {
   return { spec: spec as Spec }
 }
 
-const TASK_KEYS = ['name', 'url', 'baseURL', 'start', 'goal', 'fixtures', 'checks', 'softChecks', 'budget'] as const
+const TASK_KEYS = ['name', 'url', 'baseURL', 'start', 'goal', 'fixtures', 'checks', 'softChecks', 'budget', 'plan'] as const
 export type TaskSpec = Record<(typeof TASK_KEYS)[number], unknown>
 
 /** Task mode (pilot_run): any browser task. Like a spec, but `url` may be a full http(s) URL and checks are optional. */
@@ -42,6 +42,7 @@ export function validateTask(input: Record<string, unknown>): { spec: TaskSpec }
     return { error: `softChecks must be at most ${MAX_SOFT} yes/no questions` }
   }
   if (spec.fixtures !== undefined && (!spec.fixtures || typeof spec.fixtures !== 'object' || Array.isArray(spec.fixtures))) return { error: 'fixtures must be an object of key to value' }
+  if (spec.plan !== undefined && (!Array.isArray(spec.plan) || spec.plan.some(s => !s || typeof s !== 'object' || typeof (s as Record<string, unknown>).do !== 'string'))) return { error: 'plan must be an array of steps such as { "do": "Open the Airlines filter", "until": { "text": "Airlines" } }' }
   return { spec: spec as TaskSpec }
 }
 

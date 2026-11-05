@@ -2,6 +2,7 @@
 import { join } from 'node:path'
 import { unlinkSync } from 'node:fs'
 import { resolveFixtures } from './flow.mjs'
+import { formsOf } from './typed.mjs'
 import { redact, redactDeep } from './redact.mjs'
 import { observe } from './snapshot.mjs'
 import { makeGuard, onLogin, trackNetwork } from './act.mjs'
@@ -49,8 +50,8 @@ async function drive(ctx, page, flow, fixtures, trace, { allowJev, shotFile, sec
   // The re-run (phase 'rerun') reports into the session the first attempt started.
   if (!phase) inspector?.start({ name: flow.id, goal: redact(flow.goal ?? '', secrets) || null, deadline, secrets })
   const r = trace
-    ? await replay(page, { flow, trace, fixtures, secrets, jev, loginPath: ctx.cfg.loginPath, deadline, shotFile, guard, tracer, inspector, phase })
-    : await pilot(page, { flow, fixtures, secrets, jev, loginPath: ctx.cfg.loginPath, deadline, guard, tracer, inspector })
+    ? await replay(page, { flow, trace, fixtures, forms: formsOf(flow.fixtures), secrets, jev, loginPath: ctx.cfg.loginPath, deadline, shotFile, guard, tracer, inspector, phase })
+    : await pilot(page, { flow, fixtures, forms: formsOf(flow.fixtures), secrets, jev, loginPath: ctx.cfg.loginPath, deadline, guard, tracer, inspector })
   if (r.end === 'done') {
     r.verifyFails = await runVerify(page, flow.verify, { secrets })
     if (!flow.verify.length) r.suggestedVerify = await suggestVerify(page, secrets)

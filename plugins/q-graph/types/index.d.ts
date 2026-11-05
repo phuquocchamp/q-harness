@@ -87,7 +87,7 @@ export type SessionGraph = {
 }
 
 export type GraphSettings = {
-  /** Draw the roster band above the prompt while agents run. */
+  /** Draw the `q-graph` button above the prompt while agents run. */
   band: boolean
   /** Send a native notification when an agent waits for the person or fails. */
   notify: boolean
@@ -100,10 +100,6 @@ declare module 'claude-code' {
       graph: SessionGraph
       /** Loaded from `$.store` at session start; the only value kept across sessions. */
       settings: GraphSettings
-      /** The live browser viewer's address while its process runs (`/q-graph web`); null otherwise. */
-      webUrl: string | null
-      /** The band lists every agent on wrapped rows (its `+N more` was pressed); false keeps it to one row. */
-      bandAll: boolean
     }
   }
 }

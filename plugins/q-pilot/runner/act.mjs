@@ -1,6 +1,7 @@
 // Performing one action on the page, and turning an observed action into a trace step.
 import { observe, pathOf } from './snapshot.mjs'
 import { remoteAllowed } from './flow.mjs'
+import { datePattern, formatDate } from './typed.mjs'
 
 const navs = new WeakMap()
 
@@ -100,8 +101,9 @@ const matchesNear = (field, value) => {
       if (fold(e.textContent).includes(want)) n++
     }
   }
-  const option = [...document.querySelectorAll('[role=option],[role=listbox] li,datalist option')].some(e => e.getClientRects().length)
-  return { n, option }
+  // Counted, not just seen: a list another field left open must not pass for this field's suggestions.
+  const options = [...document.querySelectorAll('[role=option],[role=listbox] li,datalist option')].filter(e => e.getClientRects().length).length
+  return { n, options }
 }
 
 /**
@@ -129,15 +131,17 @@ async function type(page, el, value) {
  * Polled from here, not with waitForFunction: that needs eval in the page, which a strict CSP (Google, YouTube) blocks.
  */
 const QUIET_MS = 300
-async function suggestions(page, el, value, before, shapeBefore) {
+/** A field that announces suggestions, or turns the browser's own autocomplete off as custom lists do. */
+const isListy = el => el.evaluate(e => e.getAttribute('role') === 'combobox' || ['aria-autocomplete', 'list', 'aria-haspopup', 'aria-controls', 'aria-owns'].some(a => e.hasAttribute(a)) || e.getAttribute('autocomplete') === 'off').catch(() => false)
+
+async function suggestions(page, el, value, was, shapeBefore) {
   const t0 = Date.now()
-  // A field that announces suggestions (or turns the browser's own autocomplete off, as custom lists do) gets the
-  // whole window: a remote airport search often answers after QUIET_MS.
-  const listy = await el.evaluate(e => e.getAttribute('role') === 'combobox' || ['aria-autocomplete', 'list', 'aria-haspopup', 'aria-controls', 'aria-owns'].some(a => e.hasAttribute(a)) || e.getAttribute('autocomplete') === 'off').catch(() => false)
+  // A listy field gets the whole window: a remote airport search often answers after QUIET_MS.
+  const listy = await isListy(el)
   for (;;) {
     const m = await el.evaluate(matchesNear, value).catch(() => null)
     if (!m) return false
-    if (m.option || m.n > before) return true
+    if (m.options > was.options || m.n > was.n) return true
     if (Date.now() - t0 > SUGGEST_MS) return false
     if (!listy && Date.now() - t0 > QUIET_MS && (await shape(page)) === shapeBefore) return false
     await page.waitForTimeout(100)
@@ -147,13 +151,18 @@ async function suggestions(page, el, value, before, shapeBefore) {
 /** The controls and text size of the page: a click that opened a popup (a date picker) changes it. */
 const shape = page => page.evaluate(() => `${document.querySelectorAll('a,button,input,select,textarea,[role],[tabindex]').length}:${document.body?.innerText.length ?? 0}`).catch(() => null)
 
+/** The field's type, placeholder and label, which say what date format it takes. */
+const dateHints = el => el.evaluate(e => ({ type: e.tagName === 'INPUT' ? e.type : '', placeholder: e.getAttribute('placeholder') ?? '', label: [e.getAttribute('aria-label'), e.getAttribute('pattern'), e.getAttribute('data-date-format'), ...[...(e.labels ?? [])].map(l => l.textContent)].filter(Boolean).join(' ') })).catch(() => ({}))
+
 /**
  * Acts through the element handle behind the snapshot node. Playwright's actionability checks run before input.
- * Returns { suggested }: true when typing brought up a suggestion that matches the typed text.
+ * `form` (a typed fixture's type and aliases): a date is typed in the field's own format, and when an autocomplete
+ * field shows no suggestion for the value, each alias is typed in its place until one does.
+ * Returns { suggested, typed }: whether typing brought up a matching suggestion, and the text that was typed.
  */
-export async function perform(page, action, fixtureValue) {
+export async function perform(page, action, fixtureValue, form = null) {
   const before = { ...count(page) }
-  let suggested = false
+  let suggested = false, typed
   if (action.kind === 'scroll') await page.mouse.wheel(0, action.delta)
   // WAIT also waits for data requests already in flight (Jev waits because the page is still loading).
   else if (action.kind === 'wait') await page.waitForTimeout(100).then(() => dataLoaded(page, 0))
@@ -164,11 +173,17 @@ export async function perform(page, action, fixtureValue) {
     const el = (await page.evaluateHandle(n => window.__jevFast.nodes.get(n), action.node)).asElement()
     if (!el) throw new Error('element is gone')
     if (action.kind === 'fill') {
-      const value = String(fixtureValue ?? '')
-      const was = await el.evaluate(matchesNear, value).catch(() => ({ n: 0 }))
-      const shaped = await shape(page)
-      await type(page, el, value)
-      suggested = await suggestions(page, el, value, was.n, shaped)
+      let value = String(fixtureValue ?? '')
+      if (form?.type === 'date') value = formatDate(value, datePattern(await dateHints(el)))
+      const aliases = form?.aliases?.length && (await isListy(el)) ? form.aliases : []
+      for (const text of [value, ...aliases]) {
+        const was = await el.evaluate(matchesNear, text).catch(() => ({ n: 0, options: 0 }))
+        const shaped = await shape(page)
+        await type(page, el, text)
+        typed = text
+        suggested = await suggestions(page, el, text, was, shaped)
+        if (suggested) break
+      }
     } else if (action.kind === 'select') await el.selectOption({ label: action.option }, { timeout: 2000 })
     else {
       const was = await shape(page)
@@ -185,7 +200,7 @@ export async function perform(page, action, fixtureValue) {
     }
   }
   await settle(page, before)
-  return { suggested }
+  return { suggested, typed }
 }
 
 /**

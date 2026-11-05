@@ -41,7 +41,7 @@ const blocked = (error, steps, diverged) => ({ end: 'blocked', error, steps, div
  * `steps` are the steps as run (healed ones replaced) with `by`; `diverged` lists old -> new for healed steps.
  * `inspector` (optional) is told what was observed and done; replay never holds at a gate. `phase` tags those rows.
  */
-export async function replay(page, { flow, trace, fixtures, secrets = [], jev, loginPath, deadline, shotFile, guard, tracer = null, inspector = null, phase = null, maxHeals = MAX_HEALS, minHealP = MIN_HEAL_P }) {
+export async function replay(page, { flow, trace, fixtures, forms = {}, secrets = [], jev, loginPath, deadline, shotFile, guard, tracer = null, inspector = null, phase = null, maxHeals = MAX_HEALS, minHealP = MIN_HEAL_P }) {
   const steps = [], diverged = [], history = []
   let healed = 0
   for (const [i, step] of trace.steps.entries()) {
@@ -76,7 +76,7 @@ export async function replay(page, { flow, trace, fixtures, secrets = [], jev, l
         if (healed >= maxHeals) return blocked(`more than ${maxHeals} steps missed (step ${n}: ${describe(step)})`, steps, diverged)
         let d
         try {
-          d = await chooseAction(jev, { goal: flow.goal, snap, history, fixtureKeys: Object.keys(fixtures), fixtures, secrets, stepToReplace: missed, canPress: step.op === 'fill' && (await canPressEnter(page)) })
+          d = await chooseAction(jev, { goal: flow.goal, snap, history, fixtureKeys: Object.keys(fixtures), fixtures, forms, secrets, stepToReplace: missed, canPress: step.op === 'fill' && (await canPressEnter(page)) })
         } catch (e) {
           if (e instanceof JevError) return blocked(`step ${n} missed (${describe(step)}): ${e.message}`, steps, diverged)
           throw e
@@ -94,7 +94,7 @@ export async function replay(page, { flow, trace, fixtures, secrets = [], jev, l
       }
       const ran = toStep(snap, action, fixtureKey)
       // The group title names role and name only: never a typed value.
-      await traced(tracer, `Step ${n} · ${redact(describe(ran), secrets)} · ${by === 'jev' ? `healed p ${p.toFixed(2)}` : 'replay'}`, () => perform(page, action, fixtures[fixtureKey]))
+      await traced(tracer, `Step ${n} · ${redact(describe(ran), secrets)} · ${by === 'jev' ? `healed p ${p.toFixed(2)}` : 'replay'}`, () => perform(page, action, fixtures[fixtureKey], forms[fixtureKey]))
       steps.push({ ...ran, by, ...(by === 'jev' && { p: +p.toFixed(3) }) })
       history.push({ action: redact(describe(ran), secrets), kind: action.kind, fixture: ran.fixture })
       await tell(() => inspector?.acted({ step: n, action: history.at(-1).action, fixture: ran.fixture, p: p ?? null, by, ...(phase && { phase }) }))

@@ -2,6 +2,7 @@
 // operation that has candidates, and a fixture head (key names only) for TYPE_TEXT. Every used head is validated.
 import { elementIndex } from './snapshot.mjs'
 import { redact, redactValue } from './redact.mjs'
+import { variantsOf } from './typed.mjs'
 
 export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
 export class JevError extends Error {}
@@ -34,6 +35,8 @@ export function createJev({ apiKey, model = 'jev-latest', timeoutMs = 15000, url
     available: Boolean(apiKey),
     calls: 0,
     ms: [],
+    // Input tokens of each answered request (TypeSafe bills input only).
+    tokens: [],
     async request(body) {
       for (let attempt = 0; ; attempt++) {
         try {
@@ -59,6 +62,7 @@ export function createJev({ apiKey, model = 'jev-latest', timeoutMs = 15000, url
         const json = await res.json().catch(() => null)
         if (!res.ok) throw Object.assign(new JevError(`jev HTTP ${res.status}`), { retry: RETRY_STATUS.has(res.status) })
         if (!json?.answers || typeof json.answers !== 'object') throw new JevError('jev response has no answers')
+        if (Number.isFinite(json.usage?.input_tokens)) jev.tokens.push(json.usage.input_tokens)
         return json
       } catch (e) {
         if (e instanceof JevError) throw e
@@ -121,6 +125,9 @@ const STATES = ['checked', 'selected', 'expanded', 'pressed', 'current']
 /** jev-ultrafast sends checked/selected/expanded with every element and target (q-pilot adds pressed/current): Jev needs them to see an open dropdown or an option already on. */
 const stateOf = a => Object.fromEntries(STATES.filter(k => a[k] !== undefined).map(k => [k, a[k]]))
 const same = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase()
+/** `b` is a whole word or code inside `a` ("Danang (DAD)" holds "DAD"). */
+const words = s => String(s ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ')
+const contained = (a, b) => words(b) !== '' && ` ${words(a)} `.includes(` ${words(b)} `)
 const CONTROL = { scroll_down: 'SCROLL_DOWN', scroll_up: 'SCROLL_UP', wait: 'WAIT' }
 
 /**
@@ -129,10 +136,12 @@ const CONTROL = { scroll_down: 'SCROLL_DOWN', scroll_up: 'SCROLL_UP', wait: 'WAI
  * Throws JevError for transport problems and invalid answers; the caller turns that into `blocked`.
  * `secrets` (fixture values) are redacted from everything sent.
  */
-export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offerKeys = fixtureKeys, fixtures = {}, secrets, stepToReplace, canPress = false, canEscape = false, canEnd = true, vision = null }) {
+export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offerKeys = fixtureKeys, fixtures = {}, forms = {}, secrets, stepToReplace, canPress = false, canEscape = false, canEnd = true, vision = null, crossCheck = false }) {
   // Jev sees fixture keys, never values, so it cannot tell that a field already holds the requested value (jev-ultrafast's
   // text helper sees the goal instead). Code compares and names the fixture a field already holds.
-  const holds = a => (a.kind === 'select' ? null : fixtureKeys.find(k => fixtures[k] !== undefined && String(a.value ?? '').trim() !== '' && same(a.value, fixtures[k])) ?? null)
+  // A typed fixture also counts in any of its forms: a date in the field's format, an alias, or the suggestion it
+  // picked ("Danang (DAD)" after typing "DAD").
+  const holds = a => (a.kind === 'select' || String(a.value ?? '').trim() === '' ? null : fixtureKeys.find(k => fixtures[k] !== undefined && variantsOf(fixtures[k], forms[k]).some(v => same(a.value, v) || (forms[k]?.aliases && contained(a.value, v)))) ?? null)
   const index = elementIndex(snap.actions)
   const elements = new Map(), targets = {}, actionOf = {}, controls = {}
   for (const a of snap.actions) {
@@ -187,6 +196,12 @@ export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offe
     criteria: Object.fromEntries(offerKeys.map(k => [k, `fixture "${k}"`])),
     instructions: { goal, ...(field && { field }), rules: FIXTURE_RULES },
   })
+  // Cross-checks (like jev-for-chrome): two yes/no questions in the same request, judged on their own. The state is
+  // sent once, so they cost a few dozen input tokens. The loop uses them to hold back a DONE and to refuse a repeat.
+  if (crossCheck) {
+    questions.goal_met = { type: 'noul', instructions: `Goal: ${goal}\n${GOAL_MET}` }
+    questions.stuck = { type: 'noul', instructions: `Goal: ${goal}\n${STUCK}` }
+  }
   // One fixture: answered in the same request. Several: asked after the target is known (below).
   if (targets.TYPE_TEXT && offerKeys.length === 1) questions.fixture = fixtureQuestion()
   const state = {
@@ -249,6 +264,7 @@ export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offe
   if (!validateChoice(op, Object.keys(operations))) throw new JevError('jev returned an invalid operation answer')
   const p = op.probabilities[op.choice]
   const detail = { elements: state.elements, operation: op.choice, operations: op.probabilities, target: null, targets: null, latencyMs: Math.round(performance.now() - t0), jevModel: res.model ?? null, ...(visionDetail && { vision: visionDetail }) }
+  if (crossCheck) Object.assign(detail, { goalMet: noulOf(answers.goal_met), stuck: noulOf(answers.stuck) })
   if (op.choice === 'DONE' || op.choice === 'BLOCKED') return { end: op.choice, p, detail }
   if (controls[op.choice]) return { action: controls[op.choice], p, detail }
   const head = answers[`${op.choice.toLowerCase()}_target`]
@@ -272,6 +288,11 @@ export async function chooseAction(jev, { goal, snap, history, fixtureKeys, offe
   if (fixture) detail.fixture = fixture
   return { action, fixture, p: p * head.probabilities[head.choice], detail }
 }
+
+const GOAL_MET = 'Does the CURRENT page visibly show that every requirement of this goal is satisfied? What the recent actions did is not evidence; only what the page shows now.'
+const STUCK = 'Do the recent actions make no progress toward this goal: the same controls clicked, toggled or undone again, or actions that changed nothing?'
+/** A noul answer's probability, or null when it is missing or invalid. */
+const noulOf = a => (a?.type === 'noul' && isProb(a.noul) ? a.noul : null)
 
 /** Unsure: the operation below VISION_P, or its target head with the top two within VISION_GAP. */
 export const VISION_P = 0.6
