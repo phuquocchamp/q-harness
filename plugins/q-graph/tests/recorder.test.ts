@@ -62,7 +62,7 @@ test('notify off keeps the toast and drops the notification', async ($, on) => {
   expect(host.notes).toEqual([])
 })
 
-test('the band shows each live agent and hides when there is none', async ($, on) => {
+test('the band shows only the q-graph button while agents live and hides when there is none', async ($, on) => {
   fakeHost(on)
   // The engine's own band, drawn when q-graph hands the band on.
   on('ui.render', { component: 'AbovePrompt' }, (hook$, e) => {
@@ -78,24 +78,9 @@ test('the band shows each live agent and hides when there is none', async ($, on
 
   await spawn($, 'Explore', 'scan')
   const band = await $.ui.mount({ plugin: 'q-graph', surface: 'terminal', component: 'AbovePrompt', props } as Parameters<typeof $.ui.mount>[0])
-  expect(await band.find({ type: 'Text', text: /^Explore$/ })).toBeDefined()
+  // Claude Code lists the agents itself: the band carries no chip per agent.
+  expect(await band.find({ type: 'Text', text: /Explore/ })).toBeUndefined()
   expect(await band.find({ type: 'Button', key: 'open-graph' })).toBeDefined()
-  await band.unmount()
-})
-
-test('the band folds what does not fit into a +N more button that lists every agent when pressed', async ($, on) => {
-  fakeHost(on)
-  await start($)
-  for (const t of ['Explore', 'Plan', 'general-purpose', 'code-reviewer', 'test-runner']) await spawn($, t, 'work')
-  const props = { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 60 }
-  const band = await $.ui.mount({ plugin: 'q-graph', surface: 'terminal', component: 'AbovePrompt', props } as Parameters<typeof $.ui.mount>[0])
-  expect(await band.find({ type: 'Text', text: /^test-runner$/ })).toBeUndefined()
-  expect(await band.find({ type: 'Button', key: 'band-all' })).toBeDefined()
-  await band.press({ key: 'band-all' })
-  for (const t of ['Explore', 'Plan', 'general-purpose', 'code-reviewer', 'test-runner']) expect(await band.find({ type: 'Text', text: new RegExp(`^${t}$`) })).toBeDefined()
-  expect(await band.find({ type: 'Button', key: 'band-all' })).toBeUndefined()
-  await band.press({ key: 'band-fold' })
-  expect(await band.find({ type: 'Button', key: 'band-all' })).toBeDefined()
   await band.unmount()
 })
 
@@ -107,7 +92,7 @@ test('the pane draws a Raster in the terminal and text elsewhere', async ($, on)
 
   const term = await $.ui.mount({ plugin: 'q-graph', surface: 'terminal', component: 'Pane', requestId: 'q-graph', props: pane } as Parameters<typeof $.ui.mount>[0])
   expect(await term.find({ type: 'Raster', key: 'graph-0' })).toBeDefined()
-  expect(await term.find({ type: 'Text', text: /1 agents · 1 running/ })).toBeDefined()
+  expect(await term.find({ type: 'Text', text: /agents ·/ })).toBeUndefined()
   await term.unmount()
 
   const desk = await $.ui.mount({ plugin: 'q-graph', surface: 'desktop', component: 'Pane', requestId: 'q-graph', props: pane } as Parameters<typeof $.ui.mount>[0])
@@ -163,7 +148,6 @@ test('the engine takes every glyph the pane draws, for every status and at every
   for (let frame = 0; frame < 18; frame++) {
     const ui = await $.ui.mount({ plugin: 'q-graph', surface: 'terminal', component: 'Pane', requestId: 'q-graph', props: pane } as Parameters<typeof $.ui.mount>[0])
     expect(await ui.find({ type: 'Raster', key: 'graph-0' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /9 agents · 4 running · 1 need you/ })).toBeDefined()
     await ui.unmount()
     await host.clock.advance(150)
   }
