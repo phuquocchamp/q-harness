@@ -40,6 +40,11 @@ const oneLine = (s, n) => {
 }
 
 const str = v => (typeof v === 'string' ? v : '')
+/** The first line of a label, at most 60 characters. */
+const firstLabel = v => {
+  const l = str(v).split('\n')[0].trim()
+  return l.length > 60 ? `${l.slice(0, 59)}…` : l
+}
 const baseName = p => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
 /** One line telling calls of the same tool apart on the timeline. */
@@ -365,11 +370,44 @@ const msOf = t => {
 const earliest = (a, b) => (a == null ? b : b == null ? a : msOf(b) < msOf(a) ? b : a)
 const latest = (a, b) => (a == null ? b : b == null ? a : msOf(b) > msOf(a) ? b : a)
 
+/** The name in a Workflow script's `meta` (`name: 'deep-research'`), or null. */
+export const runNameOf = script => {
+  if (typeof script !== 'string') return null
+  const m = /export\s+const\s+meta\s*=\s*\{[\s\S]*?\bname\s*:\s*(['"`])([^'"`\n]{1,80})\1/.exec(script)
+  return m ? m[2] : null
+}
+
+/** The phase titles a Workflow script's `meta.phases` declares, in order (lib/graph.ts phaseTitles). */
+export const phaseTitlesOf = script => {
+  if (typeof script !== 'string') return []
+  const meta = /export\s+const\s+meta\s*=\s*\{/.exec(script)
+  if (!meta) return []
+  const at = script.slice(meta.index).search(/["']?phases["']?\s*:\s*\[/)
+  if (at < 0) return []
+  const list = script.slice(meta.index + at)
+  const close = list.search(/\]\s*,?\s*(\n|\})/)
+  const body = close > 0 ? list.slice(0, close) : list.slice(0, 4000)
+  const titles = []
+  for (const m of body.matchAll(/["']?title["']?\s*:\s*(['"`])((?:(?!\1)[^\n\\]){1,60})\1/g)) {
+    if (!titles.includes(m[2])) titles.push(m[2])
+    if (titles.length >= 24) break
+  }
+  return titles
+}
+
+/** A phase lane's id, the same as its card's in the graph (lib/graph.ts phaseId). */
+export const phaseLaneId = (runId, title) => `${runId}.${title.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40) || 'phase'}`
+
+/** How long after its Workflow call a run may start and still be that call's. */
+const RUN_SLACK_MS = 10_000
+
 /**
  * Builds the Timeline object. `main` is the main transcript's index; `subagents` are
- * `{ id, index, meta }` with `meta` the parsed agent-<id>.meta.json (or null).
+ * `{ id, index, meta, runId? }` with `meta` the parsed agent-<id>.meta.json (or null) and `runId` set
+ * for an agent a Workflow run started; `runs` are `{ runId, name?, startedAt? }`, one per run folder.
+ * Each run becomes a `workflow` lane under the lane that made its Workflow call, its agents under it.
  */
-export const buildTimeline = ({ main, subagents = [], now = new Date().toISOString(), callCap = TIMELINE_CALL_CAP }) => {
+export const buildTimeline = ({ main, subagents = [], runs = [], now = new Date().toISOString(), callCap = TIMELINE_CALL_CAP }) => {
   const sources = [{ id: 'main', index: main, meta: null }, ...subagents.filter(s => s.id !== 'main')]
   // Which lane holds each tool_use, and which Agent/Task call reported each child id.
   const owner = new Map()
@@ -387,7 +425,9 @@ export const buildTimeline = ({ main, subagents = [], now = new Date().toISOStri
     const meta = s.meta && typeof s.meta === 'object' ? s.meta : {}
     let parentId = null
     let spawnCallId = null
-    if (s.id !== 'main') {
+    // A workflow agent hangs under its phase's lane, else under its run's.
+    if (s.runId) parentId = str(meta.workflowPhase) ? phaseLaneId(s.runId, str(meta.workflowPhase)) : s.runId
+    else if (s.id !== 'main') {
       const via = typeof meta.toolUseId === 'string' ? owner.get(meta.toolUseId) : undefined
       const fallback = spawnedBy.get(s.id)
       if (via && via !== s.id) [parentId, spawnCallId] = [via, meta.toolUseId]
@@ -398,8 +438,9 @@ export const buildTimeline = ({ main, subagents = [], now = new Date().toISOStri
     const team = str(meta.teamName)
     // A named background subagent has `name` too; only a team member is a teammate.
     const kind = s.id === 'main' ? 'main' : team || meta.taskKind === 'in_process_teammate' ? 'teammate' : 'subagent'
+    // A workflow agent is named by the label its script gave it (`resolve:renderer#1`), as Claude Code shows it.
     const label =
-      kind === 'main' ? 'main' : kind === 'teammate' ? (name && team ? `${name}@${team}` : name || team) : name || str(meta.agentType) || 'subagent'
+      kind === 'main' ? 'main' : kind === 'teammate' ? (name && team ? `${name}@${team}` : name || team) : name || (s.runId && firstLabel(meta.description)) || str(meta.agentType) || 'subagent'
     const all = [...st.calls.values()]
     const kept = all.length > callCap ? all.slice(all.length - callCap) : all
     lanes.set(s.id, {
@@ -425,6 +466,67 @@ export const buildTimeline = ({ main, subagents = [], now = new Date().toISOStri
       })),
       truncated: st.dropped + all.length - kept.length,
       prompts: s.id === 'main' ? st.prompts : [],
+      ...(s.runId ? { runId: s.runId } : {}),
+    })
+  }
+
+  // One lane per Workflow run, under the lane whose Workflow call started it: the latest call made
+  // before the run started (within RUN_SLACK_MS), each call used once; main when none matches.
+  const calls = []
+  for (const s of sources) for (const c of s.index.state.calls.values()) if (c.tool === 'Workflow') calls.push({ laneId: s.id, callId: c.id, at: msOf(c.startedAt) })
+  calls.sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+  const taken = new Set()
+  const byRunStart = [...runs].sort((a, b) => (msOf(a.startedAt) ?? Infinity) - (msOf(b.startedAt) ?? Infinity))
+  for (const run of byRunStart) {
+    if (lanes.has(run.runId)) continue
+    const kids = [...lanes.values()].filter(l => l.runId === run.runId)
+    let start = msOf(run.startedAt)
+    for (const k of kids) start = start == null ? msOf(k.startedAt) : Math.min(start, msOf(k.startedAt) ?? start)
+    const call = calls.filter(c => !taken.has(c.callId) && (start == null || c.at == null || c.at <= start + RUN_SLACK_MS)).pop()
+    if (call) taken.add(call.callId)
+    let startedAt = run.startedAt ?? null
+    let endedAt = null
+    for (const k of kids) {
+      startedAt = earliest(startedAt, k.startedAt)
+      endedAt = latest(endedAt, k.endedAt)
+    }
+    lanes.set(run.runId, {
+      id: run.runId,
+      parentId: call?.laneId ?? 'main',
+      depth: 0,
+      spawnCallId: call?.callId ?? null,
+      kind: 'workflow',
+      label: str(run.name) || run.runId,
+      description: `${kids.length} agent${kids.length === 1 ? '' : 's'} · ${run.runId}`,
+      model: null,
+      startedAt,
+      endedAt,
+      calls: [],
+      truncated: 0,
+      prompts: [],
+      runId: run.runId,
+    })
+    // One lane per phase, in the script's order, then any phase only an agent named.
+    const titles = [...(run.phases ?? [])]
+    for (const k of kids) {
+      const p = str(subagents.find(s => s.id === k.id)?.meta?.workflowPhase)
+      if (p && !titles.includes(p)) titles.push(p)
+    }
+    titles.forEach((title, i) => {
+      const id = phaseLaneId(run.runId, title)
+      if (lanes.has(id)) return
+      const mine = kids.filter(k => k.parentId === id)
+      let ps = null
+      let pe = null
+      for (const k of mine) {
+        ps = earliest(ps, k.startedAt)
+        pe = latest(pe, k.endedAt)
+      }
+      lanes.set(id, {
+        id, parentId: run.runId, depth: 0, spawnCallId: null, kind: 'workflow', label: title,
+        description: mine.length ? `${mine.length} agent${mine.length === 1 ? '' : 's'}` : 'not started',
+        model: null, startedAt: ps, endedAt: pe, calls: [], truncated: 0, prompts: [], runId: run.runId, phaseIndex: i,
+      })
     })
   }
 
@@ -447,7 +549,9 @@ export const buildTimeline = ({ main, subagents = [], now = new Date().toISOStri
     if (!children.has(lane.parentId)) children.set(lane.parentId, [])
     children.get(lane.parentId).push(lane)
   }
-  const byStart = (a, b) => (msOf(a.startedAt) ?? Infinity) - (msOf(b.startedAt) ?? Infinity) || (a.id < b.id ? -1 : 1)
+  // Phase lanes keep the script's order; every other lane goes by its start.
+  const byStart = (a, b) =>
+    (a.phaseIndex ?? -1) - (b.phaseIndex ?? -1) || (msOf(a.startedAt) ?? Infinity) - (msOf(b.startedAt) ?? Infinity) || (a.id < b.id ? -1 : 1)
   const ordered = []
   const walk = (lane, depth) => {
     lane.depth = depth

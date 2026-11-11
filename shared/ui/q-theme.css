@@ -22,7 +22,7 @@
   /* live = recording; interactive = a human is in control */
   --q-live:#d92d20; --q-live-soft:#fdeceb; --q-live-line:#f5b9b4;
   --q-interactive:#c2560a; --q-interactive-soft:#fdeee0; --q-interactive-line:#f2c39b;
-  --q-k-main:#2c50c0; --q-k-sub:#177f65; --q-k-team:#b8268a; --q-k-tool:#7a4a14; --q-k-skill:#6a1fa8; --q-k-mcp:#1e7194; --q-k-rule:#5a8012;
+  --q-k-main:#2c50c0; --q-k-sub:#177f65; --q-k-team:#b8268a; --q-k-tool:#7a4a14; --q-k-skill:#6a1fa8; --q-k-mcp:#1e7194; --q-k-rule:#5a8012; --q-k-run:#c2491b;
   --q-shadow-1:0 1px 2px rgba(16,24,40,.06); --q-shadow-2:0 4px 14px rgba(16,24,40,.12);
   --q-focus:0 0 0 2px var(--q-surface),0 0 0 4px var(--q-accent);
   color-scheme:light;
@@ -39,7 +39,7 @@
     --q-held:#b49cff; --q-held-soft:#221a3b; --q-held-line:#42357a;
     --q-live:#ff6a5e; --q-live-soft:#2e1514; --q-live-line:#6a2b27;
     --q-interactive:#ff9a4d; --q-interactive-soft:#2d1b0e; --q-interactive-line:#68401c;
-    --q-k-main:#89a2f8; --q-k-sub:#5ee0cc; --q-k-team:#ee6aa6; --q-k-tool:#e9ac4a; --q-k-skill:#bf7cf4; --q-k-mcp:#65bfda; --q-k-rule:#b4dc84;
+    --q-k-main:#89a2f8; --q-k-sub:#5ee0cc; --q-k-team:#ee6aa6; --q-k-tool:#e9ac4a; --q-k-skill:#bf7cf4; --q-k-mcp:#65bfda; --q-k-rule:#b4dc84; --q-k-run:#ff9466;
     --q-shadow-1:0 1px 2px rgba(0,0,0,.4); --q-shadow-2:0 4px 14px rgba(0,0,0,.5);
     color-scheme:dark;
   }
@@ -55,7 +55,7 @@
   --q-held:#b49cff; --q-held-soft:#221a3b; --q-held-line:#42357a;
   --q-live:#ff6a5e; --q-live-soft:#2e1514; --q-live-line:#6a2b27;
   --q-interactive:#ff9a4d; --q-interactive-soft:#2d1b0e; --q-interactive-line:#68401c;
-  --q-k-main:#89a2f8; --q-k-sub:#5ee0cc; --q-k-team:#ee6aa6; --q-k-tool:#e9ac4a; --q-k-skill:#bf7cf4; --q-k-mcp:#65bfda; --q-k-rule:#b4dc84;
+  --q-k-main:#89a2f8; --q-k-sub:#5ee0cc; --q-k-team:#ee6aa6; --q-k-tool:#e9ac4a; --q-k-skill:#bf7cf4; --q-k-mcp:#65bfda; --q-k-rule:#b4dc84; --q-k-run:#ff9466;
   --q-shadow-1:0 1px 2px rgba(0,0,0,.4); --q-shadow-2:0 4px 14px rgba(0,0,0,.5);
   color-scheme:dark;
 }

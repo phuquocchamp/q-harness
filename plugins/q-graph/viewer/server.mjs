@@ -5,11 +5,11 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, watchFile, unwatchFile, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, watchFile, unwatchFile, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { TranscriptIndex, buildTimeline, emptyDetail, emptyTimeline, stats } from './transcript.mjs'
+import { TranscriptIndex, buildTimeline, emptyDetail, emptyTimeline, phaseTitlesOf, runNameOf, stats } from './transcript.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -157,6 +157,57 @@ const transcriptPath = () => {
   }
 }
 
+/** A Workflow run's folder name, as the engine mints run ids. */
+const RUN_DIR = /^wf_[A-Za-z0-9_-]{1,120}$/
+
+/** The Workflow run folders under `<session>/subagents/workflows`; none when there is no such folder. */
+const runDirs = sessionDir => {
+  try {
+    return readdirSync(join(sessionDir, 'subagents', 'workflows')).filter(n => RUN_DIR.test(n))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Where an agent's transcript is: `subagents/agent-<id>.jsonl` for a subagent or teammate, else
+ * `subagents/workflows/<runId>/agent-<id>.jsonl` for an agent a Workflow run started.
+ */
+const agentFile = (sessionDir, id) => {
+  const top = join(sessionDir, 'subagents', `agent-${id}.jsonl`)
+  if (existsSync(top)) return top
+  for (const run of runDirs(sessionDir)) {
+    const file = join(sessionDir, 'subagents', 'workflows', run, `agent-${id}.jsonl`)
+    if (existsSync(file)) return file
+  }
+  return top
+}
+
+const RUN_MAX = 1024 * 1024
+
+/** A run's record (`<session>/workflows/<runId>.json`): its name and start; empty when unreadable. */
+const readRun = path => {
+  try {
+    if (statSync(path).size > RUN_MAX) return {}
+    const run = JSON.parse(readFileSync(path, 'utf8'))
+    return { name: runNameOf(run?.script), startedAt: typeof run?.timestamp === 'string' ? run.timestamp : null }
+  } catch {
+    return {}
+  }
+}
+
+/** The phases run `runId`'s saved script (`workflows/scripts/<name>-<runId>.js`) declares, in order. */
+const scriptPhases = (sessionDir, runId) => {
+  try {
+    const dir = join(sessionDir, 'workflows', 'scripts')
+    const name = readdirSync(dir).find(n => n.endsWith(`-${runId}.js`))
+    if (!name || statSync(join(dir, name)).size > RUN_MAX) return []
+    return phaseTitlesOf(readFileSync(join(dir, name), 'utf8'))
+  } catch {
+    return []
+  }
+}
+
 /** GET /detail: what happened inside one agent, read on demand from its transcript. */
 const detail = (id, use) => {
   const transcript = transcriptPath()
@@ -164,7 +215,7 @@ const detail = (id, use) => {
   if (id !== 'main' && !AGENT_ID.test(id)) return emptyDetail(id, `bad agent id: ${id}`)
   const root = dirname(resolve(transcript))
   const path = resolve(
-    id === 'main' ? transcript : join(root, basename(transcript, '.jsonl'), 'subagents', `agent-${id}.jsonl`),
+    id === 'main' ? transcript : agentFile(join(root, basename(transcript, '.jsonl')), id),
   )
   if (!path.startsWith(root + sep)) return emptyDetail(id, 'transcript outside the project folder')
   const index = full.get(path, root)
@@ -194,7 +245,8 @@ const timeline = () => {
   if (!path.startsWith(root + sep)) return emptyTimeline('transcript outside the project folder')
   const main = slim.get(path, root)
   if (!main) return emptyTimeline('transcript not found')
-  const folder = join(root, basename(transcript, '.jsonl'), 'subagents')
+  const sessionDir = join(root, basename(transcript, '.jsonl'))
+  const folder = join(sessionDir, 'subagents')
   let names = []
   try {
     names = readdirSync(folder)
@@ -208,7 +260,25 @@ const timeline = () => {
     const index = slim.get(join(folder, name), root)
     if (index) subagents.push({ id: m[1], index, meta: readMeta(join(folder, `agent-${m[1]}.meta.json`)) })
   }
-  return buildTimeline({ main, subagents })
+  // A Workflow run's agents live in a folder of their own, one per run.
+  const runs = []
+  for (const runId of runDirs(sessionDir)) {
+    const dir = join(folder, 'workflows', runId)
+    let files = []
+    try {
+      files = readdirSync(dir)
+    } catch {
+      continue
+    }
+    for (const name of files) {
+      const m = /^agent-(.+)\.jsonl$/.exec(name)
+      if (!m || !AGENT_ID.test(m[1])) continue
+      const index = slim.get(join(dir, name), root)
+      if (index) subagents.push({ id: m[1], index, runId, meta: readMeta(join(dir, `agent-${m[1]}.meta.json`)) })
+    }
+    runs.push({ runId, ...readRun(join(sessionDir, 'workflows', `${runId}.json`)), phases: scriptPhases(sessionDir, runId) })
+  }
+  return buildTimeline({ main, subagents, runs })
 }
 
 const send = (res, text) => res.write(`data: ${text.replace(/\n/g, '')}\n\n`)

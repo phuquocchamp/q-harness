@@ -13,35 +13,35 @@
    graph kinds only; UI chrome and "running" use --q-accent. */
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{background:var(--q-bg);color:var(--q-fg);font:14px/1.5 var(--q-sans);display:flex;flex-direction:column}
-header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 16px;border-bottom:1px solid var(--q-line);background:var(--q-surface)}
-header h1{font:700 16px var(--q-mono);margin:0;display:flex;align-items:center;gap:8px}
+body{background:var(--q-bg);color:var(--q-fg);font:15px/1.5 var(--q-sans);display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:10px 16px;border-bottom:1px solid var(--q-line);background:var(--q-surface)}
+header h1{font:700 17px var(--q-mono);margin:0;display:flex;align-items:center;gap:8px}
 header h1 img{width:20px;height:20px}
-.live{font:600 12px var(--q-mono);color:var(--q-ok)}
+.live{font:600 13px var(--q-mono);color:var(--q-ok)}
 .live.off{color:var(--q-bad)}
-.counts{display:flex;gap:14px;font:12px var(--q-mono);color:var(--q-muted);margin-left:auto;flex-wrap:wrap}
+.counts{display:flex;gap:12px;font:12.5px var(--q-mono);color:var(--q-muted);margin-left:auto;flex-wrap:wrap}
 .counts b{color:var(--q-fg);font-weight:700}
 #app{flex:1;min-height:0;position:relative}
-.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--q-muted);font:13px var(--q-mono);text-align:center;padding:24px}
-.qn{background:var(--q-surface);border:1.6px solid var(--k);border-left-width:6px;border-radius:9px;padding:8px 12px;width:240px;color:var(--q-fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--q-muted);font:14px var(--q-mono);text-align:center;padding:24px}
+.qn{background:var(--q-surface);border:1.6px solid var(--k);border-left-width:6px;border-radius:9px;padding:9px 13px;width:268px;color:var(--q-fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .qn .h{display:flex;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden}
-.qn .h b{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis}
-.qn .h span{font:10.5px var(--q-mono);color:var(--q-muted)}
-.qn .h i{font:normal 10.5px var(--q-mono);color:var(--q-muted);margin-left:auto}
-.qn .t{margin-top:1px;font:11.5px var(--q-sans);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.qn .s{display:flex;justify-content:space-between;gap:10px;margin-top:4px;font:600 11px var(--q-mono)}
+.qn .h b{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis}
+.qn .h span{font:12px var(--q-mono);color:var(--q-muted)}
+.qn .h i{font:normal 12px var(--q-mono);color:var(--q-muted);margin-left:auto}
+.qn .t{margin-top:1px;font:13px var(--q-sans);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qn .s{display:flex;justify-content:space-between;gap:10px;margin-top:4px;font:600 12.5px var(--q-mono)}
 .qn .s em{font-style:normal;font-weight:400;color:var(--q-muted);flex:none;white-space:nowrap}
 .qn .s span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .qn.pending{opacity:.5}
 .qn.ask{background:var(--q-warn-soft);border-color:var(--q-warn)}
 .qn.running{box-shadow:0 0 0 4px color-mix(in srgb,var(--k) 20%,transparent)}
 .qn.sel{outline:2px solid var(--k);outline-offset:3px}
-.qt{background:color-mix(in srgb,var(--c) 10%,var(--q-surface));border:1.4px solid var(--c);border-radius:7px;padding:3px 9px;width:184px;font:600 11.5px var(--q-mono);color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.qt small{font:400 10px var(--q-mono);opacity:.75;margin-right:6px;text-transform:uppercase;letter-spacing:.04em}
+.qt{background:color-mix(in srgb,var(--c) 10%,var(--q-surface));border:1.4px solid var(--c);border-radius:7px;padding:3px 10px;width:206px;font:600 13px var(--q-mono);color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qt small{font:400 11px var(--q-mono);opacity:.75;margin-right:6px;text-transform:uppercase;letter-spacing:.04em}
 .qt.hot{background:var(--c);color:var(--q-surface)}
-.qh{background:var(--q-sunken);border:1.4px dashed var(--q-muted);border-radius:9px;padding:8px 12px;width:300px;font:11.5px var(--q-mono);color:var(--q-fg)}
-.qh b{display:block;font:600 13px var(--q-sans);margin-bottom:4px}
-.qh b span{font:400 10.5px var(--q-mono);color:var(--q-muted);margin-left:8px}
+.qh{background:var(--q-sunken);border:1.4px dashed var(--q-muted);border-radius:9px;padding:9px 13px;width:336px;font:13px var(--q-mono);color:var(--q-fg)}
+.qh b{display:block;font:600 14.5px var(--q-sans);margin-bottom:4px}
+.qh b span{font:400 12px var(--q-mono);color:var(--q-muted);margin-left:8px}
 .qh div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qh i{font-style:normal;font-weight:700;color:var(--c)}
 .react-flow__handle{opacity:0;pointer-events:none}
@@ -58,8 +58,8 @@ header h1 img{width:20px;height:20px}
 /* The canvas and, while a node is selected, the detail sidebar on its right (a bottom sheet on narrow screens). */
 .row{display:flex;height:100%}
 .canvas{flex:1;min-width:0;min-height:0;position:relative}
-.side{width:var(--side-w,360px);flex:none;position:relative;border-left:1px solid var(--q-line);background:var(--q-surface);display:flex;min-width:0}
-.side .scroll{flex:1;min-width:0;overflow:auto;padding:12px 14px 24px;font:12px/1.5 var(--q-mono)}
+.side{width:var(--side-w,400px);flex:none;position:relative;border-left:1px solid var(--q-line);background:var(--q-surface);display:flex;min-width:0}
+.side .scroll{flex:1;min-width:0;overflow:auto;padding:0 16px 28px;font:14px/1.5 var(--q-sans)}
 /* Drag the left edge to resize; double-click it (or the ⤢ button) to toggle wide. */
 .grip{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:5;touch-action:none}
 .grip::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:transparent;transition:background .15s}
@@ -78,54 +78,76 @@ header h1 img{width:20px;height:20px}
   .legend,.counts{flex-wrap:nowrap}
   .counts{margin-left:0}
 }
-.side .top{display:flex;align-items:flex-start;gap:8px}
-.side .top b{font:600 15px var(--q-sans);flex:1;min-width:0;overflow-wrap:anywhere}
-.side .x{all:unset;cursor:pointer;color:var(--q-muted);font:16px/1 var(--q-mono);padding:2px 6px;border-radius:5px}
+/* The header stays put while the detail scrolls under it. */
+.side .top{position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;gap:4px;margin:0 -16px;padding:12px 10px 10px 16px;background:var(--q-surface);border-bottom:1px solid var(--q-line)}
+.side .ttl{flex:1;min-width:0}
+.side .ttl>b{display:block;font:600 17px/1.3 var(--q-sans);overflow-wrap:anywhere}
+.side .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:5px}
+.side .meta .chip{margin-top:0}
+.pill{display:inline-block;max-width:100%;font:600 12.5px/1.6 var(--q-sans);color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);border-radius:999px;padding:0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side .x{all:unset;flex:none;display:grid;place-items:center;width:28px;height:28px;cursor:pointer;color:var(--q-muted);font:17px/1 var(--q-sans);border-radius:6px}
 .side .x:hover{background:var(--q-sunken);color:var(--q-fg)}
 .side .x:focus-visible{outline:2px solid var(--q-accent)}
-.side h3{font:600 10.5px var(--q-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--q-muted);margin:16px 0 6px}
-.chip{display:inline-block;font:600 10.5px var(--q-mono);color:var(--c);border:1px solid var(--c);border-radius:999px;padding:0 7px;margin-top:3px;background:color-mix(in srgb,var(--c) 10%,var(--q-surface));white-space:nowrap}
-.kv{display:grid;grid-template-columns:72px 1fr;gap:2px 8px;margin-top:10px}
-.kv>span{color:var(--q-muted)}
-.kv>div{min-width:0;overflow-wrap:anywhere}
+.side h3{font:600 12px var(--q-sans);text-transform:uppercase;letter-spacing:.06em;color:var(--q-muted);margin:18px 0 6px;padding-top:14px;border-top:1px solid var(--q-line)}
+.side .top+h3{border-top:0;padding-top:0}
+.chip{display:inline-block;font:600 12px var(--q-mono);color:var(--c);border:1px solid var(--c);border-radius:999px;padding:0 7px;margin-top:3px;background:color-mix(in srgb,var(--c) 10%,var(--q-surface));white-space:nowrap}
+.kv{display:grid;grid-template-columns:76px 1fr;gap:4px 10px;margin-top:12px}
+.kv>span{color:var(--q-muted);font-size:13.5px}
+.kv>div{min-width:0;overflow-wrap:anywhere;font:13.5px/1.5 var(--q-mono)}
+/* Time, tokens and calls as three tiles under the header. */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.stats>div{background:var(--q-sunken);border:1px solid var(--q-line);border-radius:8px;padding:6px 10px;min-width:0}
+.stats span{display:block;font:600 11px var(--q-sans);text-transform:uppercase;letter-spacing:.06em;color:var(--q-muted)}
+.stats b{display:block;font:600 16px/1.4 var(--q-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task{margin:12px 0 0;padding:6px 10px;border-left:3px solid var(--c);background:var(--q-sunken);border-radius:0 6px 6px 0;overflow-wrap:anywhere;white-space:pre-wrap}
+/* A child agent: dot, name and status on one line, its task under them. */
+.kid{all:unset;box-sizing:border-box;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 8px;width:100%;cursor:pointer;padding:5px 6px;border-radius:6px}
+.kid:hover{background:var(--q-sunken)}
+.kid:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
+.kid>i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.kid>b{font:600 14px var(--q-sans);color:var(--c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kid>em{font:600 12.5px var(--q-sans);font-style:normal;white-space:nowrap}
+.kid>small{grid-column:2/4;font-size:13px;color:var(--q-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lnk{all:unset;cursor:pointer;color:var(--c,var(--q-fg));overflow-wrap:anywhere}
 .lnk:hover{text-decoration:underline}
 .lnk:focus-visible,.bar:focus-visible,.call .r:focus-visible{outline:2px solid var(--q-accent);outline-offset:1px}
 .list{margin:0;padding:0;list-style:none}
-.list li{padding:1px 0;overflow-wrap:anywhere}
-.bar{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;cursor:pointer;padding:2px 4px;border-radius:5px}
+.list li{padding:2px 0;overflow-wrap:anywhere;font:13.5px var(--q-mono)}
+/* A use: the name gets the room, the bars line up in one column. */
+.bar{all:unset;box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1fr) 28% auto;align-items:center;gap:10px;width:100%;cursor:pointer;padding:4px 6px;border-radius:6px;font:13.5px var(--q-mono)}
 .bar:hover,.bar.on{background:var(--q-sunken)}
-.bar .l{width:130px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c)}
-.bar .t{flex:1;height:7px;background:var(--q-sunken);border-radius:4px;overflow:hidden}
+.bar .l{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c)}
+.bar .t{height:7px;background:color-mix(in srgb,var(--q-line) 70%,transparent);border-radius:4px;overflow:hidden}
 .bar .t i{display:block;height:100%;background:var(--c);border-radius:4px}
 .bar em{font-style:normal;color:var(--q-muted);min-width:28px;text-align:right}
 .note{color:var(--q-muted);font-style:italic;margin:6px 0}
-pre.txt{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:280px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:6px 8px;font:11.5px/1.45 var(--q-mono)}
+pre.txt{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:280px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:7px 9px;font:12.5px/1.5 var(--q-mono)}
 details.fold{margin-top:6px}
-details.fold summary{cursor:pointer;color:var(--q-muted);font:600 10.5px var(--q-mono);text-transform:uppercase;letter-spacing:.06em}
-details.fold.sec{margin:16px 0 0}
+details.fold summary{cursor:pointer;color:var(--q-muted);font:600 12px var(--q-sans);text-transform:uppercase;letter-spacing:.06em;padding:3px 0}
+details.fold summary:hover{color:var(--q-fg)}
+details.fold.sec{margin:18px 0 0;padding-top:12px;border-top:1px solid var(--q-line)}
 details.fold.sec[open]>summary{margin-bottom:6px}
 /* Markdown preview of prompts and results: sanitized HTML, the raw text one click away. */
 .mdwrap{position:relative;margin:4px 0}
-.mdwrap .mode{position:absolute;top:4px;right:6px;z-index:1;display:inline-flex;overflow:hidden;font:600 10px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px}
+.mdwrap .mode{position:absolute;top:4px;right:6px;z-index:1;display:inline-flex;overflow:hidden;font:600 11px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px}
 .mdwrap .mode button{all:unset;cursor:pointer;color:var(--q-muted);padding:0 6px}
 .mdwrap .mode button+button{border-left:1px solid var(--q-line)}
 .mdwrap .mode button:hover{color:var(--q-fg)}
 .mdwrap .mode button[aria-pressed="true"]{background:var(--q-fg);color:var(--q-surface);cursor:default}
 .mdwrap .mode button:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
 .mdwrap pre.txt{margin:0;padding-right:76px}
-.md{max-height:420px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:6px 76px 6px 10px;font:13px/1.55 var(--q-sans);overflow-wrap:anywhere}
+.md{max-height:420px;overflow:auto;background:var(--q-sunken);border:1px solid var(--q-line);border-radius:6px;padding:8px 80px 8px 12px;font:14px/1.6 var(--q-sans);overflow-wrap:anywhere}
 .md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
-.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{font:600 13.5px/1.35 var(--q-sans);margin:12px 0 4px;color:var(--q-fg);text-transform:none;letter-spacing:0}
-.md h1{font-size:16px}.md h2{font-size:15px}.md h3{font-size:14px}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{font:600 14.5px/1.35 var(--q-sans);margin:12px 0 4px;color:var(--q-fg);text-transform:none;letter-spacing:0}
+.md h1{font-size:17px}.md h2{font-size:16px}.md h3{font-size:15px}
 .md p,.md ul,.md ol,.md blockquote,.md table,.md pre{margin:6px 0}
 .md ul,.md ol{padding-left:20px}
 .md li{margin:1px 0}
-.md code{font:11.5px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px;padding:0 4px}
+.md code{font:12.5px var(--q-mono);background:var(--q-surface);border:1px solid var(--q-line);border-radius:4px;padding:0 4px}
 .md pre{background:var(--q-surface);border:1px solid var(--q-line);border-radius:5px;padding:6px 8px;overflow:auto;white-space:pre}
 .md pre code{border:0;padding:0;background:none}
 .md blockquote{border-left:3px solid var(--q-line);padding-left:10px;color:var(--q-muted)}
-.md table{border-collapse:collapse;display:block;overflow-x:auto;font-size:12px}
+.md table{border-collapse:collapse;display:block;overflow-x:auto;font-size:13px}
 .md th,.md td{border:1px solid var(--q-line);padding:2px 6px;text-align:left}
 .md th{background:var(--q-surface)}
 .md a{color:var(--q-accent)}
@@ -133,51 +155,51 @@ details.fold.sec[open]>summary{margin-bottom:6px}
 .md img{max-width:100%}
 .side .x[aria-pressed="true"].pin{color:var(--q-accent)}
 .call{border-top:1px solid var(--q-line)}
-.call .r{display:flex;gap:8px;align-items:baseline;padding:4px 2px;cursor:pointer}
+.call .r{display:flex;gap:8px;align-items:baseline;padding:6px 4px;cursor:pointer;font:13.5px var(--q-mono);border-radius:4px}
 .call .r:hover{background:var(--q-sunken)}
-.call .r .tm{color:var(--q-muted);flex:none}
+.call .r .tm{color:var(--q-muted);flex:none;font-size:12px}
 .call .r .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.call .r .n small{color:var(--q-muted);margin-left:6px;font-size:11px}
-.call .r .d{color:var(--q-muted);flex:none}
-.call .r .go{all:unset;cursor:pointer;flex:none;color:var(--c,var(--q-accent));font-size:11px}
+.call .r .n small{color:var(--q-muted);margin-left:6px;font-size:12.5px}
+.call .r .d{color:var(--q-muted);flex:none;font-size:12.5px}
+.call .r .go{all:unset;cursor:pointer;flex:none;color:var(--c,var(--q-accent));font-size:12.5px}
 .call .r .go:hover{text-decoration:underline}
 .call .r .go:focus-visible{outline:2px solid var(--q-accent);outline-offset:1px}
 .spawned{margin:4px 0;color:var(--q-muted)}
 .call .body{padding:0 2px 8px}
-.call .body h4{margin:6px 0 0;font:600 10px var(--q-mono);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em}
+.call .body h4{margin:8px 0 2px;font:600 11.5px var(--q-sans);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em}
 .ok{color:var(--q-ok)} .bad{color:var(--q-bad)} .run{color:var(--q-accent)}
-.legend{display:flex;gap:12px;font:11px var(--q-mono);color:var(--q-muted);flex-wrap:wrap}
+.legend{display:flex;gap:10px;font:12px var(--q-mono);color:var(--q-muted);flex-wrap:wrap}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c)}
 .call.focus>.r{background:color-mix(in srgb,var(--q-accent) 12%,transparent)}
 /* Graph | Timeline switch in the header. */
 .seg{display:inline-flex;border:1px solid var(--q-line);border-radius:7px;overflow:hidden}
-.seg button{all:unset;cursor:pointer;font:600 12px var(--q-mono);padding:3px 10px;color:var(--q-muted)}
+.seg button{all:unset;cursor:pointer;font:600 13px var(--q-mono);padding:4px 11px;color:var(--q-muted)}
 .seg button+button{border-left:1px solid var(--q-line)}
 .seg button[aria-pressed="true"]{background:var(--q-fg);color:var(--q-surface)}
 .seg button:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
 /* Timeline: a toolbar, then one scroller holding a sticky axis row and sticky lane labels. */
 .tl{display:flex;flex-direction:column;height:100%}
-.tl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 10px;border-bottom:1px solid var(--q-line);background:var(--q-surface);font:12px var(--q-mono)}
-.tl-bar button{all:unset;cursor:pointer;border:1px solid var(--q-line);border-radius:6px;padding:1px 9px;font:600 12px var(--q-mono);color:var(--q-fg);background:var(--q-surface)}
+.tl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 10px;border-bottom:1px solid var(--q-line);background:var(--q-surface);font:13px var(--q-mono)}
+.tl-bar button{all:unset;cursor:pointer;border:1px solid var(--q-line);border-radius:6px;padding:2px 10px;font:600 13px var(--q-mono);color:var(--q-fg);background:var(--q-surface)}
 .tl-bar button:hover{background:var(--q-sunken)}
 .tl-bar button[aria-pressed="true"]{background:color-mix(in srgb,var(--q-accent) 14%,var(--q-surface));border-color:var(--q-accent);color:var(--q-accent)}
 .tl-bar button:focus-visible{outline:2px solid var(--q-accent)}
 .tl-bar .info{color:var(--q-muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-scroll{flex:1;min-height:0;overflow:auto;position:relative}
 .tl-axis{position:sticky;top:0;z-index:4;display:flex;height:26px;background:var(--q-surface);border-bottom:1px solid var(--q-line)}
-.tl-corner{position:sticky;left:0;z-index:5;flex:none;background:var(--q-surface);border-right:1px solid var(--q-line);font:600 10.5px var(--q-mono);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px}
+.tl-corner{position:sticky;left:0;z-index:5;flex:none;background:var(--q-surface);border-right:1px solid var(--q-line);font:600 11.5px var(--q-mono);color:var(--q-muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px}
 .tl-ticks{position:relative;flex:none;height:100%;overflow:hidden}
 .tl-tick{position:absolute;bottom:0;height:7px;border-left:1px solid var(--q-muted)}
-.tl-tick span{position:absolute;bottom:7px;left:3px;font:10.5px var(--q-mono);color:var(--q-muted);white-space:nowrap}
-.tl-brklab{position:absolute;top:0;bottom:0;display:grid;place-items:center;cursor:help;font:10px var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:visible}
+.tl-tick span{position:absolute;bottom:7px;left:3px;font:11.5px var(--q-mono);color:var(--q-muted);white-space:nowrap}
+.tl-brklab{position:absolute;top:0;bottom:0;display:grid;place-items:center;cursor:help;font:11px var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:visible}
 .tl-body{display:flex;position:relative}
 .tl-labels{position:sticky;left:0;z-index:3;flex:none;background:var(--q-surface);border-right:1px solid var(--q-line)}
 .tl-lab{all:unset;box-sizing:border-box;display:block;width:100%;cursor:pointer;padding:3px 8px;border-bottom:1px solid var(--q-line);overflow:hidden}
 .tl-lab:hover{background:var(--q-sunken)}
 .tl-lab.on{background:color-mix(in srgb,var(--k) 14%,var(--q-surface));box-shadow:inset 3px 0 0 var(--k)}
 .tl-lab:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
-.tl-lab b{display:block;font:600 12.5px/1.3 var(--q-sans);color:var(--k);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl-lab small{display:block;font:10.5px/1.3 var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-lab b{display:block;font:600 13.5px/1.3 var(--q-sans);color:var(--k);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-lab small{display:block;font:11.5px/1.3 var(--q-mono);color:var(--q-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-canvas{position:relative;z-index:0;flex:none;overflow:hidden}
 .tl-row{position:absolute;left:0;right:0;border-bottom:1px solid var(--q-line)}
 .tl-row.on{background:color-mix(in srgb,var(--k) 7%,transparent)}
@@ -194,7 +216,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
 .tl-prompt{position:absolute;width:9px;height:9px;margin-left:-4.5px;transform:rotate(45deg);background:var(--q-surface);border:1.5px solid var(--q-accent);z-index:3;cursor:help}
 .tl-now{position:absolute;top:0;bottom:0;width:0;border-left:1.5px solid var(--q-ok);z-index:3;pointer-events:none}
 .tl-links{position:absolute;left:0;top:0;pointer-events:none;z-index:1;overflow:visible}
-.tl-tip{position:fixed;z-index:20;pointer-events:none;max-width:420px;background:var(--q-surface);border:1px solid var(--q-line);border-radius:6px;padding:5px 8px;font:11.5px/1.45 var(--q-mono);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.tl-tip{position:fixed;z-index:20;pointer-events:none;max-width:420px;background:var(--q-surface);border:1px solid var(--q-line);border-radius:6px;padding:6px 9px;font:12.5px/1.45 var(--q-mono);box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .tl-tip b{font-weight:600}
 .tl-tip div{overflow-wrap:anywhere}
 </style>
@@ -204,7 +226,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   <h1><img src="icon.svg" alt="">q-graph</h1>
   <span id="views"></span>
   <span class="live off" id="live">● connecting</span>
-  <span class="legend"><span><i style="--c:var(--q-k-main)"></i>main</span><span><i style="--c:var(--q-k-sub)"></i>subagent</span><span><i style="--c:var(--q-k-team)"></i>teammate</span><span><i style="--c:var(--q-k-tool)"></i>tool</span><span><i style="--c:var(--q-k-skill)"></i>skill</span><span><i style="--c:var(--q-k-mcp)"></i>mcp</span><span><i style="--c:var(--q-k-rule)"></i>rule</span></span>
+  <span class="legend"><span><i style="--c:var(--q-k-main)"></i>main</span><span><i style="--c:var(--q-k-sub)"></i>subagent</span><span><i style="--c:var(--q-k-team)"></i>teammate</span><span><i style="--c:var(--q-k-run)"></i>workflow</span><span><i style="--c:var(--q-k-tool)"></i>tool</span><span><i style="--c:var(--q-k-skill)"></i>skill</span><span><i style="--c:var(--q-k-mcp)"></i>mcp</span><span><i style="--c:var(--q-k-rule)"></i>rule</span></span>
   <span class="counts" id="counts"></span>
 </header>
 <div id="app"><div class="empty">Waiting for the session's first snapshot…</div></div>
@@ -225,7 +247,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   const RF = window.ReactFlow
   const token = new URLSearchParams(location.search).get('k') || ''
 
-  const KIND = { main: '--q-k-main', subagent: '--q-k-sub', teammate: '--q-k-team' }
+  const KIND = { main: '--q-k-main', subagent: '--q-k-sub', teammate: '--q-k-team', workflow: '--q-k-run' }
   const kvar = k => 'var(' + (KIND[k] || '--q-muted') + ')'
   const ASK = new Set(['AskUserQuestion', 'ExitPlanMode'])
   const GLOW_MS = 1200
@@ -236,6 +258,17 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   const since = (a, now) => (a.startedAt > 0 ? fmtTime((a.endedAt ?? now) - a.startedAt) : '')
   // Any ask tool still in flight, not just the latest call (an agent can run tools in parallel).
   const needsYou = a => a.kind !== 'main' && (Array.isArray(a.inFlight) ? a.inFlight.some(c => ASK.has(c.tool)) : !!(a.currentTool && ASK.has(a.currentTool)))
+  /** The sidebar's status for an agent as [text, colour]: a running agent is the accent, one that needs you is the warning. */
+  /** A Workflow run's or phase's status (lib/graph.ts runStatusText): `● 4/6`, `✓ done 6/6`, `· not started`. */
+  const runStatus = a => a.status === 'idle' ? ['· not started', 'var(--q-muted)']
+    : a.status === 'running' ? ['● ' + (a.progress || 'running'), kvar(a.kind)]
+      : [(STATUS[a.status] || [a.status])[0] + (a.progress ? ' ' + a.progress : ''), (STATUS[a.status] || [0, 'var(--q-muted)'])[1]]
+  /** True when an agent's task only repeats its name (a workflow agent is named by its label). */
+  const sameAsLabel = a => !!a.description && !!a.label && a.description.startsWith(a.label.replace(/…$/, ''))
+  const statusOf = (a, waiting) => a.kind === 'workflow' ? runStatus(a) : needsYou(a) ? ['⚠ needs you' + (a.currentTool ? ' · ' + a.currentTool : ''), 'var(--q-warn)']
+    : a.status === 'running' ? ['● running' + (a.currentTool || a.progress ? ' · ' + (a.currentTool || a.progress) : ''), 'var(--q-accent)']
+      : a.status === 'idle' && waiting ? ['⏸ ' + waitingText(waiting), 'var(--q-muted)']
+        : STATUS[a.status] || [a.status || '—', 'var(--q-muted)']
   // An agent's uses (lib/graph.ts useOf, agentUses): a tool, `skill:<name>`, `mcp:<server>`, `rule:<path>`.
   const USE_VAR = { tool: 'var(--q-k-tool)', skill: 'var(--q-k-skill)', mcp: 'var(--q-k-mcp)', rule: 'var(--q-k-rule)' }
   const USE_TOKEN = { tool: '--q-k-tool', skill: '--q-k-skill', mcp: '--q-k-mcp', rule: '--q-k-rule' }
@@ -281,7 +314,9 @@ details.fold.sec[open]>summary{margin-bottom:6px}
 
   // Left-to-right tree: one column per depth; each agent takes a band of rows (its card, then its
   // uses), its first child level with it; the harness card on top.
-  const COL = 300, ROW = 92, USE_ROW = 30, USE_X = 26, HARNESS_H = 190
+  const COL = 336, ROW = 102, USE_ROW = 33, USE_X = 28, HARNESS_H = 210
+  /** Where a card's edges attach: the middle of its title row, so a parent and the child level with it join in one straight line. */
+  const PORT_Y = 21
   function layout(g, now, keep) {
     const kids = new Map()
     for (const id of g.order) {
@@ -313,16 +348,16 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   function Agent({ data, selected }) {
     const a = data.a, now = data.now
     const ask = needsYou(a)
-    const st = ask ? ['⚠ needs you', 'var(--q-warn)'] : a.status === 'running' ? ['● ' + (a.currentTool || 'running'), kvar(a.kind)]
+    const st = a.kind === 'workflow' ? runStatus(a) : ask ? ['⚠ needs you', 'var(--q-warn)'] : a.status === 'running' ? ['● ' + (a.currentTool || a.progress || 'running'), kvar(a.kind)]
       : a.status === 'idle' && data.waiting ? ['⏸ ' + waitingText(data.waiting), 'var(--q-muted)'] : STATUS[a.status] || ['', '']
     const cls = 'qn ' + a.status + (ask ? ' ask' : '') + (selected ? ' sel' : '')
-    const task = firstLine(a.description, 90)
+    const task = sameAsLabel(a) ? '' : firstLine(a.description, 90)
     return h('div', { className: cls, style: { '--k': kvar(a.kind) }, role: 'group', 'aria-label': a.kind + ' ' + a.label + ', ' + (ask ? 'needs you' : a.status === 'idle' && data.waiting ? waitingText(data.waiting) : a.status), title: [a.label + ' · ' + (shortModel(a.model) || a.kind), a.description].filter(Boolean).join('\n') },
-      h(RF.Handle, { type: 'target', position: RF.Position.Left }),
+      h(RF.Handle, { type: 'target', position: RF.Position.Left, style: { top: PORT_Y } }),
       h('div', { className: 'h' }, h('b', null, a.label), h('i', null, since(a, now))),
       task ? h('div', { className: 't' }, task) : null,
       h('div', { className: 's' }, h('span', { style: { color: st[1] } }, st[0]), h('em', null, [a.status === 'idle' && data.waiting ? '' : shortModel(a.model), tokText(a)].filter(Boolean).join(' · '))),
-      h(RF.Handle, { type: 'source', position: RF.Position.Right, id: 'r' }),
+      h(RF.Handle, { type: 'source', position: RF.Position.Right, id: 'r', style: { top: PORT_Y } }),
       h(RF.Handle, { type: 'source', position: RF.Position.Bottom, id: 'u', style: { left: 14 } }))
   }
   function Use({ data, selected }) {
@@ -336,13 +371,30 @@ details.fold.sec[open]>summary{margin-bottom:6px}
       h('b', null, 'harness', h('span', null, 'configured · loaded')),
       harnessLines(data.harness).map(([name, color, rest]) => h('div', { key: name, title: name + ' ' + rest }, h('i', { style: { '--c': color } }, name), ' ' + rest)))
   }
+  /** How far right of its parent's card a trunk runs, as the terminal draws it (lib/raster.ts): one trunk per parent. */
+  const TRUNK_X = 22, ARROW = 7
+  /**
+   * A tree edge drawn the way the terminal pane draws it: square corners, straight runs.
+   * From a card's right side: out to the parent's trunk, along it, then right into the child (`├──▸`).
+   * From a card's bottom (its uses): down the spine, then right into the use (`├▸`).
+   * Every child of a parent shares the parent's trunk x, so siblings hang off one line.
+   */
+  const treePath = p => {
+    const tx = p.targetX - ARROW, ty = p.targetY
+    if (p.sourcePosition === 'bottom') return 'M' + p.sourceX + ',' + p.sourceY + ' V' + ty + ' H' + tx
+    const x = Math.min(p.sourceX + TRUNK_X, tx)
+    return Math.abs(p.sourceY - ty) < 0.5 ? 'M' + p.sourceX + ',' + p.sourceY + ' H' + tx : 'M' + p.sourceX + ',' + p.sourceY + ' H' + x + ' V' + ty + ' H' + tx
+  }
   function Flow(p) {
     const d = p.data || {}
-    // Tree edges are orthogonal; message edges (dashed) stay curved so they read as a different relation.
-    const [path] = d.dashed ? RF.getBezierPath(p) : RF.getSmoothStepPath({ ...p, borderRadius: 8 })
+    // Tree edges are orthogonal like the terminal's; message edges (dashed) stay curved so they read as a different relation.
+    const path = d.dashed ? RF.getBezierPath(p)[0] : treePath(p)
+    const color = d.active ? d.color : 'var(--q-edge, var(--q-muted))'
+    const head = d.dashed ? null : h('path', { d: 'M' + p.targetX + ',' + p.targetY + ' l' + -ARROW + ',' + -ARROW / 2 + ' v' + ARROW + ' z', style: { fill: color, opacity: d.faint && !d.active ? 0.6 : 1 } })
     return h(React.Fragment, null,
-      h(RF.BaseEdge, { path, style: { stroke: d.active ? d.color : 'var(--q-line)', strokeWidth: d.active ? 2.4 : 1.4, strokeDasharray: d.dashed ? '5 4' : undefined, opacity: d.faint && !d.active ? 0.6 : 1 } }),
-      d.active ? h('circle', { r: 5, style: { fill: d.color } }, h('animateMotion', { dur: '0.9s', repeatCount: 'indefinite', path })) : null)
+      h(RF.BaseEdge, { path, style: { stroke: color, strokeWidth: d.active ? 2 : 1.2, strokeDasharray: d.dashed ? '5 4' : undefined, opacity: d.faint && !d.active ? 0.6 : 1, strokeLinejoin: 'miter', strokeLinecap: 'square' } }),
+      head,
+      d.active ? h('circle', { r: 4.5, style: { fill: d.color } }, h('animateMotion', { dur: '0.9s', repeatCount: 'indefinite', path })) : null)
   }
   const nodeTypes = { agent: Agent, use: Use, harness: HarnessCard }
   const edgeTypes = { flow: Flow }
@@ -505,11 +557,14 @@ details.fold.sec[open]>summary{margin-bottom:6px}
 
   /** The sidebar's width controls, read by every detail view's header. */
   const SideCtx = React.createContext({ wide: false, toggleWide: () => {}, pinned: false, togglePin: () => {} })
-  const Head = ({ title, chip, color, onClose }) => {
+  const Head = ({ title, chip, color, status, onClose }) => {
     const { wide, toggleWide, pinned, togglePin } = React.useContext(SideCtx)
     return h('div', { className: 'top' },
-      h('b', null, title),
-      chip ? h('span', { className: 'chip', style: { '--c': color } }, chip) : null,
+      h('div', { className: 'ttl' },
+        h('b', null, title),
+        chip || status ? h('div', { className: 'meta' },
+          chip ? h('span', { className: 'chip', style: { '--c': color } }, chip) : null,
+          status ? h('span', { className: 'pill', style: { '--c': status[1] }, title: status[0] }, status[0]) : null) : null),
       h('button', { className: 'x pin', title: pinned ? 'Unpin: hide the sidebar when nothing is selected' : 'Pin: keep the sidebar open, showing main when nothing is selected', 'aria-label': pinned ? 'Unpin sidebar' : 'Pin sidebar', 'aria-pressed': pinned, onClick: togglePin }, pinned ? '◉' : '○'),
       h('button', { className: 'x wide', title: wide ? 'Shrink sidebar' : 'Expand sidebar', 'aria-label': wide ? 'Shrink sidebar' : 'Expand sidebar', 'aria-pressed': wide, onClick: toggleWide }, wide ? '⤡' : '⤢'),
       h('button', { className: 'x', title: 'Close (Esc)', 'aria-label': 'Close', onClick: onClose }, '×'))
@@ -637,27 +692,35 @@ details.fold.sec[open]>summary{margin-bottom:6px}
 
   function AgentDetail({ g, a, now, st, open, toggle, onSelect, onClose, focus }) {
     const lanes = React.useContext(LaneCtx)
-    const ask = needsYou(a)
     const uses = usesOf(a, now)
     const max = Math.max(1, ...uses.map(u => u.calls))
     const kids = childrenOf(g, a.id)
     const waiting = a.fromLane ? 0 : liveKids(g, a.id)
+    const tile = (k, v) => h('div', { key: k }, h('span', null, k), h('b', { title: v }, v))
     return h(React.Fragment, null,
-      h(Head, { title: a.label, chip: a.kind, color: kvar(a.kind), onClose }),
+      h(Head, { title: a.label, chip: a.kind, color: kvar(a.kind), status: statusOf(a, waiting), onClose }),
+      h('div', { className: 'stats' },
+        tile('time', since(a, now) || '—'),
+        tile('tokens', a.tokens == null ? '—' : !a.tokens && LIVE.has(a.status) ? '— pending' : fmtTok(a.tokens)),
+        tile('calls', String(a.toolCalls || 0))),
       h(KV, { rows: [
         ['type', a.type], ['model', shortModel(a.model) || '—'],
-        ['status', ask ? 'needs you (' + a.currentTool + ')' : a.status + (a.status === 'running' && a.currentTool ? ' · ' + a.currentTool : '') + (a.status === 'idle' && waiting ? ' · ' + waitingText(waiting) : '')],
-        ['time', since(a, now) || '—'], ['tokens', a.tokens == null ? '—' : !a.tokens && LIVE.has(a.status) ? '— (pending)' : fmtTok(a.tokens)], ['calls', String(a.toolCalls || 0)],
+        a.runId && a.kind !== 'workflow' ? ['run', a.runId + (a.agentIndex ? ' · #' + a.agentIndex : '')] : a.kind === 'workflow' ? ['run', a.runId || a.id] : null,
         a.parentId && agentOf(g, lanes, a.parentId) ? ['parent', h(AgentLink, { g, id: a.parentId, onSelect })] : null,
-        a.description ? ['task', a.description] : null,
       ] }),
+      a.description ? h('div', { className: 'task', style: { '--c': kvar(a.kind) } }, a.description) : null,
       uses.length ? h(React.Fragment, null, h('h3', null, 'uses'),
         uses.map(u => h('button', { key: u.key, className: 'bar' + (u.hot ? ' on' : ''), style: { '--c': USE_VAR[u.kind] }, title: u.key, onClick: () => onSelect('use:' + a.id + ':' + u.key) },
           h('span', { className: 'l' }, (u.kind === 'tool' ? '' : u.kind + ' ') + u.label),
           h('span', { className: 't' }, h('i', { style: { width: Math.max(4, (u.calls / max) * 100) + '%' } })),
           h('em', null, '×' + u.calls)))) : null,
-      kids.length ? h(React.Fragment, null, h('h3', null, 'agents · ' + kids.length),
-        h('ul', { className: 'list' }, kids.map(id => { const k = g.agents[id]; return h('li', { key: id }, h(AgentLink, { g, id, onSelect }), h('span', { style: { color: 'var(--q-muted)' } }, '  ' + (k.status || ''))) }))) : null,
+      kids.length ? h(React.Fragment, null, h('h3', null, (kids.every(id => g.agents[id] && g.agents[id].type === 'phase') ? 'phases · ' : 'agents · ') + kids.length),
+        kids.map(id => {
+          const k = g.agents[id], ks = statusOf(k, k.status === 'idle' ? liveKids(g, id) : 0), task = sameAsLabel(k) ? '' : firstLine(k.description, 120)
+          return h('button', { key: id, className: 'kid', style: { '--c': kvar(k.kind) }, title: [k.label, k.description].filter(Boolean).join('\n'), onClick: () => onSelect(id) },
+            h('i'), h('b', null, k.label), h('em', { style: { color: ks[1] } }, ks[0]),
+            task ? h('small', null, task) : null)
+        })) : null,
       h(Fetched, { st }, d => h(React.Fragment, null,
         d.agent && d.agent.prompt ? h('details', { className: 'fold' }, h('summary', null, 'prompt'), h(Md, { text: d.agent.prompt })) : null,
         d.agent && d.agent.result ? h('details', { className: 'fold' }, h('summary', null, 'result'), h(Md, { text: d.agent.result })) : null,
@@ -701,8 +764,11 @@ details.fold.sec[open]>summary{margin-bottom:6px}
       const a = agentOf(g, lanes, sel)
       if (a) {
         view = { type: 'agent', a }
-        query = 'agent=' + encodeURIComponent(a.id)
-        live = isLive(a)
+        // A Workflow run has no transcript of its own: its card lists its agents.
+        if (a.kind !== 'workflow') {
+          query = 'agent=' + encodeURIComponent(a.id)
+          live = isLive(a)
+        }
       }
     }
     const st = useDetail(query, live, snap)
@@ -715,7 +781,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   }
 
   // Sidebar width: dragged, or toggled between the normal width and WIDE_SHARE of the window; kept per browser.
-  const SIDE_W = 360, SIDE_MIN = 280, CANVAS_MIN = 240, WIDE_SHARE = 0.6, W_KEY = 'q-graph.sideW'
+  const SIDE_W = 400, SIDE_MIN = 300, CANVAS_MIN = 240, WIDE_SHARE = 0.6, W_KEY = 'q-graph.sideW'
   const clampW = w => Math.round(Math.max(SIDE_MIN, Math.min(w, window.innerWidth - CANVAS_MIN)))
   const loadW = () => { try { const v = Number(localStorage.getItem(W_KEY)); return v > 0 ? v : SIDE_W } catch (e) { return SIDE_W } }
   const saveW = w => { try { localStorage.setItem(W_KEY, String(w)) } catch (e) { /* private window: width resets */ } }
@@ -760,7 +826,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
   // ---- Timeline: every agent of the session as a lane over time, read from GET /timeline ----
 
   const IDLE_MS = 60000, IDLE_PAD = 4000, BREAK_PX = 76, PAD_L = 14, PAD_R = 56, AXIS_H = 26
-  const ROW_H = 16, LANE_TOP = 10, LANE_BOT = 6, LANE_MIN = 36, BLOCK_MIN = 3, MAX_W = 8e6, MAX_PPS = 2000, MIN_PPS = 1e-4
+  const ROW_H = 16, LANE_TOP = 10, LANE_BOT = 6, LANE_MIN = 40, BLOCK_MIN = 3, MAX_W = 8e6, MAX_PPS = 2000, MIN_PPS = 1e-4
   const VIEW_KEY = 'q-graph.view', GAP_KEY = 'q-graph.tl.compress', PIN_KEY = 'q-graph.pin', WORK_KEY = 'q-graph.working'
   const loadPref = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v } catch (e) { return d } }
   const savePref = (k, v) => { try { localStorage.setItem(k, v) } catch (e) { /* private window: the choice resets */ } }
@@ -1128,7 +1194,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
             h('div', { className: 'tl-labels', style: { width: LW } }, model.lanes.map(l => h('button', {
               key: l.id, className: 'tl-lab' + (laneOn(l) ? ' on' : ''), title: l.label + (l.description ? ' — ' + l.description : ''),
               style: { height: l.h, paddingLeft: 8 + Math.min(l.depth || 0, 8) * (narrow ? 8 : 14), '--k': kvar(l.kind) }, onClick: () => onSelect(l.id) },
-              h('b', null, (l.depth ? '└ ' : '') + l.label), h('small', null, l.description || shortModel(l.model) || l.kind)))),
+              h('b', null, (l.depth ? '└ ' : '') + l.label), h('small', null, (!sameAsLabel(l) && l.description) || shortModel(l.model) || l.kind)))),
             h('div', { className: 'tl-canvas', style: { width, height: H }, onMouseMove: onMove, onClick },
               rows,
               breaks.map(s => h('div', { key: 'b' + s.t0, className: 'tl-brk', style: { left: s.x0, width: s.w } })),
@@ -1299,7 +1365,7 @@ details.fold.sec[open]>summary{margin-bottom:6px}
       shown ? h(Sidebar, { snap, sel: shown, now, focus, onSelect: setSel, onClose: close, width: sideW, onResize: resize, pinned, togglePin }) : null))
   }
   const EMPTY_LANES = new Map()
-  const FRAME_MIN = 0.9, FRAME_PAD = 16, NODE_W = { agent: 240, use: 184, harness: 300 }
+  const FRAME_MIN = 0.9, FRAME_PAD = 16, NODE_W = { agent: 268, use: 206, harness: 336 }
 
   app.innerHTML = ''
   ReactDOM.createRoot(app).render(h(App))

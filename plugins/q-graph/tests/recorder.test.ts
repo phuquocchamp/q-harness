@@ -329,3 +329,28 @@ test('a failed write of the viewer snapshot is retried; a missing transcript is 
   await host.clock.advance(5000)
   expect(exists).toBe(2)
 })
+
+test('a Workflow run is a card under the loop that called it, its agents under the run', async ($, on) => {
+  const host = fakeHost(on)
+  on('tool.call', () => ({ result: 'launched', text: 'launched' }) as never)
+  await start($)
+  await $.tool.call({ tool: 'Workflow', tool_use_id: 'toolu_wf', script: "export const meta = { name: 'deep-research', description: 'x', phases: [{ title: 'Search' }] }" } as never)
+  for (const i of [1, 2]) {
+    await $.agent.spawn({ prompt: `p${i}`, description: `search ${i}`, subagentType: 'workflow-subagent', tool_use_id: 'toolu_wf', workflow: { runId: 'wf_abc', agentIndex: i } } as never)
+  }
+  // Another agent the engine does list: the workflow agents stay running past the lost timeout.
+  await spawn($, 'Explore', 'scan')
+  host.agents.push({ id: 'a3', description: 'scan', type: 'Explore', status: 'running' })
+  await host.clock.advance(60_000)
+  const lines = (await run($, 'status')).text.split('\n')
+  expect(lines).toContainEqual(expect.stringMatching(/^ {2}deep-research · running 0\/2 agents · /))
+  expect(lines).toContainEqual(expect.stringMatching(/^ {4}search 1 · haiku · running · .* · search 1$/))
+  expect(lines).toContainEqual(expect.stringMatching(/^ {4}search 2 · haiku · running · .* · search 2$/))
+  expect(lines.find(l => l.startsWith('main'))).not.toMatch(/Workflow/)
+  // The script's phase is a card before any agent of it is filed there.
+  expect(lines).toContainEqual(expect.stringMatching(/^ {4}Search · · not started/))
+
+  await endTurn($, 'a1', 1000)
+  await endTurn($, 'a2', 500)
+  expect(await statusOf($, 'deep-research')).toMatch(/^ {2}deep-research · ✓ done 2\/2 agents · .* · 1\.5k tok · 0 tools · workflow wf_abc$/)
+})

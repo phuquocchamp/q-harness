@@ -11,6 +11,9 @@ When claude code spawn multiple subagent, agent team i want to visualize it or i
 - [x] Harness card: settings hooks, memory files, skills, MCP servers, custom agents (`$.settings.read`, `$.session.usage` breakdown)
 - [ ] Hooks per agent: no event says which agent a hook fired for, and plugin hooks modules cannot be listed
 - [x] Review fixes (0.1.x): viewer start race, `lost` agents, in-flight calls per agent, stub nodes, NaN tokens, snapshot retry; viewer Host check, CSP and security headers, SRI, size-bounded slim timeline index, temp-folder sweep; pane width fitting, message-arc columns, faster frames; readable first view, task subtitles, mobile sheet
+- [x] Workflow runs (0.1.3): a run card under the agent that made the Workflow call, its agents under it; run agents never `lost`; the viewer reads `subagents/workflows/<runId>/` for details and the Timeline
+- [x] Workflow phases (0.1.3): run → phase → agent cards and lanes, phases from the saved script's `meta.phases`, each agent's from its meta file; agents named by their script label
+- [ ] Close a run from its task notification (a retried agent's first attempt keeps the run running)
 - [ ] Stuck heuristic: a tool running far past its median, no event for minutes, or the same call repeated
 - [ ] Live tokens and cost per agent in the viewer, from transcript usage (cache reads included)
 - [ ] Format canary: count unknown transcript records and unmatched lanes, show a "format drift?" badge
