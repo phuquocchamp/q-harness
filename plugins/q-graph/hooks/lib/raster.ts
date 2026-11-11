@@ -7,7 +7,7 @@
 // Each cell is [codePoint, foreground, background] (RasterProps.cells).
 
 import type { AgentKind, AgentNode, Harness, SessionGraph, UseKind } from '../../types'
-import { STATUS_TEXT, agentUses, formatElapsed, formatTokens, harnessLines, needsYou, shortModel, type Use } from './graph'
+import { STATUS_TEXT, agentUses, formatElapsed, formatTokens, harnessLines, needsYou, runStatusText, shortModel, type Use } from './graph'
 import { MAX_USES, TILE_ROWS, type Box, type HarnessBox, type Layout } from './layout'
 
 /** The terminal's own colour (RasterProps: bit 24 alone). */
@@ -23,11 +23,11 @@ export const COLORS = {
   ink: 0x15191f,
 } as const
 
-export const KIND_COLOR: Record<AgentKind, number> = { main: 0x3969de, subagent: 0x1f966f, teammate: 0xa72f83 }
+export const KIND_COLOR: Record<AgentKind, number> = { main: 0x3969de, subagent: 0x1f966f, teammate: 0xa72f83, workflow: 0xd2562a }
 /** One hue per kind of use under a card. */
 export const USE_COLOR: Record<UseKind, number> = { tool: COLORS.tool, skill: 0x9a55d1, mcp: 0x1080a6, rule: 0x3ea313 }
 /** The same hues, quieter: the border of a card that is not running. */
-const KIND_DIM: Record<AgentKind, number> = { main: 0x5071bd, subagent: 0x408c7a, teammate: 0x924e87 }
+const KIND_DIM: Record<AgentKind, number> = { main: 0x5071bd, subagent: 0x408c7a, teammate: 0x924e87, workflow: 0xa86048 }
 
 // Keyed by string so a status the union does not list yet (`lost`) still has a colour.
 const STATUS_COLOR: Record<string, number> = {
@@ -455,8 +455,10 @@ const drawCard = (a: AgentNode, b: Box, now: number, phase: number, put: Put, te
   const status = asking
     ? '! needs you'
     : a.status === 'running'
-      ? `${SPINNER[phase % SPINNER.length]} ${a.currentTool ?? (a.kind === 'main' ? 'working' : 'running')}`
-      : (STATUS_TEXT as Record<string, string | undefined>)[a.status] ?? `? ${a.status}`
+      ? `${SPINNER[phase % SPINNER.length]} ${a.currentTool ?? a.progress ?? (a.kind === 'main' ? 'working' : 'running')}`
+      : a.kind === 'workflow'
+        ? runStatusText(a)
+        : (STATUS_TEXT as Record<string, string | undefined>)[a.status] ?? `? ${a.status}`
   const color = asking ? COLORS.warn : a.status === 'running' ? KIND_COLOR[a.kind] : (STATUS_COLOR[a.status] ?? COLORS.dim)
   const tokens = a.tokens ? formatTokens(a.tokens) : ''
   const statusMax = Math.max(4, inner - (tokens ? tokens.length + 1 : 0))

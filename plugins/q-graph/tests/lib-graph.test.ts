@@ -22,7 +22,11 @@ import {
   toolStarted,
   toolSummary,
   turnEnded,
+  phaseKnown,
+  phaseTitles,
+  upsertRun,
   useKey,
+  workflowName,
 } from '../hooks/lib/graph'
 
 const withExplore = () =>
@@ -260,4 +264,106 @@ test('a parent that would make a cycle falls back to main, and the status lines 
   g = spawnAgent(g, { id: 'b1', parentId: 'b1', type: 'Explore', description: '' }, 0)
   expect(g.agents.b1?.parentId).toBe(MAIN) // its own parent
   expect(describeAgents(g, 0)).toHaveLength(3)
+})
+
+// ---- Workflow runs ------------------------------------------------------------------------------
+
+const wfAgent = (g: ReturnType<typeof emptyGraph>, id: string, i: number, now: number) =>
+  spawnAgent(g, { id, parentId: 'wf_run1', type: 'workflow-subagent', description: `task ${i}`, runId: 'wf_run1', agentIndex: i }, now)
+
+test('a workflow agent hangs under its run card, named by the label its script gave it', () => {
+  let g = upsertRun(emptyGraph(0), { runId: 'wf_run1', parentId: MAIN, name: 'deep-research' }, 10)
+  g = wfAgent(g, 'w1', 1, 11)
+  g = wfAgent(g, 'w2', 2, 12)
+  expect(g.agents.wf_run1).toMatchObject({ kind: 'workflow', parentId: MAIN, label: 'deep-research', status: 'running', progress: '0/2 agents' })
+  expect(g.agents.w1).toMatchObject({ parentId: 'wf_run1', runId: 'wf_run1', agentIndex: 1, label: 'task 1', description: 'task 1' })
+  expect(describeAgents(g, 20).slice(1)).toEqual([
+    expect.stringMatching(/^ {2}deep-research · running 0\/2 agents · .* · workflow wf_run1$/),
+    expect.stringMatching(/^ {4}task 1 · running · .* · task 1$/),
+    expect.stringMatching(/^ {4}task 2 · running · .* · task 2$/),
+  ])
+})
+
+test('a run finishes when its last agent does, with their tokens and calls summed', () => {
+  let g = upsertRun(emptyGraph(0), { runId: 'wf_run1', name: 'deep-research' }, 10)
+  g = wfAgent(g, 'w1', 1, 11)
+  g = wfAgent(g, 'w2', 2, 12)
+  g = toolStarted(g, 'w1', 'WebSearch', 13)
+  g = turnEnded(g, 'w1', { tokens: 100, reason: 'answer' }, 20)
+  expect(g.agents.wf_run1).toMatchObject({ status: 'running', progress: '1/2 agents', tokens: 100, toolCalls: 1 })
+  expect(hasLiveAgents(g)).toBe(true)
+  g = turnEnded(g, 'w2', { tokens: 50, reason: 'error' }, 30)
+  expect(g.agents.wf_run1).toMatchObject({ status: 'completed', progress: '2/2 agents', tokens: 150, endedAt: 30 })
+  expect(hasLiveAgents(g)).toBe(false)
+})
+
+test('a run whose every agent failed is failed', () => {
+  let g = wfAgent(upsertRun(emptyGraph(0), { runId: 'wf_run1' }, 10), 'w1', 1, 11)
+  g = turnEnded(g, 'w1', { tokens: 0, reason: 'error' }, 20)
+  expect(g.agents.wf_run1).toMatchObject({ status: 'failed', label: 'wf_run1' })
+})
+
+test('a later name names a run that started without one; an existing run is not moved', () => {
+  let g = upsertRun(emptyGraph(0), { runId: 'wf_run1', parentId: MAIN }, 10)
+  g = upsertRun(g, { runId: 'wf_run1', parentId: 'elsewhere', name: 'audit' }, 11)
+  expect(g.agents.wf_run1).toMatchObject({ label: 'audit', parentId: MAIN })
+  expect(g.order.filter(id => id === 'wf_run1')).toHaveLength(1)
+})
+
+test('workflow agents and runs are never lost: the agent list does not carry them', () => {
+  let g = wfAgent(upsertRun(emptyGraph(0), { runId: 'wf_run1' }, 0), 'w1', 1, 0)
+  g = spawnAgent(g, { id: 'a1', type: 'Explore', description: 'x' }, 0)
+  const { graph } = syncAgents(g, [{ id: 'a1', status: 'running', type: 'Explore', description: 'x' }], LOST_MS + 10_000)
+  expect(graph.agents.w1!.status).toBe('running')
+  expect(graph.agents.wf_run1!.status).toBe('running')
+})
+
+test('a Workflow call is not listed as a use; its name comes from name, the script meta or the script path', () => {
+  expect(useKey('Workflow')).toBeNull()
+  expect(workflowName({ name: 'deep-research' })).toBe('deep-research')
+  expect(workflowName({ script: "export const meta = {\n  name: 'review-changes',\n  description: 'x' }" })).toBe('review-changes')
+  expect(workflowName({ scriptPath: '/s/workflows/scripts/audit-wf_1.js' })).toBe('audit-wf_1')
+  expect(workflowName({})).toBeUndefined()
+})
+
+test('the phases of a script are read in order, quoted keys or not', () => {
+  const script = `export const meta = {
+  name: 'rebase',
+  phases: [{ title: 'Prep' }, {"title":"Resolve","detail":"6 [parallel] agents"}, { title: "Verify" }, { title: 'Review' }],
+}
+phase('x')`
+  expect(phaseTitles(script)).toEqual(['Prep', 'Resolve', 'Verify', 'Review'])
+  expect(phaseTitles("export const meta = { name: 'x' }")).toEqual([])
+  expect(phaseTitles(undefined)).toEqual([])
+})
+
+test('agents move under their phase card; the run names the phase that runs, phases not reached are not started', () => {
+  let g = upsertRun(emptyGraph(0), { runId: 'wf_run1', name: 'rebase-esaca-397', phases: ['Prep', 'Resolve', 'Verify'] }, 0)
+  expect(describeAgents(g, 1).slice(1)).toEqual([
+    expect.stringMatching(/^ {2}rebase-esaca-397 · running 0 agents/),
+    expect.stringMatching(/^ {4}Prep · · not started/),
+    expect.stringMatching(/^ {4}Resolve · · not started/),
+    expect.stringMatching(/^ {4}Verify · · not started/),
+  ])
+  g = phaseKnown(wfAgent(g, 'p1', 1, 1), 'p1', 'Prep', 1)
+  g = turnEnded(g, 'p1', { tokens: 10, reason: 'answer' }, 5)
+  g = phaseKnown(wfAgent(g, 'r1', 2, 6), 'r1', 'Resolve', 6)
+  g = phaseKnown(wfAgent(g, 'r2', 3, 6), 'r2', 'Resolve', 6)
+  g = turnEnded(g, 'r1', { tokens: 20, reason: 'answer' }, 9)
+  expect(g.agents.r1!.parentId).toBe('wf_run1.Resolve')
+  expect(g.agents['wf_run1.Prep']).toMatchObject({ status: 'completed', progress: '1/1', tokens: 10 })
+  expect(g.agents['wf_run1.Resolve']).toMatchObject({ status: 'running', progress: '1/2', tokens: 20 })
+  expect(g.agents['wf_run1.Verify']).toMatchObject({ status: 'idle' })
+  expect(g.agents.wf_run1).toMatchObject({ status: 'running', progress: '2/3 agents · Resolve', tokens: 30 })
+  g = turnEnded(g, 'r2', { tokens: 5, reason: 'answer' }, 12)
+  expect(g.agents['wf_run1.Resolve']).toMatchObject({ status: 'completed', progress: '2/2' })
+  expect(g.agents.wf_run1).toMatchObject({ status: 'completed', progress: '3/3 agents' })
+  expect(hasLiveAgents(g)).toBe(false)
+})
+
+test('a phase the script did not declare gets its card when an agent names it', () => {
+  let g = wfAgent(upsertRun(emptyGraph(0), { runId: 'wf_run1' }, 0), 'w1', 1, 1)
+  g = phaseKnown(g, 'w1', 'Ad hoc', 2)
+  expect(g.agents['wf_run1.Ad_hoc']).toMatchObject({ kind: 'workflow', type: 'phase', label: 'Ad hoc', parentId: 'wf_run1', status: 'running', progress: '0/1' })
+  expect(phaseKnown(g, 'nope', 'X', 3)).toBe(g)
 })

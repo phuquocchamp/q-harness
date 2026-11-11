@@ -361,3 +361,33 @@ test('slim index keeps no inputs or outputs, and calls beyond the cap are droppe
   assert.equal(tl.lanes[0].truncated, 7)
   assert.equal(tl.lanes[0].calls[4].id, 'c11')
 })
+
+test('timeline: a Workflow run is a lane under the lane that called Workflow, its agents under it', () => {
+  const main = ix([prompt('go', 0), use('wf1', 'Workflow', { script: 'x' }, 1), use('wf2', 'Workflow', { script: 'y' }, 20)])
+  const runAgent = (id, s, phase) => ({ ...sub(id, [prompt(id, s)], { agentType: 'workflow-subagent', workflowPhase: phase, description: `do ${id}` }), runId: s < 20 ? 'wf_a' : 'wf_b' })
+  const t = buildTimeline({
+    main,
+    subagents: [runAgent('x1', 3, 'Search'), runAgent('x2', 4, 'Verify'), runAgent('y1', 22, 'Fetch')],
+    runs: [{ runId: 'wf_b', name: 'second', startedAt: at(21) }, { runId: 'wf_a', name: 'first', startedAt: at(2), phases: ['Verify', 'Search'] }, { runId: 'wf_empty' }],
+    now: at(30),
+  })
+  assert.deepEqual(
+    t.lanes.map(l => [l.id, l.parentId, l.depth, l.spawnCallId, l.kind, l.label]),
+    [
+      ['main', null, 0, null, 'main', 'main'],
+      ['wf_a', 'main', 1, 'wf1', 'workflow', 'first'],
+      ['wf_a.Verify', 'wf_a', 2, null, 'workflow', 'Verify'],
+      ['x2', 'wf_a.Verify', 3, null, 'subagent', 'do x2'],
+      ['wf_a.Search', 'wf_a', 2, null, 'workflow', 'Search'],
+      ['x1', 'wf_a.Search', 3, null, 'subagent', 'do x1'],
+      ['wf_b', 'main', 1, 'wf2', 'workflow', 'second'],
+      ['wf_b.Fetch', 'wf_b', 2, null, 'workflow', 'Fetch'],
+      ['y1', 'wf_b.Fetch', 3, null, 'subagent', 'do y1'],
+      ['wf_empty', 'main', 1, null, 'workflow', 'wf_empty'],
+    ],
+  )
+  assert.equal(t.lanes[3].description, 'do x2')
+  assert.equal(t.lanes[2].description, '1 agent')
+  assert.equal(t.lanes[1].description, '2 agents · wf_a')
+  assert.equal(t.lanes[1].description, '2 agents · wf_a')
+})

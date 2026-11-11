@@ -1,4 +1,5 @@
-export type AgentKind = 'main' | 'subagent' | 'teammate'
+/** `workflow`: a Workflow run's card (type `workflow`) or one of its phases (type `phase`); the run's agents hang under them. */
+export type AgentKind = 'main' | 'subagent' | 'teammate' | 'workflow'
 
 /**
  * Where an agent's loop stands: `AgentStatus` from `$.agent.list()`, kept by q-graph after the engine
@@ -55,6 +56,14 @@ export type AgentNode = {
   lastEventAt: number
   /** When it last started or finished each use: the graph lights the use for a moment after a call. */
   toolAt: Record<string, number>
+  /** The Workflow run this agent belongs to (`wf_…`); on a run's own card, its id. Absent outside workflows. */
+  runId?: string
+  /** A workflow agent's place among its run's `agent()` calls, from 1. */
+  agentIndex?: number
+  /** A workflow agent's phase (`Resolve`), from its meta file; its card then hangs under that phase's card. */
+  phase?: string
+  /** A run's progress for its card while it runs: `3/31 agents`. */
+  progress?: string
 }
 
 /** What a use is: the graph colours and labels each kind on its own. */

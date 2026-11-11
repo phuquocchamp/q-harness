@@ -84,6 +84,9 @@ export type Spawned = {
   teammateId?: string
   model?: string
   description: string
+  /** Set when a Workflow run's `agent()` started it: the run's card is its parent. */
+  runId?: string
+  agentIndex?: number
 }
 
 export const labelFor = (s: Pick<Spawned, 'type' | 'name' | 'teammateId'>) => s.teammateId ?? s.name ?? s.type
@@ -103,6 +106,7 @@ export const spawnAgent = (g: SessionGraph, s: Spawned, now: number): SessionGra
   const parentId = s.parentId && g.agents[s.parentId] && !isUnder(g, s.parentId, s.id) ? s.parentId : MAIN
   const kind: AgentKind = s.isTeammate ? 'teammate' : 'subagent'
   const prev = g.agents[s.id]
+  const run = s.runId ? { runId: s.runId, ...(s.agentIndex ? { agentIndex: s.agentIndex } : {}) } : {}
   // A stub that already finished (its turn.complete beat this spawn) stays finished.
   const settled = prev && prev.type === 'unknown' && isDone(prev.status)
   const node: AgentNode = {
@@ -111,24 +115,175 @@ export const spawnAgent = (g: SessionGraph, s: Spawned, now: number): SessionGra
     parentId,
     kind,
     type: s.type,
-    label: labelFor(s),
+    label: s.runId ? workflowAgentLabel(s) : labelFor(s),
     model: s.model ?? prev?.model ?? '',
     description: s.description,
+    ...run,
     status: settled ? prev.status : 'running',
     startedAt: prev?.startedAt ?? now,
     endedAt: settled ? prev.endedAt : null,
     waitingSince: null,
     lastEventAt: now,
   }
-  return { ...g, agents: { ...g.agents, [s.id]: node }, order: prev ? g.order : [...g.order, s.id] }
+  return settleRuns({ ...g, agents: { ...g.agents, [s.id]: node }, order: prev ? g.order : [...g.order, s.id] }, now)
 }
+
+// ---- Workflow runs ---------------------------------------------------------------------------------
+
+/** The tool that starts a Workflow run; its agents hang under the run's own card. */
+export const WORKFLOW_TOOL = 'Workflow'
+
+/** A run id as the engine mints it (`wf_…`); anything else is not filed as a run. */
+export const RUN_ID = /^wf_[A-Za-z0-9_-]{1,120}$/
+
+/**
+ * A workflow agent's card name: the label its script gave it (`resolve:renderer#1`, as Claude Code's
+ * own workflow view shows it), else its name, else its place in the run (`agent #3`).
+ */
+const workflowAgentLabel = (s: Pick<Spawned, 'type' | 'name' | 'agentIndex' | 'description'>) => {
+  const label = s.description.split('\n')[0]!.trim()
+  if (label) return label.length > 60 ? `${label.slice(0, 59)}…` : label
+  return s.name ?? `${s.type === 'workflow-subagent' || !s.type ? 'agent' : s.type}${s.agentIndex ? ` #${s.agentIndex}` : ''}`
+}
+
+/**
+ * The name a Workflow call runs under: its `name` (a saved workflow), else the `name` in its script's
+ * `meta`, else its `scriptPath`'s file name; undefined when none is given.
+ */
+export const workflowName = (input: { name?: unknown; script?: unknown; scriptPath?: unknown }): string | undefined => {
+  if (typeof input.name === 'string' && input.name) return input.name
+  if (typeof input.script === 'string') {
+    const m = /export\s+const\s+meta\s*=\s*\{[\s\S]*?\bname\s*:\s*(['"`])([^'"`\n]{1,80})\1/.exec(input.script)
+    if (m) return m[2]
+  }
+  if (typeof input.scriptPath === 'string' && input.scriptPath) return baseName(input.scriptPath).replace(/\.[cm]?[jt]s$/, '')
+  return undefined
+}
+
+/** Phases a run lists at most; a longer list keeps its first ones. */
+const MAX_PHASES = 24
+
+/**
+ * The phase titles a Workflow script declares, in order: `meta.phases[].title`. Empty when the script
+ * declares none (its agents' phases still show up as they run).
+ */
+export const phaseTitles = (script: unknown): string[] => {
+  if (typeof script !== 'string') return []
+  const meta = /export\s+const\s+meta\s*=\s*\{/.exec(script)
+  if (!meta) return []
+  const at = script.slice(meta.index).search(/["']?phases["']?\s*:\s*\[/)
+  if (at < 0) return []
+  const list = script.slice(meta.index + at)
+  const close = list.search(/\]\s*,?\s*(\n|\})/)
+  const body = close > 0 ? list.slice(0, close) : list.slice(0, 4000)
+  const titles: string[] = []
+  for (const m of body.matchAll(/["']?title["']?\s*:\s*(['"`])((?:(?!\1)[^\n\\]){1,60})\1/g)) {
+    if (!titles.includes(m[2]!)) titles.push(m[2]!)
+    if (titles.length >= MAX_PHASES) break
+  }
+  return titles
+}
+
+/** A phase card's id: its run's id and its title, in the characters an agent id may hold. */
+export const phaseId = (runId: string, title: string) => `${runId}.${title.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40) || 'phase'}`
+
+/** True for a phase card (a workflow-kind node of type `phase`). */
+export const isPhase = (a: AgentNode) => a.kind === 'workflow' && a.type === 'phase'
+
+const runNode = (id: string, parentId: string, runId: string, label: string, type: 'workflow' | 'phase', now: number): AgentNode => ({
+  ...mainNode(now),
+  id,
+  parentId,
+  kind: 'workflow',
+  type,
+  label,
+  description: type === 'workflow' ? `workflow ${runId}` : '',
+  status: type === 'workflow' ? 'running' : 'idle',
+  runId,
+  progress: type === 'workflow' ? '0 agents' : '',
+})
+
+export type RunStart = { runId: string; parentId?: string | null; name?: string; phases?: readonly string[] }
+
+/**
+ * The graph with run `runId`'s card present: a new one under `parentId` (the loop that made the
+ * Workflow call, else main), or the one there, named once a name is known; and a phase card for each
+ * of `phases` not there yet, in order, not started until an agent of it runs.
+ */
+export const upsertRun = (g: SessionGraph, r: RunStart, now: number): SessionGraph => {
+  const prev = g.agents[r.runId]
+  let out = g
+  if (!prev) {
+    const parentId = r.parentId && g.agents[r.parentId] ? r.parentId : MAIN
+    out = { ...g, agents: { ...g.agents, [r.runId]: runNode(r.runId, parentId, r.runId, r.name ?? r.runId, 'workflow', now) }, order: [...g.order, r.runId] }
+  } else if (r.name && prev.label === r.runId) out = patch(g, r.runId, a => ({ ...a, label: r.name! }))
+  for (const title of r.phases ?? []) out = withPhase(out, r.runId, title, now)
+  return out
+}
+
+/** The graph with the card of phase `title` of run `runId` present (the run must be there). */
+const withPhase = (g: SessionGraph, runId: string, title: string, now: number): SessionGraph => {
+  const id = phaseId(runId, title)
+  if (g.agents[id] || !g.agents[runId]) return g
+  return { ...g, agents: { ...g.agents, [id]: runNode(id, runId, runId, title, 'phase', now) }, order: [...g.order, id] }
+}
+
+/**
+ * Agent `id` of a Workflow run is in phase `title` (from its meta file): it moves under that phase's
+ * card, made when the script did not declare the phase. An agent outside a run is left as it is.
+ */
+export const phaseKnown = (g: SessionGraph, id: string, title: string, now: number): SessionGraph => {
+  const a = g.agents[id]
+  if (!a?.runId || a.kind === 'workflow' || !title || !g.agents[a.runId]) return g
+  const withCard = withPhase(g, a.runId, title, now)
+  return settleRuns(patch(withCard, id, x => ({ ...x, phase: title, parentId: phaseId(a.runId!, title) })), now)
+}
+
+/**
+ * Each run's and phase's card from its agents: running while one of them is live, else completed
+ * (failed only when every agent failed); tokens and calls summed; progress `done/total`, and on the
+ * run also the phase that runs now. A card with no agent yet keeps what it has (a phase stays not
+ * started). Phases are settled before their run. Returns `g` itself when nothing changed.
+ */
+export const settleRuns = (g: SessionGraph, now: number): SessionGraph => {
+  const cards = g.order.map(id => g.agents[id]).filter((a): a is AgentNode => !!a && a.kind === 'workflow')
+  if (cards.length === 0) return g
+  let out = g
+  for (const card of [...cards.filter(isPhase), ...cards.filter(c => !isPhase(c))]) {
+    const phase = isPhase(card)
+    const kids = g.order
+      .map(k => g.agents[k])
+      .filter((a): a is AgentNode => !!a && a.kind !== 'workflow' && a.runId === card.runId && (!phase || a.phase === card.label))
+    if (kids.length === 0) continue
+    const live = kids.some(a => LIVE.has(a.status))
+    const ended = kids.filter(a => isDone(a.status) || a.status === 'lost')
+    const status: NodeStatus = live ? 'running' : kids.every(a => a.status === 'failed') ? 'failed' : 'completed'
+    // The run names the phase that runs now: the last one, in order, with a live agent.
+    const current = phase ? undefined : [...cards].reverse().find(c => isPhase(c) && c.runId === card.runId && out.agents[c.id]?.status === 'running')?.label
+    const next = {
+      status,
+      endedAt: live ? null : Math.max(...kids.map(a => a.endedAt ?? a.lastEventAt ?? now)),
+      tokens: kids.reduce((n, a) => n + a.tokens, 0),
+      toolCalls: kids.reduce((n, a) => n + a.toolCalls, 0),
+      progress: `${ended.length}/${kids.length}${phase ? '' : ' agents'}${live && current ? ` · ${current}` : ''}`,
+      startedAt: Math.min(...(phase ? [] : [card.startedAt]), ...kids.map(a => a.startedAt)),
+    }
+    if (Object.entries(next).every(([k, v]) => card[k as keyof AgentNode] === v)) continue
+    out = patch(out, card.id, a => ({ ...a, ...next, lastEventAt: now }))
+  }
+  return out
+}
+
+/** A run's or phase's status line: `✓ done 6/6`, `running 4/6`, or `· not started` for a phase none of whose agents ran yet. */
+export const runStatusText = (a: AgentNode): string =>
+  a.status === 'idle' ? '· not started' : a.status === 'running' ? `running ${a.progress ?? ''}`.trim() : `${STATUS_TEXT[a.status]}${a.progress ? ` ${a.progress}` : ''}`
 
 /** The main loop starts a turn; its clock starts at the session's first prompt. */
 export const promptSubmitted = (g: SessionGraph, now = 0): SessionGraph =>
   patch(g, MAIN, a => ({ ...a, status: 'running', endedAt: null, startedAt: a.startedAt > 0 ? a.startedAt : now }))
 
-/** Tools that start an agent: the child's own card stands for the call, so it is not listed as a use. */
-const SPAWN_TOOLS: ReadonlySet<string> = new Set(['Agent', 'Task'])
+/** Tools that start agents: the child's own card (a run's card, for Workflow) stands for the call, so it is not listed as a use. */
+const SPAWN_TOOLS: ReadonlySet<string> = new Set(['Agent', 'Task', 'Workflow'])
 
 /**
  * What a tool call uses, as the graph files it: a skill by name, an MCP server, or the tool itself;
@@ -166,7 +321,7 @@ export const toolStarted = (
   key: string | null = useKey(tool),
   callId: string | null = null,
 ): SessionGraph =>
-  patch(withAgent(g, id, now), id, prev => {
+  settleRuns(patch(withAgent(g, id, now), id, prev => {
     const a = heard(prev, now)
     return {
       ...withCalls(a, [...(a.inFlight ?? []), { callId, tool, use: key }]),
@@ -178,7 +333,7 @@ export const toolStarted = (
       status: a.status === 'waiting' || (a.kind === 'subagent' && isDone(a.status)) ? a.status : 'running',
       endedAt: a.status === 'waiting' || (a.kind === 'subagent' && isDone(a.status)) ? a.endedAt : null,
     }
-  })
+  }), now)
 
 export const toolFinished = (
   g: SessionGraph,
@@ -278,7 +433,7 @@ export type TurnEnd = { tokens: number; reason: 'answer' | 'aborted' | 'refusal'
  * and a teammate whose turn failed is marked failed until its next tool call.
  */
 export const turnEnded = (g: SessionGraph, id: string, t: TurnEnd, now: number): SessionGraph =>
-  patch(withAgent(g, id, now), id, a => {
+  settleRuns(patch(withAgent(g, id, now), id, a => {
     const failed = t.reason === 'error' || t.reason === 'refusal'
     const status: NodeStatus =
       a.kind === 'subagent' ? (t.reason === 'answer' ? 'completed' : t.reason === 'aborted' ? 'killed' : 'failed') : a.kind === 'teammate' && failed ? 'failed' : 'idle'
@@ -294,7 +449,7 @@ export const turnEnded = (g: SessionGraph, id: string, t: TurnEnd, now: number):
       endedAt: isDone(status) ? now : a.endedAt,
       lastEventAt: now,
     }
-  })
+  }), now)
 
 /** Which agent a SendMessage `to` names: an id, a teammate address (`name@team`), or a bare name. */
 export const resolveRecipient = (g: SessionGraph, to: string): string | null => {
@@ -352,18 +507,19 @@ export const syncAgents = (g: SessionGraph, list: readonly ListedAgent[], now: n
       ...(row.status === 'running' || row.status === 'waiting' ? {} : { currentTool: null, currentUse: null, inFlight: [] }),
     }))
   }
-  // Workflow-started agents are never listed, so absence alone proves nothing: it takes silence too,
-  // and a call still in flight counts as activity (its end always raises tool.call's finally).
+  // Absence alone proves nothing: it takes silence too, and a call still in flight counts as activity
+  // (its end always raises tool.call's finally). A Workflow run and its agents are never listed, so
+  // only their turn.complete ends them: a long think between two calls must not read as lost.
   if (list.length > 0) {
     const listed = new Set(list.map(r => r.id))
     for (const id of graph.order) {
       const a = graph.agents[id]
-      if (!a || a.kind === 'main' || listed.has(id) || !LIVE.has(a.status)) continue
+      if (!a || a.kind === 'main' || a.runId || listed.has(id) || !LIVE.has(a.status)) continue
       if ((a.inFlight ?? []).length > 0 || now - (a.lastEventAt ?? 0) < LOST_MS) continue
       graph = patch(graph, id, x => ({ ...x, status: 'lost', endedAt: now, waitingSince: null }))
     }
   }
-  return { graph, transitions }
+  return { graph: settleRuns(graph, now), transitions }
 }
 
 /** Agents other than main that are still going, or finished within RECENT_MS. */
@@ -417,11 +573,13 @@ export const describeAgents = (g: SessionGraph, now: number): string[] => {
     .map(id => g.agents[id])
     .filter((a): a is AgentNode => !!a)
     .map(a => {
-      const status = needsYou(a)
+      const status = a.kind === 'workflow'
+        ? runStatusText(a)
+        : needsYou(a)
         ? `⚠ needs you (${askingTool(a)})`
         : a.status === 'running'
-          ? a.currentTool
-            ? `running ${a.currentTool}`
+          ? a.currentTool || a.progress
+            ? `running ${a.currentTool ?? a.progress}`
             : 'running'
           : STATUS_TEXT[a.status]
       const time = a.startedAt > 0 ? formatElapsed((a.endedAt ?? now) - a.startedAt) : '–'

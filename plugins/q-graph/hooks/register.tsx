@@ -17,7 +17,9 @@ import {
   harnessLines,
   hasLiveAgents,
   RECENT_MS,
+  RUN_ID,
   ASK_TOOLS,
+  WORKFLOW_TOOL,
   messageSent,
   promptSubmitted,
   resolveRecipient,
@@ -28,8 +30,12 @@ import {
   syncAgents,
   toolFinished,
   toolStarted,
+  phaseKnown,
+  phaseTitles,
   turnEnded,
+  upsertRun,
   useKey,
+  workflowName,
   type Transition,
 } from './lib/graph'
 import { layoutGraph } from './lib/layout'
@@ -55,6 +61,11 @@ const RUNTIMES = ['node', 'bun']
 const OPENERS = [['open'], ['xdg-open'], ['cmd', '/c', 'start', '""']]
 
 const WARN_COLOR: ThemeKey = 'warning'
+
+/** Workflow calls this session made, by tool_use_id: which loop made it, the run's name and its phases. */
+const workflowCalls = new Map<string, { caller: string; name?: string; phases: string[] }>()
+/** Calls remembered at most; the oldest is forgotten first. */
+const WORKFLOW_CALLS_MAX = 200
 
 async function saveSettings($: EngineInterface, next: GraphSettings) {
   await update($, settings, () => next)
@@ -124,6 +135,7 @@ function ensurePoll($: EngineInterface) {
     const wanted = pollWanted
     try {
       const list = await $.agent.list()
+      if (phasePending.size > 0) await resolvePhases($).catch(() => undefined)
       const now = await $.clock.now()
       // The sync runs inside the updater, so a retry after another hook's write works on that write.
       let transitions: Transition[] = []
@@ -269,6 +281,75 @@ async function transcriptFor($: EngineInterface, id: string): Promise<string | n
     return guess
   } catch {
     return miss()
+  }
+}
+
+// ---- Workflow phases ----------------------------------------------------------------------------
+// No hook says which phase a workflow agent is in: the engine writes it to the agent's meta file
+// (`<session>/subagents/workflows/<runId>/agent-<id>.meta.json`, `workflowPhase`) as the agent starts,
+// and the run's phases, in order, to its saved script (`<session>/workflows/scripts/<name>-<runId>.js`).
+
+/** Workflow agents whose phase is not read yet, with the reads tried so far. */
+const phasePending = new Map<string, number>()
+/** Reads of an agent's meta file before its phase is given up (one a poll tick). */
+const PHASE_TRIES = 30
+/** Runs whose saved script was read (or tried) for its phase list. */
+const scriptsRead = new Set<string>()
+let resolving = false
+
+/** The folder of this session's transcripts (`…/<session>`), or null while the transcript is unknown. */
+async function sessionDir($: EngineInterface): Promise<string | null> {
+  const main = await transcriptFor($, await $.session.id())
+  return main ? main.slice(0, -'.jsonl'.length) : null
+}
+
+/** Files each pending workflow agent under its phase, and adds the phases a run's saved script lists. */
+async function resolvePhases($: EngineInterface) {
+  if (resolving || phasePending.size === 0) return
+  resolving = true
+  try {
+    const dir = await sessionDir($)
+    if (!dir) return
+    const g = await read($, graph)
+    for (const [id, tries] of [...phasePending]) {
+      const a = g.agents[id]
+      if (!a?.runId || tries >= PHASE_TRIES) {
+        phasePending.delete(id)
+        continue
+      }
+      if (!scriptsRead.has(a.runId)) {
+        scriptsRead.add(a.runId)
+        const phases = await scriptPhases($, dir, a.runId)
+        const now = await $.clock.now()
+        if (phases.length > 0) await update($, graph, x => upsertRun(x, { runId: a.runId!, phases }, now))
+      }
+      let phase: unknown
+      try {
+        const meta = JSON.parse(await $.fs.read(`${dir}/subagents/workflows/${a.runId}/agent-${id}.meta.json`)) as { workflowPhase?: unknown }
+        phase = meta.workflowPhase
+      } catch {
+        // Not written yet: tried again on the next poll tick.
+      }
+      if (typeof phase === 'string' && phase) {
+        phasePending.delete(id)
+        const now = await $.clock.now()
+        await update($, graph, x => phaseKnown(x, id, phase as string, now))
+        $.ui.invalidate('ui.render')
+      } else phasePending.set(id, tries + 1)
+    }
+  } finally {
+    resolving = false
+  }
+}
+
+/** The phases run `runId`'s saved script declares, in order; none when it cannot be read. */
+async function scriptPhases($: EngineInterface, dir: string, runId: string): Promise<string[]> {
+  try {
+    const scripts = `${dir}/workflows/scripts`
+    const file = (await $.fs.list(scripts)).find(f => f.kind === 'file' && f.name.endsWith(`-${runId}.js`))
+    return file ? phaseTitles(await $.fs.read(`${scripts}/${file.name}`)) : []
+  } catch {
+    return []
   }
 }
 
@@ -452,12 +533,18 @@ export const register: Register = on => {
     const r = await next(e)
     if (r.agentId) {
       const now = await $.clock.now()
+      // A Workflow run's agent hangs under the run's card, which hangs under the loop that made the
+      // Workflow call: every agent of a run carries that call's tool_use_id.
+      const runId = e.workflow && RUN_ID.test(e.workflow.runId) ? e.workflow.runId : undefined
+      const call = runId ? workflowCalls.get(e.tool_use_id) : undefined
       await update($, graph, g =>
         spawnAgent(
-          g,
+          runId ? upsertRun(g, { runId, parentId: call?.caller ?? e.parentAgentId ?? MAIN, name: call?.name, phases: call?.phases }, now) : g,
           {
             id: r.agentId!,
-            parentId: e.parentAgentId ?? MAIN,
+            parentId: runId ?? e.parentAgentId ?? MAIN,
+            runId,
+            agentIndex: e.workflow?.agentIndex,
             isTeammate: e.isTeammate === true,
             type: e.subagentType,
             name: e.name,
@@ -468,6 +555,10 @@ export const register: Register = on => {
           now,
         ),
       )
+      if (runId) {
+        phasePending.set(r.agentId, 0)
+        void resolvePhases($).catch(() => undefined)
+      }
       ensurePoll($)
     }
     return r
@@ -476,6 +567,12 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     const id = e.agentId ?? MAIN
     const callId = e.tool_use_id ?? null
+    // A Workflow call: its run's agents name this call, so the run can hang under this loop.
+    if (e.tool === WORKFLOW_TOOL && callId) {
+      if (workflowCalls.size >= WORKFLOW_CALLS_MAX) workflowCalls.delete(workflowCalls.keys().next().value!)
+      const input = e as { name?: unknown; script?: unknown; scriptPath?: unknown }
+      workflowCalls.set(callId, { caller: id, name: workflowName(input), phases: phaseTitles(input.script) })
+    }
     // A skill by name and an MCP server stand for the call; a spawn is the child's own card.
     const key = useKey(e.tool, e as { skill?: unknown })
     const now = await $.clock.now()

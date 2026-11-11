@@ -45,7 +45,7 @@ Light is on `:root`. Dark applies under `@media (prefers-color-scheme: dark)` un
 | Lines | `--q-line`, `--q-line-2`, `--q-grid` | Borders, stronger borders, canvas grid |
 | Accent | `--q-accent`, `--q-accent-fg`, `--q-accent-soft`, `--q-accent-line` | Links, focus, selection, running, primary button (text on it is `-fg`) |
 | Status | `--q-ok`, `--q-warn`, `--q-bad`, `--q-held` each with `-soft` (fill) and `-line` (border) | Success, needs attention, error, held (waiting on a person) |
-| Kinds | `--q-k-main`, `-sub`, `-team`, `-tool`, `-skill`, `-mcp`, `-rule` | Graph kinds only |
+| Kinds | `--q-k-main`, `-sub`, `-team`, `-run`, `-tool`, `-skill`, `-mcp`, `-rule` | Graph kinds only (`-run`: a Workflow run) |
 | Type | `--q-sans`, `--q-mono`; `--q-fs-2xs` 10, `-xs` 11, `-sm` 12, `-md` 13, `-lg` 14, `-xl` 16, `-2xl` 18 px, `--q-fs-cap` 11; `--q-lh-tight` 1.25, `--q-lh-ui` 1.45, `--q-lh-prose` 1.55; `--q-fw-normal` 400, `-medium` 500, `-strong` 600; `--q-track-cap` .06em | System stacks, no web fonts. The theme also sets tabular digits on `body` |
 | Shape | `--q-r-xs` 3, `-sm` 4, `-md` 6, `-lg` 9, `-pill` 999 px; `--q-shadow-1`, `--q-shadow-2`, `--q-focus` | Radii, elevation, focus ring (a `box-shadow` value) |
 
@@ -65,4 +65,4 @@ Light is on `:root`. Dark applies under `@media (prefers-color-scheme: dark)` un
 
 ## Terminal UI
 
-A mod's Ink output follows the host's theme, not these tokens. Use a `ThemeKey` for meaning: `'success'`, `'warning'`, `'error'` (`Color` is `ThemeKey | string`). A kind colour has no theme key, so use a mid-luminance hex that reads on light and dark terminals: main `#3969de`, subagent `#1f966f`, teammate `#a72f83`; the q-graph raster also uses tool `#8b5628`, skill `#9a55d1`, MCP `#1080a6`, rule `#3ea313`. Leave body text in the terminal's own colour.
+A mod's Ink output follows the host's theme, not these tokens. Use a `ThemeKey` for meaning: `'success'`, `'warning'`, `'error'` (`Color` is `ThemeKey | string`). A kind colour has no theme key, so use a mid-luminance hex that reads on light and dark terminals: main `#3969de`, subagent `#1f966f`, teammate `#a72f83`, workflow run `#d2562a`; the q-graph raster also uses tool `#8b5628`, skill `#9a55d1`, MCP `#1080a6`, rule `#3ea313`. Leave body text in the terminal's own colour.

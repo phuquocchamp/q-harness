@@ -1,7 +1,7 @@
 // Run with: node --test viewer/server.test.mjs
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -180,4 +180,32 @@ test('SSE clients are capped', async () => {
   for (const req of open) req.destroy()
   assert.equal(codes.filter(c => c === 200).length, 16)
   assert.equal(codes.filter(c => c === 503).length, 2)
+})
+
+test('a Workflow run: its agents are read from subagents/workflows/<runId>/ and hang under a run lane', async () => {
+  const sess = join(projects, 'proj', 'sess')
+  const runDir = join(sess, 'subagents', 'workflows', 'wf_t1')
+  mkdirSync(runDir, { recursive: true })
+  mkdirSync(join(sess, 'workflows'), { recursive: true })
+  appendFileSync(
+    session,
+    rec({ type: 'assistant', timestamp: at(3), message: { id: 'mwf', model: 'claude-x', content: [{ type: 'tool_use', id: 'wfcall', name: 'Workflow', input: { script: 'x' } }] } }),
+  )
+  writeFileSync(join(sess, 'workflows', 'wf_t1.json'), JSON.stringify({ runId: 'wf_t1', timestamp: at(4), script: "export const meta = { name: 'audit', description: 'x' }" }))
+  mkdirSync(join(sess, 'workflows', 'scripts'), { recursive: true })
+  writeFileSync(join(sess, 'workflows', 'scripts', 'audit-wf_t1.js'), "export const meta = { name: 'audit', phases: [{ title: 'Scan' }, { title: 'Verify' }] }\n")
+  writeFileSync(join(runDir, 'agent-w1.jsonl'), call('w1call', 5))
+  writeFileSync(join(runDir, 'agent-w1.meta.json'), JSON.stringify({ agentType: 'workflow-subagent', description: 'check one claim', workflowPhase: 'Verify' }))
+
+  const detail = JSON.parse((await get('/detail?agent=w1')).body)
+  assert.equal(detail.error, undefined)
+  assert.deepEqual(detail.calls.map(c => c.id), ['w1call'])
+
+  const tl = JSON.parse((await get('/timeline')).body)
+  const run = tl.lanes.find(l => l.id === 'wf_t1')
+  const agent = tl.lanes.find(l => l.id === 'w1')
+  assert.deepEqual([run.kind, run.label, run.parentId, run.spawnCallId, run.depth], ['workflow', 'audit', 'main', 'wfcall', 1])
+  assert.deepEqual([agent.parentId, agent.label, agent.description, agent.depth, agent.runId], ['wf_t1.Verify', 'check one claim', 'check one claim', 3, 'wf_t1'])
+  assert.deepEqual(tl.lanes.filter(l => l.parentId === 'wf_t1').map(l => [l.id, l.label, l.description]), [['wf_t1.Scan', 'Scan', 'not started'], ['wf_t1.Verify', 'Verify', '1 agent']])
+  assert.equal(tl.lanes.length, SUBAGENTS + 5)
 })
