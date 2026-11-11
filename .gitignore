@@ -18,3 +18,9 @@ plugins/*/tests/**/*.js
 
 # claude plugin eval output
 plugins/*/evals/results/
+
+# Playground
+playground/*
+
+# q-pilot
+.q-pilot/
